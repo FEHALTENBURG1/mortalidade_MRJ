@@ -33,6 +33,7 @@ import argparse
 import codecs
 import datetime as dt
 import logging
+import re
 import sys
 import time
 import zipfile
@@ -150,7 +151,8 @@ LABELS: dict[str, dict[str, str]] = {
     },
     "TPNIVELINV": {"E": "Estadual", "R": "Regional", "M": "Municipal"},
     "ALTCAUSA": SIM_NAO_12,
-    "TPPOS": SIM_NAO_12,
+    # Na API aparece "N" (e o dicionário diz 1/2); aceita as duas codificações
+    "TPPOS": {"1": "Sim", "2": "Não", "S": "Sim", "N": "Não"},
 }
 # Colunas cujos códigos têm 2 dígitos no dicionário
 COLS_2DIG = {"ESCMAEAGR1", "ESCFALAGR1", "TPRESGINFO"}
@@ -196,6 +198,36 @@ CAPITULOS_CID10 = [
     ("Z00", "Z99", "XXI", "Fatores que influenciam o estado de saúde e o contato com os serviços de saúde"),
     ("U00", "U99", "XXII", "Códigos para propósitos especiais"),
 ]
+
+# Alguns arquivos do OpenDATASUS vêm SEM linha de cabeçalho (2022 e 2023 em 2026-10).
+# O layout deles foi conferido contra o de anos vizinhos: 2022 = layout de 2021
+# (87 colunas) e 2023 = layout de 2025 (86 colunas, "contador" na frente).
+_CAB_2021 = (
+    "ORIGEM;TIPOBITO;DTOBITO;HORAOBITO;NATURAL;CODMUNNATU;DTNASC;IDADE;SEXO;RACACOR;"
+    "ESTCIV;ESC;ESC2010;SERIESCFAL;OCUP;CODMUNRES;LOCOCOR;CODESTAB;ESTABDESCR;CODMUNOCOR;"
+    "IDADEMAE;ESCMAE;ESCMAE2010;SERIESCMAE;OCUPMAE;QTDFILVIVO;QTDFILMORT;GRAVIDEZ;"
+    "SEMAGESTAC;GESTACAO;PARTO;OBITOPARTO;PESO;TPMORTEOCO;OBITOGRAV;OBITOPUERP;ASSISTMED;"
+    "EXAME;CIRURGIA;NECROPSIA;LINHAA;LINHAB;LINHAC;LINHAD;LINHAII;CAUSABAS;CB_PRE;"
+    "COMUNSVOIM;DTATESTADO;CIRCOBITO;ACIDTRAB;FONTE;NUMEROLOTE;TPPOS;DTINVESTIG;CAUSABAS_O;"
+    "DTCADASTRO;ATESTANTE;STCODIFICA;CODIFICADO;VERSAOSIST;VERSAOSCB;FONTEINV;DTRECEBIM;"
+    "ATESTADO;DTRECORIGA;CAUSAMAT;ESCMAEAGR1;ESCFALAGR1;STDOEPIDEM;STDONOVA;DIFDATA;"
+    "NUDIASOBCO;NUDIASOBIN;DTCADINV;TPOBITOCOR;DTCONINV;FONTES;TPRESGINFO;TPNIVELINV;"
+    "NUDIASINF;DTCADINF;MORTEPARTO;DTCONCASO;FONTESINF;ALTCAUSA;CONTADOR"
+).split(";")
+_CAB_2025 = (
+    "CONTADOR;ORIGEM;TIPOBITO;DTOBITO;HORAOBITO;NATURAL;CODMUNNATU;DTNASC;IDADE;SEXO;"
+    "RACACOR;ESTCIV;ESC;ESC2010;SERIESCFAL;OCUP;CODMUNRES;LOCOCOR;CODESTAB;CODMUNOCOR;"
+    "IDADEMAE;ESCMAE;ESCMAE2010;SERIESCMAE;OCUPMAE;QTDFILVIVO;QTDFILMORT;GRAVIDEZ;"
+    "SEMAGESTAC;GESTACAO;PARTO;OBITOPARTO;PESO;TPMORTEOCO;OBITOGRAV;OBITOPUERP;ASSISTMED;"
+    "EXAME;CIRURGIA;NECROPSIA;LINHAA;LINHAB;LINHAC;LINHAD;LINHAII;CAUSABAS;CB_PRE;"
+    "COMUNSVOIM;DTATESTADO;CIRCOBITO;ACIDTRAB;FONTE;NUMEROLOTE;DTINVESTIG;DTCADASTRO;"
+    "ATESTANTE;STCODIFICA;CODIFICADO;VERSAOSIST;VERSAOSCB;FONTEINV;DTRECEBIM;ATESTADO;"
+    "DTRECORIGA;OPOR_DO;CAUSAMAT;ESCMAEAGR1;ESCFALAGR1;STDOEPIDEM;STDONOVA;DIFDATA;"
+    "NUDIASOBCO;DTCADINV;TPOBITOCOR;DTCONINV;FONTES;TPRESGINFO;TPNIVELINV;DTCADINF;"
+    "MORTEPARTO;DTCONCASO;ALTCAUSA;CAUSABAS_O;TPPOS;TP_ALTERA;CB_ALT"
+).split(";")
+assert len(_CAB_2021) == 87 and len(_CAB_2025) == 86
+CABECALHOS_SEM_HEADER = {2022: _CAB_2021, 2023: _CAB_2025}
 
 CAT_RES_OCOR = "Residente e óbito no MRJ"
 CAT_RES_FORA = "Residente no MRJ, óbito fora do MRJ"
@@ -259,8 +291,17 @@ def _norm_cols(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
-def _abrir_csv_zip(z: zipfile.ZipFile, caminho_zip: Path) -> tuple[str, str, str]:
-    """Descobre nome do CSV, encoding e separador dentro do zip."""
+def _ano_do_arquivo(caminho_zip: Path) -> int | None:
+    m = re.search(r"(\d{4})", caminho_zip.name)
+    return int(m.group(1)) if m else None
+
+
+def _abrir_csv_zip(z: zipfile.ZipFile, caminho_zip: Path) -> tuple[str, str, str, dict]:
+    """Descobre nome do CSV, encoding, separador e se há cabeçalho.
+
+    O 4º item são argumentos extras do pd.read_csv: vazio quando o arquivo tem
+    cabeçalho; header=None + names=... quando não tem (2022 e 2023).
+    """
     csvs = [n for n in z.namelist() if n.lower().endswith(".csv")]
     if not csvs:
         raise ValueError(f"Nenhum CSV dentro de {caminho_zip.name}")
@@ -269,20 +310,51 @@ def _abrir_csv_zip(z: zipfile.ZipFile, caminho_zip: Path) -> tuple[str, str, str
         amostra = f.read(1 << 16)
     enc = _detectar_encoding(amostra)
     sep = _detectar_sep(amostra, enc)
+    primeira = amostra.decode(enc, errors="replace").splitlines()[0]
+    campos = [c.strip().strip('"').upper() for c in primeira.split(sep)]
+    extra: dict = {}
+    if not {"DTOBITO", "CODMUNRES", "CAUSABAS"} & set(campos):
+        ano = _ano_do_arquivo(caminho_zip)
+        cab = CABECALHOS_SEM_HEADER.get(ano)
+        if cab is None or len(cab) != len(campos):
+            raise ValueError(
+                f"{caminho_zip.name}: CSV sem cabeçalho ({len(campos)} colunas) e sem "
+                f"layout conhecido para o ano {ano}. Primeira linha: {primeira[:120]!r}"
+            )
+        extra = {"header": None, "names": cab}
+        log.warning("  %s: sem cabeçalho; usando o layout registrado para %s", nome, ano)
     log.info("  %s | encoding=%s | sep=%r", nome, enc, sep)
-    return nome, enc, sep
+    return nome, enc, sep, extra
+
+
+def _validar_layout(df: pd.DataFrame, origem: str) -> None:
+    """Falha cedo se as colunas não batem com o conteúdo (evita filtro silenciosamente vazio)."""
+    amostra = df.head(5000)
+    regras = {"DTOBITO": r"^(?:\d{7,8}|\d{2}-\d{2}-\d{4})$", "CODMUNRES": r"^\d{6,7}$"}
+    for col, padrao in regras.items():
+        if col not in amostra.columns:
+            raise ValueError(f"{origem}: coluna {col} ausente")
+        s = amostra[col].dropna().astype(str).str.strip()
+        taxa = s.str.match(padrao).mean() if len(s) else 0.0
+        if taxa < 0.95:
+            raise ValueError(
+                f"{origem}: {col} fora do padrão esperado em {1 - taxa:.0%} da amostra; "
+                "o layout das colunas provavelmente mudou"
+            )
 
 
 def ler_csv_zip(caminho_zip: Path) -> pd.DataFrame:
     """Lê o CSV de dentro do zip, tudo como texto, vazio vira nulo (Brasil inteiro)."""
     with zipfile.ZipFile(caminho_zip) as z:
-        nome, enc, sep = _abrir_csv_zip(z, caminho_zip)
+        nome, enc, sep, extra = _abrir_csv_zip(z, caminho_zip)
         with z.open(nome) as f:
             df = pd.read_csv(
                 f, sep=sep, encoding=enc, dtype=str,
-                na_values=[""], keep_default_na=False, low_memory=False,
+                na_values=[""], keep_default_na=False, low_memory=False, **extra,
             )
-    return _norm_cols(df)
+    df = _norm_cols(df)
+    _validar_layout(df, caminho_zip.name)
+    return df
 
 
 def ler_csv_zip_mrj(caminho_zip: Path, linhas_por_bloco: int = 200_000) -> tuple[pd.DataFrame, int]:
@@ -293,14 +365,16 @@ def ler_csv_zip_mrj(caminho_zip: Path, linhas_por_bloco: int = 200_000) -> tuple
     partes: list[pd.DataFrame] = []
     n_total = 0
     with zipfile.ZipFile(caminho_zip) as z:
-        nome, enc, sep = _abrir_csv_zip(z, caminho_zip)
+        nome, enc, sep, extra = _abrir_csv_zip(z, caminho_zip)
         with z.open(nome) as f:
             leitor = pd.read_csv(
                 f, sep=sep, encoding=enc, dtype=str, na_values=[""],
-                keep_default_na=False, chunksize=linhas_por_bloco,
+                keep_default_na=False, chunksize=linhas_por_bloco, **extra,
             )
             for bloco in leitor:
                 bloco = _norm_cols(bloco)
+                if n_total == 0:
+                    _validar_layout(bloco, caminho_zip.name)
                 n_total += len(bloco)
                 bloco = marcar_territorio(bloco)
                 partes.append(bloco[bloco["residente_mrj"] | bloco["ocorrencia_mrj"]])
@@ -378,10 +452,22 @@ def decodificar_idade(idade: pd.Series) -> pd.DataFrame:
 
 
 def converter_datas(df: pd.DataFrame) -> pd.DataFrame:
+    """Aceita ddmmaaaa (com ou sem zero à esquerda) e dd-mm-aaaa (2022 e 2023).
+
+    31-12-1969 é o "zero" do Unix gravado no lugar de data vazia nesses arquivos;
+    vira nulo.
+    """
+    zero_unix = pd.Timestamp("1969-12-31")
     for col in COLS_DATA:
         if col in df.columns:
-            s = df[col].astype("string").str.strip().str.zfill(8)
-            df[col] = pd.to_datetime(s, format="%d%m%Y", errors="coerce")
+            s = df[col].astype("string").str.strip()
+            com_traco = s.str.contains("-", regex=False).fillna(False).to_numpy(dtype=bool)
+            sem = pd.to_datetime(
+                s.mask(com_traco).str.zfill(8), format="%d%m%Y", errors="coerce"
+            )
+            com = pd.to_datetime(s.where(com_traco), format="%d-%m-%Y", errors="coerce")
+            datas = sem.fillna(com)
+            df[col] = datas.mask(datas == zero_unix)
     return df
 
 
