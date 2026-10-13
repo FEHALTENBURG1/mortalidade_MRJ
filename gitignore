@@ -1,0 +1,5 @@
+# Dados ficam fora do Git (publicados como asset de Release pelo workflow)
+datalake/
+*.tar.gz
+*.zip
+__pycache__/
