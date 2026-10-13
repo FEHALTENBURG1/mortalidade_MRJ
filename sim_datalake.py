@@ -136,6 +136,7 @@ LABELS: dict[str, dict[str, str]] = {
     "GESTACAO": {
         "1": "Menos de 22 semanas", "2": "22 a 27 semanas", "3": "28 a 31 semanas",
         "4": "32 a 36 semanas", "5": "37 a 41 semanas", "6": "42 semanas e mais",
+        "9": "Ignorado",  # aparece nos dados (óbitos não fetais), mas não está no dicionário
     },
     "FONTEINV": {
         "1": "Comitê de Morte Materna e/ou Infantil", "2": "Visita domiciliar / entrevista família",
@@ -281,6 +282,30 @@ def _detectar_encoding(amostra: bytes) -> str:
         return "latin-1"
 
 
+def _detectar_encoding_arquivo(z: zipfile.ZipFile, nome: str) -> str:
+    """Varre o CSV inteiro (em blocos) para decidir o encoding.
+
+    Olhar só o começo não basta: há anos (2013-2015) em que os primeiros bytes são
+    ASCII/UTF-8 válidos e o primeiro byte latin-1 aparece lá no meio do arquivo.
+    Se qualquer trecho não for UTF-8 válido, usa latin-1 (que nunca falha).
+    """
+    with z.open(nome) as f:
+        ini = f.read(4)
+    if ini.startswith(codecs.BOM_UTF8):
+        return "utf-8-sig"
+    dec = codecs.getincrementaldecoder("utf-8")()
+    with z.open(nome) as f:
+        while True:
+            bloco = f.read(1 << 22)
+            if not bloco:
+                break
+            try:
+                dec.decode(bloco, final=False)
+            except UnicodeDecodeError:
+                return "latin-1"
+    return "utf-8"
+
+
 def _detectar_sep(amostra: bytes, encoding: str) -> str:
     primeira = amostra.decode(encoding, errors="replace").splitlines()[0]
     return max([";", ",", "\t", "|"], key=primeira.count)
@@ -308,7 +333,7 @@ def _abrir_csv_zip(z: zipfile.ZipFile, caminho_zip: Path) -> tuple[str, str, str
     nome = csvs[0]
     with z.open(nome) as f:
         amostra = f.read(1 << 16)
-    enc = _detectar_encoding(amostra)
+    enc = _detectar_encoding_arquivo(z, nome)
     sep = _detectar_sep(amostra, enc)
     primeira = amostra.decode(enc, errors="replace").splitlines()[0]
     campos = [c.strip().strip('"').upper() for c in primeira.split(sep)]
