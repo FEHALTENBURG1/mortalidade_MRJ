@@ -1,0 +1,86 @@
+name: Atualizar SIM (MRJ)
+
+on:
+  schedule:
+    # Dia 5 de cada mês, 08:00 UTC (05:00 em Brasília)
+    - cron: "0 8 5 * *"
+  workflow_dispatch:
+    inputs:
+      anos:
+        description: >
+          Anos a processar, separados por espaço (ex.: "2016 2017").
+          Vazio = ano anterior + ano corrente. Para a carga inicial use
+          "2006 2007 2008 2009 2010 2011 2012 2013 2014 2015 2016 2017 2018 2019 2020 2021 2022 2023 2024 2025 2026".
+        required: false
+        default: ""
+
+permissions:
+  contents: write # necessário para criar/atualizar a Release com os dados
+
+concurrency:
+  group: atualizar-sim
+  cancel-in-progress: false
+
+jobs:
+  atualizar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    env:
+      GH_TOKEN: ${{ github.token }}
+      RELEASE_TAG: sim-mrj
+      ASSET: silver_sim_mrj.tar.gz
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements.txt
+
+      - name: Instalar dependências
+        run: pip install -r requirements.txt
+
+      - name: Definir anos
+        id: anos
+        env:
+          ENTRADA: ${{ github.event.inputs.anos }}
+        run: |
+          if [ -z "$ENTRADA" ]; then
+            ANO=$(date +%Y)
+            ENTRADA="$((ANO-1)) $ANO"
+          fi
+          if ! [[ "$ENTRADA" =~ ^[0-9]{4}( [0-9]{4})*$ ]]; then
+            echo "Entrada inválida para anos: $ENTRADA" >&2
+            exit 1
+          fi
+          echo "anos=$ENTRADA" >> "$GITHUB_OUTPUT"
+          echo "Anos desta execução: $ENTRADA"
+
+      - name: Restaurar silver da execução anterior
+        run: |
+          mkdir -p datalake
+          if gh release download "$RELEASE_TAG" -p "$ASSET" -D . 2>/dev/null; then
+            tar -xzf "$ASSET" -C datalake
+            rm -f "$ASSET"
+            echo "Silver anterior restaurada."
+          else
+            echo "Sem release anterior; começando do zero."
+          fi
+
+      - name: Rodar pipeline (modo direto, só MRJ)
+        env:
+          ANOS: ${{ steps.anos.outputs.anos }}
+        run: python sim_datalake.py direto --anos $ANOS --apagar-zip
+
+      - name: Empacotar silver
+        run: tar -czf "$ASSET" -C datalake silver qa
+
+      - name: Publicar na Release
+        run: |
+          if ! gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            gh release create "$RELEASE_TAG" \
+              --title "SIM - Mortalidade MRJ (silver)" \
+              --notes "Recortes do município do Rio de Janeiro (ocorrência, residência e combinado), em Parquet particionado por ano. Atualizado automaticamente."
+          fi
+          gh release upload "$RELEASE_TAG" "$ASSET" --clobber
