@@ -84,3 +84,13 @@ assert abs(se / se_sm - 1) < 0.05, "EP do contraste deve coincidir (±5%) com o 
 st, df_, pw = nu.wald_homog([(fh, 0), (fd, 0)]); z_ = est / se
 assert abs(st - z_ ** 2) < 1e-6 and df_ == 1, "Wald de 2 grupos = quadrado do z do contraste"
 print("Wald de igualdade (2 locais) = z² do contraste: ok")
+
+# ---- raça/cor: classificação do RACACOR e agregado PPI
+r_ = nu.classificar_raca(pd.Series(["1", "2", "3", "4", "5", "9", None, "1.0", " 4"]))
+assert list(r_) == ["Branca", "Preta", "Amarela", "Parda", "Indígena", "Ignorada", "Ignorada", "Branca", "Parda"], "classificação do RACACOR"
+dd_ = d[d.dia >= "2012-01-01"]; ntot = len(dd_)
+assert dd_.raca.isin(["Branca", "Preta", "Amarela", "Parda", "Indígena", "Ignorada"]).all() and dd_.raca.notna().all()
+Yr = nu.series_local_raca(dd_.assign(natural=True, local="Hospital"), pd.date_range("2012-01-01", d.dia.max()), locais=["Hospital"])
+ppi_ = int(Yr[("Todos os locais", "Todas as idades|PPI")].sum()); br_ = int(Yr[("Todos os locais", "Todas as idades|Branca")].sum())
+assert ppi_ == int(dd_.raca.isin(nu.PPI).sum()) and br_ == int((dd_.raca == "Branca").sum()), "séries por raça/cor e agregado PPI"
+print("raça/cor: classificação e PPI (preta + parda + indígena) conferem; PPI = %.1f%% e branca = %.1f%% dos óbitos desde 2012" % (100 * ppi_ / ntot, 100 * br_ / ntot))

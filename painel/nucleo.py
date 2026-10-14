@@ -66,18 +66,28 @@ def influenciado(c) -> bool:
     except ValueError: return False
     return any(c[0] == l and a <= n <= b for l, a, b in INCLUIR_FAIXAS)
 
+# ---------------------------------------------------------------- raça/cor
+RACAS = ["Branca", "Preta", "Parda", "PPI"]                # séries com modelo próprio: Branca (referência), Preta, Parda e o agregado PPI = preta + parda + indígena
+PPI = ["Preta", "Parda", "Indígena"]                       # indígena tem óbitos de menos para uma série própria e entra só neste agregado; amarela fica fora das séries por cor
+_RACA_SIM = {"1": "Branca", "2": "Preta", "3": "Amarela", "4": "Parda", "5": "Indígena"}   # RACACOR do SIM
+
+def classificar_raca(r: pd.Series) -> pd.Series:
+    """RACACOR do SIM (1 branca, 2 preta, 3 amarela, 4 parda, 5 indígena, 9 ou vazio = ignorada) em Branca, Preta, Amarela, Parda, Indígena ou Ignorada."""
+    return r.astype("string").str.strip().str[:1].map(_RACA_SIM).fillna("Ignorada")
+
 # ---------------------------------------------------------------- dados
 def carregar_obitos(silver) -> pd.DataFrame:
     """Todos os óbitos ocorridos no MRJ (residentes ou não), todos os anos do silver."""
     fs = sorted(glob.glob(str(Path(silver) / "sim/ocorrencia_mrj/ano_arquivo=20*/part-0.parquet")))
-    cols = ["DTOBITO", "idade_anos", "CAUSABAS", "LOCOCOR", "CODESTAB", "ocorrencia_mrj", "residente_mrj"]
+    cols = ["DTOBITO", "idade_anos", "CAUSABAS", "LOCOCOR", "CODESTAB", "RACACOR", "ocorrencia_mrj", "residente_mrj"]
     d = pd.concat([pd.read_parquet(f, columns=cols) for f in fs], ignore_index=True)
     d = d[d.ocorrencia_mrj == True].copy()
     d["dia"] = pd.to_datetime(d.DTOBITO).dt.normalize()
     d["cid"] = d.CAUSABAS.astype(str).str.strip().str.upper().str[:3]
     d["residente"] = d.residente_mrj == True
     d["CODESTAB"] = cnes7(d.CODESTAB)
-    return d[["dia", "idade_anos", "cid", "LOCOCOR", "CODESTAB", "residente"]]
+    d["raca"] = classificar_raca(d.RACACOR)
+    return d[["dia", "idade_anos", "cid", "LOCOCOR", "CODESTAB", "residente", "raca"]]
 
 def meses_incompletos(d: pd.DataFrame, limiar: float = LIMIAR_MES, inicio: str = INICIO):
     """Marca meses com registro incompleto no SIM. Devolve (contagem mensal, Series booleana por mês).
@@ -410,6 +420,14 @@ def series_local_faixa(d: pd.DataFrame, dias, locais=LOCAIS, faixas=FAIXAS) -> d
         for fx in faixas: Y[(L, fx)] = serie_dias(dl[dl.faixa == fx], dias)
     return Y
 
+
+def series_local_raca(d: pd.DataFrame, dias, locais=LOCAIS, racas=RACAS) -> dict:
+    """Contagens diárias por (local, raça/cor), todas as idades; PPI = preta + parda + indígena. A chave de faixa vira 'Todas as idades|<raça>' (chave 'local|faixa|raça' no painel)."""
+    Y = {}
+    for L in ["Todos os locais"] + list(locais):
+        dl = d if L == "Todos os locais" else d[d.local == L]
+        for r in racas: Y[(L, f"Todas as idades|{r}")] = serie_dias(dl[dl.raca.isin(PPI) if r == "PPI" else dl.raca == r], dias)
+    return Y
 
 def grade_semanal(cx):
     """Semanas epidemiológicas completas e máscara semanal (COVID e dados incompletos ficam fora do ajuste)."""

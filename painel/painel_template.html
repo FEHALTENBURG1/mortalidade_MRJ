@@ -78,6 +78,7 @@ footer{margin-top:28px;color:var(--mut);font-size:12px}
   <div class="ctl">
     <label>Local do óbito<select id="s-local"></select></label>
     <label>Faixa etária<select id="s-faixa"></select></label>
+    <label>Raça/cor<select id="s-raca"></select></label>
     <label>Escala<select id="s-esc"><option value="sem">Semanal</option><option value="dia">Diária (cada dia um ponto)</option></select></label>
     <label id="s-defw" class="hide">Dia de calor (modelo com lag 0 a 3)<select id="s-def">
       <option value="ic">Calor intenso: índice de calor máx. ≥ 36 °C</option>
@@ -100,6 +101,7 @@ footer{margin-top:28px;color:var(--mut);font-size:12px}
     <label id="s-limw" class="hide">Limiar (°C)<input id="s-lim" type="number" value="32" step="0.5" min="10" max="55" style="width:84px"></label>
     <button class="btn" id="s-csv">Baixar CSV da série</button>
   </div>
+  <p class="note" id="s-raca-nota" style="margin:12px 2px 14px"></p>
   <div class="kpis" id="s-kpis"></div>
   <div class="card">
     <div class="fn">Figura 1</div><h2 id="s-h2">Óbitos semanais por causas naturais: observados, esperados e semanas de calor</h2>
@@ -302,6 +304,7 @@ footer{margin-top:28px;color:var(--mut);font-size:12px}
   <h3>11. Séries semanal e diária e faixa esperada</h3>
   <p>Semanas epidemiológicas (domingo a sábado); semanas incompletas nas pontas são retiradas. O esperado vem de um modelo de quase-Poisson para a contagem semanal com spline de tempo (7 graus de liberdade por ano), sem exposição. A faixa de 95% é esperado ± 1,96 · √(φ · esperado). Semanas de COVID e de mês incompleto ficam fora do ajuste e a curva esperada não é traçada nesses períodos: sem dados ali o spline não é estimável, e interpolar sobre uma lacuna de mais de dois anos daria uma curva arbitrária (pior ainda em causas com poucos óbitos). O percentual de semanas acima da faixa deve ficar perto de 2,5% se o modelo estiver bem calibrado.</p>
   <p><b>Escala diária.</b> Na Figura 1, cada dia pode ser visto como um ponto, ligado por um traço ao esperado daquele dia (vermelho quando o observado fica acima, azul quando fica abaixo). Aqui o esperado é o contrafactual de um modelo com calor: quase-Poisson com spline de tempo (7 graus de liberdade por ano), dia da semana e exposição ao calor com defasagem de até 3 dias (o dia é exposto se houve dia de calor em t, t−1, t−2 ou t−3, como nos RR), ajustado à série inteira; o esperado é o valor ajustado com a exposição zerada, isto é, o que se esperaria sem calor. Os dias expostos, marcados com contorno escuro, tendem a ficar acima dele. Pela equação de escore do Poisson com ligação log, na série inteira o observado ÷ esperado dos dias expostos é igual ao RR do modelo e o dos demais dias é 1,00; o painel calcula essas razões para os anos escolhidos e mostra junto o RR da série (IC 95% robusto). O dia de calor pode ser definido pelo índice de calor máximo ≥ 36 °C, pela anomalia térmica ou pelos níveis NC2 a NC5 do protocolo (seção 16). Cada combinação de local e faixa etária tem o seu modelo e a sua dispersão φ, então o esperado muda quando o filtro muda. Dias de COVID e de mês incompleto ficam fora do ajuste e sem esperado. A contagem de um único dia varia por acaso, e só a diferença sistemática entre grupos de dias tem leitura.</p>
+  <p><b>Raça/cor na Figura 1.</b> A Figura 1 pode ser filtrada por raça/cor, a variável RACACOR do SIM (1 branca, 2 preta, 3 amarela, 4 parda, 5 indígena; o ignorado fica em branco). Há séries de branca, preta, parda e do agregado PPI (preta, parda e indígena) em cada local, sempre para todas as idades, cada uma com o seu modelo e a sua dispersão φ, pelo mesmo método das demais séries; a branca entra como referência para comparação. Os indígenas têm óbitos de menos para uma série própria e por isso entram só no agregado PPI. A amarela também não tem série própria, e os óbitos sem cor informada aparecem só na opção Todas (os números estão na nota abaixo dos filtros). A cor é registrada na Declaração de Óbito por terceiros e pode diferir da autodeclaração. A fatia de pretos e pardos também varia com o local do óbito (é maior nas UPAs do que no hospital e no domicílio), então diferenças entre as séries misturam composição da população, acesso aos serviços e local do óbito. O RR de cada série é descritivo: não há ajuste por idade nem teste formal de diferença entre grupos.</p>
   <p><b>Início da série da Figura 1.</b> O SIM do data lake começa em 2006, e a Figura 1 (semanal e diária) mostra a mortalidade desde então, enquanto os modelos de RR das demais abas começam em 2012 (seção 4). O clima só existe a partir de 17/04/2007, e a anomalia térmica, a partir de 2012 (é o período em que a normal é estimada). Nos dias sem dado de clima, o modelo diário trata o dia como sem calor, e as semanas sem clima ficam fora da comparação entre semanas de calor e demais. Antes de 2012 a rede tinha de 3 a 5 estações, então o calor está subestimado nesses anos, e o RR do modelo da Figura 1 pode diferir do das demais abas.</p>
 
   <h3>12. Unidades de saúde e bairros</h3>
@@ -365,6 +368,7 @@ footer{margin-top:28px;color:var(--mut);font-size:12px}
     <li>O período da análise passou a ser escolhido por ano de início e de fim; cada janela é reestimada no workflow, não no navegador (seção 15).</li>
     <li>A Figura 1 ganhou colunas diárias com o índice de calor, coloridas pelos Níveis de Calor NC1 a NC5 do protocolo da Prefeitura (seção 16).</li>
     <li>A Figura 1 ganhou a escala diária: cada dia é um ponto, com traço até o esperado sem calor, vermelho quando acima e azul quando abaixo. O esperado vem de um modelo com calor em t a t−3, reestimado para cada combinação de local e faixa etária (seção 11).</li>
+    <li>A Figura 1 ganhou o filtro de raça/cor (branca, preta, parda e o agregado de pretos, pardos e indígenas, todas as idades), combinado com o local do óbito (seção 11).</li>
     <li>A mortalidade da Figura 1 (semanal e diária) passou a começar em 2006; os modelos de RR seguem em 2012 (seção 11).</li>
     <li>Desfecho principal passou de uma lista de causas escolhida de antemão para todas as causas naturais; a lista a priori ficou como sensibilidade e filtro.</li>
     <li>O controle de tempo passou de 2 para 7 graus de liberdade por ano e o erro-padrão passou a ser robusto à autocorrelação (Newey–West); a autocorrelação dos resíduos caiu e os intervalos de confiança ficaram mais largos (seção 13).</li>
@@ -481,8 +485,16 @@ document.querySelectorAll("nav button").forEach(b=>b.onclick=()=>{
 /* ---------- série semanal ---------- */
 fillSel($("s-local"),LOCAIS.map(l=>({v:l,t:nm(l)})),"Todos os locais");
 fillSel($("s-faixa"),FAIXAS,"Todas as idades");
+fillSel($("s-raca"),[{v:"Todas",t:"Todas"},{v:"Branca",t:"Branca (referência)"},{v:"Preta",t:"Preta"},{v:"Parda",t:"Parda"},{v:"PPI",t:"Pretos, pardos e indígenas (PPI)"}],"Todas");
+const keyF1=()=>$("s-local").value+"|"+$("s-faixa").value+($("s-raca").value!=="Todas"?"|"+$("s-raca").value:"");
+function racaSync(){ const r=$("s-raca").value!=="Todas"; if(r) $("s-faixa").value="Todas as idades"; $("s-faixa").disabled=r;
+  $("s-faixa").title=r?"As séries por raça/cor são calculadas para todas as idades; volte a Todas em raça/cor para escolher uma faixa etária.":"" }
+function racaNota(F){ const rc=F&&F.rc; if(!rc){ $("s-raca-nota").textContent=""; return }
+  const tot=Object.values(rc).reduce((a,b)=>a+b,0), pc=v=>fn(100*(v||0)/tot,1)+"%", n=k=>rc[k]||0;
+  $("s-raca-nota").textContent=`Raça/cor (campo RACACOR do SIM) nos ${fn(tot)} óbitos naturais da série: branca ${pc(n("Branca"))}, parda ${pc(n("Parda"))}, preta ${pc(n("Preta"))}, amarela ${pc(n("Amarela"))}, indígena ${pc(n("Indígena"))} e sem cor informada ${pc(n("Ignorada"))}. Indígena (${fn(n("Indígena"))} óbitos) e amarela (${fn(n("Amarela"))}) não têm óbitos suficientes para uma série própria. Os indígenas entram no agregado PPI (preta, parda e indígena), e amarela e sem cor informada entram só em Todas. As séries por raça/cor valem para todas as idades.` }
 fillSel($("s-ini"),anos,anos[0]); fillSel($("s-fim"),anos,anos[anos.length-1]);
 ["s-local","s-faixa","s-crit","s-def","s-ini","s-fim","s-bar","s-lim","s-cor"].forEach(i=>$(i).onchange=drawSerie);
+$("s-raca").onchange=()=>{ racaSync(); drawSerie() };
 $("s-esc").onchange=()=>{ if($("s-esc").value==="dia"){ const f=+$("s-fim").value, i=+$("s-ini").value;           // escala diária: começa com os 3 últimos anos (5 mil pontos juntos não se leem)
     if(f-i+1>3){ const novo=Math.max(f-2,J.y0||anos[0],anos[0]); if([...$("s-ini").options].some(o=>+o.value===novo)) $("s-ini").value=novo } }
   drawSerie() };
@@ -514,18 +526,18 @@ function drawSerie(){
   if($("tab-serie").classList.contains("hide")) return;
   const dia=$("s-esc").value==="dia", pop=$("pop").value, F=F1[pop];
   $("s-critw").classList.toggle("hide",dia); $("s-defw").classList.toggle("hide",!dia);
-  $("s-h2").textContent=dia?"Óbitos diários por causas naturais: cada dia em relação ao esperado sem calor":"Óbitos semanais por causas naturais: observados, esperados e semanas de calor";
+  $("s-h2").textContent=(dia?"Óbitos diários por causas naturais: cada dia em relação ao esperado sem calor":"Óbitos semanais por causas naturais: observados, esperados e semanas de calor")+($("s-raca").value!=="Todas"?` (raça/cor: ${({PPI:"preta, parda e indígena"})[$("s-raca").value]||$("s-raca").value.toLowerCase()})`:"");
   if(!F){ if(chS){chS.destroy();chS=null} $("s-kpis").innerHTML=""; $("s-leg").innerHTML=""; $("i-serie").innerHTML=""; $("s-note").textContent="Carregando a série…";
     f1Ler(pop).then(()=>drawSerie()).catch(e=>{ $("s-note").textContent=e.message }); return }
   if(dia) return drawSerieDia(F);
   const sem=F.sem, nSem=sem.ini.length, cd=F.cd, cdi=()=>F.map;
-  const loc=$("s-local").value, fx=$("s-faixa").value, crit=$("s-crit").value;
-  const key=loc+"|"+fx, S=F.S[key];
+  const crit=$("s-crit").value; racaNota(F);
+  const key=keyF1(), S=F.S[key];
   const a=anos.indexOf(+$("s-ini").value), b=anos.indexOf(+$("s-fim").value);
   const y0=+$("s-ini").value, y1=Math.max(+$("s-fim").value,y0);
   const idx=[...Array(nSem).keys()].filter(i=>sem.ano[i]>=y0&&sem.ano[i]<=y1);
   if(chS){chS.destroy();chS=null}
-  if(!S){ $("s-kpis").innerHTML=""; $("s-leg").innerHTML=""; $("s-note").textContent="Menos de 300 óbitos nesta combinação de local e faixa etária no período: série não estimada."; return; }
+  if(!S){ $("s-kpis").innerHTML=""; $("s-leg").innerHTML=""; $("s-note").textContent="Menos de 300 óbitos nesta combinação de filtros no período: série não estimada."; return; }
   const pick=arr=>idx.map(i=>arr[i]);
   const labels=idx.map(i=>`SE ${sem.se[i]}/${sem.ano[i]}`);
   const es=pick(S.e), lo=pick(S.l), up=pick(S.u);
@@ -610,11 +622,11 @@ const pontoPlugin={id:"traco",beforeDatasetsDraw(c,_a,o){ if(!o) return;
     ctx.strokeStyle=v>e?o.acima:o.abaixo; ctx.globalAlpha=o.al; const px=x.getPixelForValue(i); ctx.beginPath(); ctx.moveTo(px,y.getPixelForValue(v)); ctx.lineTo(px,y.getPixelForValue(e)); ctx.stroke() }
   ctx.restore() }};
 function drawSerieDia(F){
-  const pop=$("pop").value, key=$("s-local").value+"|"+$("s-faixa").value, df=$("s-def").value;
+  const pop=$("pop").value, key=keyF1(), df=$("s-def").value; racaNota(F);
   if(chS){chS.destroy();chS=null}
   const zera=m=>{ $("s-kpis").innerHTML=""; $("s-leg").innerHTML=""; $("i-serie").innerHTML=""; $("s-note").textContent=m };
   const k=F.ix.get(key);
-  if(k==null){ zera("Menos de 300 óbitos nesta combinação de local e faixa etária no período: série não estimada."); return }
+  if(k==null){ zera("Menos de 300 óbitos nesta combinação de filtros no período: série não estimada."); return }
   const dias=F.dias, cd=F.cd, y0=+$("s-ini").value, y1=Math.max(+$("s-fim").value,y0);
   const idx=[]; for(let j=0;j<dias.length;j++){ const a=+dias[j].slice(0,4); if(a>=y0&&a<=y1) idx.push(j) }
   const n=idx.length, phi=F.f[df][k], rrm=F.r[df][k], O=F.o[k], E=F.e[df][k], XW=F.x[df], EV=F.ev[df];
@@ -676,7 +688,7 @@ function drawSerieDia(F){
     [isFinite(T.ac)?fn(T.ac)+"%":"–","dos "+fn(T.n)+" dias ficaram acima do esperado; "+(isFinite(T.sup)?fn(T.sup,1)+"% acima do limite de 95% (≈ 2,5% se calibrado)":"")]
   ].map(([v,l])=>`<div class="kpi"><div class="v">${v}</div><div class="l">${l}</div></div>`).join("");
   $("i-serie").innerHTML=`<span class="t">Interpretação</span>`+(H.n&&N.n?`Cada ponto é um dia: <b style="color:${ac}">vermelho</b> quando o número de óbitos ficou acima do esperado e <b style="color:${ab}">azul</b> quando ficou abaixo; o traço vertical liga o ponto ao esperado do dia. O <b>esperado é o que o modelo prevê sem calor</b>: tendência de longo prazo, sazonalidade anual e dia da semana, com o efeito de ${DEF1[df]} em t, t−1, t−2 e t−3 estimado e depois zerado. Por isso, nos dias expostos (contorno escuro), o observado fica em média acima do esperado: <b>${fn(H.O)}</b> óbitos contra <b>${fn(H.E,0)}</b> esperados no período mostrado (observado ÷ esperado = <b>${fr(H.raz)}</b>, ou ${fp(pct(H.raz))}); nos outros <b>${fn(N.n)}</b> dias, <b>${fn(N.O)}</b> contra <b>${fn(N.E,0)}</b> (<b>${fr(N.raz)}</b>). Na série inteira essas razões são exatamente o RR do modelo (${rrTxt}) e 1,00, por construção do ajuste. Um dia isolado varia por acaso (variação de Poisson, aumentada pela dispersão φ = ${fr(phi)}); só a diferença sistemática entre grupos de dias tem leitura. A exposição inclui o dia e os três anteriores, então um dia de calor aparece ligado a até quatro pontos com contorno escuro.`:`Poucos dias expostos no período mostrado para comparar.`);
-  $("s-note").textContent="Escala diária desde 2006 (o clima existe desde abril de 2007; antes disso o calor é tratado como ausente). O eixo vertical não começa em zero, para que as diferenças apareçam. O esperado vem de um modelo próprio para a combinação de local e faixa etária escolhida (φ = "+fr(phi)+"), reajustado a cada troca de filtro e de definição de calor. Os indicadores excluem COVID (barra cinza na base) e meses com registro incompleto no SIM (faixa cinza clara), onde o esperado não é traçado. Faixa de 95% de um dia = esperado ± 1,96 × raiz(φ × esperado); aparece ao passar o mouse." +
+  $("s-note").textContent="Escala diária desde 2006 (o clima existe desde abril de 2007; antes disso o calor é tratado como ausente). O eixo vertical não começa em zero, para que as diferenças apareçam. O esperado vem de um modelo próprio para a combinação de local, faixa etária e raça/cor escolhida (φ = "+fr(phi)+"), reajustado a cada troca de filtro e de definição de calor. Os indicadores excluem COVID (barra cinza na base) e meses com registro incompleto no SIM (faixa cinza clara), onde o esperado não é traçado. Faixa de 95% de um dia = esperado ± 1,96 × raiz(φ × esperado); aparece ao passar o mouse." +
     (bars?` Colunas ao fundo: ${BARRA_NOME[bv].toLowerCase()} de cada dia, no eixo da direita (°C)`+(modoNC?"; a cor é o Nível de Calor do protocolo da Prefeitura (reconstruído; ver seção 16 dos Métodos).":"."):"")+
     (n>2200?" Período longo: escolha menos anos em De e Até para ver os pontos com mais nitidez.":"");
   $("s-csv").onclick=()=>{let t="dia;observado;esperado_sem_calor;lim_inf;lim_sup;dia_de_calor;exposto_lag0a3;indice_calor_max;indice_calor_medio;temp_media;nivel_calor\n";const c1=v=>v==null?"":v.toFixed(1).replace(".",",");

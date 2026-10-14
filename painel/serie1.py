@@ -5,7 +5,9 @@ Semanal: esperado de quase-Poisson com spline de tempo (7 gl por ano), sem expos
 Diário: para cada definição de dia de calor (índice de calor máx. >= 36 °C, anomalia térmica z >= 1,96, ou NC2 a NC5 do protocolo) um modelo com o calor em t, t-1, t-2
 e t-3 (janela de 4 dias, como nos RR); o esperado é o contrafactual com o calor zerado. Dias sem dado de clima (antes de 17/04/2007; anomalia antes de 2012) entram
 no ajuste como dia sem calor. Cada combinação de local e faixa etária tem seu próprio modelo e sua dispersão φ.
-Mesmas combinações da série semanal original (mínimo de 300 óbitos)."""
+Mesmas combinações da série semanal original (mínimo de 300 óbitos).
+Raça/cor (RACACOR do SIM): além de local x faixa etária, há local x raça/cor (Branca, Preta, Parda e o agregado PPI = preta + parda + indígena; todas as idades), com o
+mesmo método. Indígena tem óbitos de menos para uma série própria e entra só no PPI; amarela e os óbitos sem cor entram só na série "Todas"."""
 import sys, os, json, warnings; warnings.filterwarnings("ignore")
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import numpy as np, pandas as pd, nucleo as nu
@@ -13,6 +15,12 @@ POP = os.environ.get("POP", "res"); A_ = "analise/"
 cx = nu.contexto(POP, inicio=nu.INICIO_SERIE, clima="heat/data/temp_df_longo.csv"); d = cx.d[cx.d.natural]; dias, An, C = cx.dias, cx.A, cx.clima
 print(POP, "óbitos naturais", len(d), "| de", dias[0].date(), "a", dias[-1].date(), "| meses fora:", [str(p) for p in cx.ruins], flush=True)
 Y = nu.series_local_faixa(d, dias)
+Y.update(nu.series_local_raca(d, dias))                                   # local x raça/cor (todas as idades): chave 'local|Todas as idades|raça'
+RC = d.raca.value_counts()
+assert RC.sum() == len(d)
+assert int(Y[("Todos os locais", "Todas as idades|PPI")].sum()) == int(RC.reindex(nu.PPI).fillna(0).sum()), "PPI não soma preta + parda + indígena"
+assert all(int(Y[("Todos os locais", f"Todas as idades|{r}")].sum()) == int(RC.get(r, 0)) for r in ("Branca", "Preta", "Parda")), "séries por raça não somam"
+print("raça/cor (óbitos naturais, série inteira):", RC.to_dict(), flush=True)
 cl = C.cl
 hi = cl.hi_max.to_numpy(float); z = C.an["t_med_z"].to_numpy(float); nc = nu.nivel_calor(cl)
 EV = {"ic": (hi >= nu.LIM_HI), "an": (z >= nu.LIM_Z), "nc": (np.nan_to_num(nc) >= 2)}          # NaN (sem clima) conta como dia sem calor
@@ -49,7 +57,7 @@ for (L, fx), y in Y.items():
 cl_ = dict(hi_max=[None if np.isnan(v) else round(float(v), 1) for v in hi],
            hi_med=[None if pd.isna(v) else round(float(v), 2) for v in cl.hi_med], t_med=[None if pd.isna(v) else round(float(v), 2) for v in cl.t_med],
            nc=[None if np.isnan(v) else int(v) for v in nc])
-out = dict(dias=[x.strftime("%Y-%m-%d") for x in dias], cl=cl_, sem=sem, S=S, k=K, o=O, e=E, f=F, r=R,
+out = dict(rc={k: int(v) for k, v in RC.items()}, dias=[x.strftime("%Y-%m-%d") for x in dias], cl=cl_, sem=sem, S=S, k=K, o=O, e=E, f=F, r=R,
            x={k: [int(v) for v in XW[k]] for k in XW}, ev={k: [int(v) for v in EV[k]] for k in EV},
            inc=[int(v) for v in An.inc], cov=[int(v) for v in An.covid], ok=[int(v) for v in ok_clima])
 json.dump(out, open(A_ + f"serie1_{POP}.json", "w"), separators=(",", ":"))

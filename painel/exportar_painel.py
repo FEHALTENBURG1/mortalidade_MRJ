@@ -29,8 +29,8 @@ for p in pops:
     if not os.path.exists(A + f"serie1_{p}.json"): continue
     Dd = json.load(open(A + f"serie1_{p}.json"))
     for i, k in enumerate(Dd["k"]):
-        L, F = k.split("|")
-        t = pd.DataFrame({"pop": p, "local": L, "faixa": F, "dia": Dd["dias"], "obs": Dd["o"][i]})
+        L, F, *R_ = k.split("|")                               # 'local|faixa' ou 'local|faixa|raça/cor'
+        t = pd.DataFrame({"pop": p, "local": L, "faixa": F, "raca": R_[0] if R_ else "Todas", "dia": Dd["dias"], "obs": Dd["o"][i]})
         for dn in ("ic", "an", "nc"):
             t["esp_" + dn] = [None if v is None else v / 10 for v in Dd["e"][dn][i]]
         sd.append(t)
