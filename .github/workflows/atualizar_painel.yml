@@ -1,0 +1,100 @@
+name: Atualizar painel (tabelas pré-calculadas e HTML)
+
+# Recalcula o painel a partir dos dois data lakes:
+#   - SIM:   Release `sim-mrj`   (silver_sim_mrj.tar.gz)        em FEHALTENBURG1/Dados_clima_MRJ ou FEHALTENBURG1/mortalidade_MRJ (vale o mais recente; variável SIM_REPOS)
+#   - Clima: Release `clima-mrj` (haat_diario_municipal.csv)    em FEHALTENBURG1/Dados_clima_MRJ (variável CLIMA_REPO)
+# Os arquivos são baixados por endereço público (https://github.com/<repo>/releases/download/<tag>/<arquivo>); o log mostra de onde veio cada um.
+# e publica no Release `painel-mrj` as tabelas lidas pelo app Shiny e o painel HTML autocontido.
+# Para também atualizar o GitHub Pages, crie a variável de repositório PUBLICAR_PAGES = true (copia o HTML para docs/).
+on:
+  workflow_run:
+    workflows: ["Atualizar SIM (MRJ)"]
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      pesada:
+        description: "Janelas de anos para horas x limiar e CID: completa (todas, mais lenta) ou reduzida (só janelas que começam em 2012 ou terminam no último ano)"
+        type: choice
+        options: [completa, reduzida]
+        default: completa
+  schedule:
+    - cron: "30 8 * * 1"        # segunda-feira, 05:30 (Brasília): pega também as atualizações do repositório de clima
+
+permissions:
+  contents: write
+
+concurrency:
+  group: painel
+  cancel-in-progress: false
+
+jobs:
+  painel:
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      RELEASE_TAG: painel-mrj
+      # Fontes lidas por endereço explícito (Releases públicos), então o workflow funciona rodando em qualquer um dos dois repositórios.
+      # SIM_REPOS lista os repositórios candidatos ao Release `sim-mrj`; vale o que tiver o arquivo mais recente.
+      # Para mudar, crie as variáveis de repositório SIM_REPOS (nomes separados por espaço) e CLIMA_REPO.
+      SIM_REPOS: ${{ vars.SIM_REPOS || 'FEHALTENBURG1/Dados_clima_MRJ FEHALTENBURG1/mortalidade_MRJ' }}
+      CLIMA_REPO: ${{ vars.CLIMA_REPO || 'FEHALTENBURG1/Dados_clima_MRJ' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: painel/requirements.txt
+      - name: Instalar dependências
+        run: pip install -r painel/requirements.txt
+      - name: Baixar silver do SIM e HAAT do clima
+        run: |
+          set -euo pipefail
+          mkdir -p entrada/sim
+          # data do arquivo no Release (cabeçalho Last-Modified); vazio se o endereço não existir
+          data_arquivo() { curl -sSIL --retry 3 "$1" | tr -d '\r' | awk '{s=tolower($0)} s ~ /^http/ {c=$2} s ~ /^last-modified:/ {l=substr($0,16)} END {if (c==200 && l!="") print l}'; }
+
+          melhor=""; melhor_t=0
+          for r in $SIM_REPOS; do
+            u="https://github.com/$r/releases/download/sim-mrj/silver_sim_mrj.tar.gz"
+            l=$(data_arquivo "$u" || true)
+            if [ -n "$l" ]; then
+              t=$(date -d "$l" +%s); echo "SIM  encontrado em $r (arquivo de $l)"
+              if [ "$t" -gt "$melhor_t" ]; then melhor="$r"; melhor_t=$t; fi
+            else
+              echo "SIM  não encontrado em $r: $u"
+            fi
+          done
+          [ -n "$melhor" ] || { echo "::error::Release sim-mrj com silver_sim_mrj.tar.gz não encontrado em: $SIM_REPOS"; exit 1; }
+          echo "SIM  usando $melhor"
+          curl -fSL --retry 3 --retry-delay 5 -o entrada/sim/silver_sim_mrj.tar.gz "https://github.com/$melhor/releases/download/sim-mrj/silver_sim_mrj.tar.gz"
+          tar -xzf entrada/sim/silver_sim_mrj.tar.gz -C entrada/sim
+
+          u="https://github.com/$CLIMA_REPO/releases/download/clima-mrj/haat_diario_municipal.csv"
+          [ -n "$(data_arquivo "$u" || true)" ] || { echo "::error::Clima não encontrado: $u (confira a tag clima-mrj e o nome do arquivo no repositório $CLIMA_REPO)"; exit 1; }
+          echo "CLIMA usando $CLIMA_REPO"
+          curl -fSL --retry 3 --retry-delay 5 -o entrada/haat_diario_municipal.csv "$u"
+
+          echo "SILVER_SHA=$(sha256sum entrada/sim/silver_sim_mrj.tar.gz | cut -d' ' -f1)" >> "$GITHUB_ENV"
+          ls -la entrada entrada/sim
+      - name: Calcular tabelas e HTML do painel
+        run: |
+          python painel/painel_pipeline.py --silver entrada/sim/silver --haat entrada/haat_diario_municipal.csv \
+            --aux painel/dados_auxiliares --saida painel_dados --trabalho trabalho_painel --silver-sha256 "$SILVER_SHA" \
+            --pesada "${{ inputs.pesada || 'completa' }}"
+          cp trabalho_painel/analise/painel_calor_mrj.html painel_dados/painel_calor_mrj.html
+      - name: Publicar Release painel-mrj
+        run: |
+          if ! gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            gh release create "$RELEASE_TAG" --title "Tabelas do painel mortalidade x calor" \
+              --notes "Tabelas pré-calculadas lidas pelo app Shiny e painel HTML. Atualizados automaticamente."
+          fi
+          gh release upload "$RELEASE_TAG" painel_dados/* --clobber
+      - name: Atualizar o GitHub Pages (opcional)
+        if: ${{ vars.PUBLICAR_PAGES == 'true' }}
+        run: |
+          mkdir -p docs && cp painel_dados/painel_calor_mrj.html docs/painel_calor_mrj.html
+          git config user.name "github-actions"; git config user.email "actions@users.noreply.github.com"
+          git add docs/painel_calor_mrj.html
+          git diff --cached --quiet || { git commit -m "Atualiza painel HTML"; git push; }
