@@ -1,0 +1,6 @@
+saida/modelos_*.rds
+saida/*.log
+painel_figura1.html
+painel_figura1_files/
+.quarto/
+entrada/

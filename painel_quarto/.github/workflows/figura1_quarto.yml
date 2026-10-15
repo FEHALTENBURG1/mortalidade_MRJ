@@ -1,0 +1,88 @@
+name: Figura 1 em R e Quarto (teste, sem substituir o painel em Python)
+
+# Recalcula a Figura 1 (modelo do João por segmento) a partir dos dois data lakes e publica o HTML no Release `painel-mrj`
+# com outro nome (figura1_quarto.html), sem tocar no painel_calor_mrj.html do workflow em Python.
+# Copie este arquivo para .github/workflows/ do repositório; a pasta painel_quarto/ fica na raiz, ao lado de painel/.
+on:
+  workflow_dispatch:
+    inputs:
+      pop:
+        description: "População: res (residentes que morreram no Rio) ou todos"
+        type: choice
+        options: [res, todos]
+        default: res
+
+permissions:
+  contents: write
+
+concurrency:
+  group: figura1-quarto
+  cancel-in-progress: false
+
+jobs:
+  figura1:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      RELEASE_TAG: painel-mrj
+      SIM_REPOS: ${{ vars.SIM_REPOS || 'FEHALTENBURG1/Dados_clima_MRJ FEHALTENBURG1/mortalidade_MRJ' }}
+      CLIMA_REPO: ${{ vars.CLIMA_REPO || 'FEHALTENBURG1/Dados_clima_MRJ' }}
+      PAINEL_POP: ${{ inputs.pop || 'res' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: r-lib/actions/setup-r@v2
+        with:
+          use-public-rspm: true
+      - uses: r-lib/actions/setup-r-dependencies@v2
+        with:
+          packages: |
+            any::mgcv
+            any::dlnm
+            any::nanoparquet
+            any::jsonlite
+            any::knitr
+            any::rmarkdown
+      - uses: quarto-dev/quarto-actions/setup@v2
+      - name: Baixar silver do SIM e HAAT do clima
+        run: |
+          set -euo pipefail
+          mkdir -p entrada/sim
+          data_arquivo() { curl -sSIL --retry 3 "$1" | tr -d '\r' | awk '{s=tolower($0)} s ~ /^http/ {c=$2} s ~ /^last-modified:/ {l=substr($0,16)} END {if (c==200 && l!="") print l}'; }
+          melhor=""; melhor_t=0
+          for r in $SIM_REPOS; do
+            u="https://github.com/$r/releases/download/sim-mrj/silver_sim_mrj.tar.gz"
+            l=$(data_arquivo "$u" || true)
+            if [ -n "$l" ]; then
+              t=$(date -d "$l" +%s); echo "SIM  encontrado em $r (arquivo de $l)"
+              if [ "$t" -gt "$melhor_t" ]; then melhor="$r"; melhor_t=$t; fi
+            else
+              echo "SIM  não encontrado em $r: $u"
+            fi
+          done
+          [ -n "$melhor" ] || { echo "::error::Release sim-mrj com silver_sim_mrj.tar.gz não encontrado em: $SIM_REPOS"; exit 1; }
+          echo "SIM  usando $melhor"
+          curl -fSL --retry 3 --retry-delay 5 -o entrada/sim/silver_sim_mrj.tar.gz "https://github.com/$melhor/releases/download/sim-mrj/silver_sim_mrj.tar.gz"
+          tar -xzf entrada/sim/silver_sim_mrj.tar.gz -C entrada/sim
+          u="https://github.com/$CLIMA_REPO/releases/download/clima-mrj/haat_diario_municipal.csv"
+          [ -n "$(data_arquivo "$u" || true)" ] || { echo "::error::Clima não encontrado: $u"; exit 1; }
+          echo "CLIMA usando $CLIMA_REPO"
+          curl -fSL --retry 3 --retry-delay 5 -o entrada/haat_diario_municipal.csv "$u"
+      - name: Testes das funções e do modelo
+        working-directory: painel_quarto
+        run: |
+          Rscript testes/teste_funcoes.R
+          Rscript testes/teste_modelo.R
+      - name: Ajustar os modelos da Figura 1
+        working-directory: painel_quarto
+        run: Rscript calcular_figura1.R --silver ../entrada/sim/silver --haat ../entrada/haat_diario_municipal.csv --pop "$PAINEL_POP" --cores 2
+      - name: Renderizar a página
+        working-directory: painel_quarto
+        run: quarto render painel_figura1.qmd
+      - name: Publicar no Release painel-mrj
+        run: |
+          if ! gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            gh release create "$RELEASE_TAG" --title "Tabelas do painel mortalidade x calor" --notes "Tabelas pré-calculadas e painel HTML. Atualizados automaticamente."
+          fi
+          cp painel_quarto/painel_figura1.html figura1_quarto.html
+          gh release upload "$RELEASE_TAG" figura1_quarto.html --clobber
