@@ -25,6 +25,10 @@ eh_natural <- function(cid) {
   !is.na(cid) & nchar(cid) >= 3 & substr(cid, 1, 1) %in% LETTERS[1:18] & !eh_covid(cid)
 }
 
+# Causas de óbito que o filtro do Shiny oferece (a Figura 1 em Quarto usa só "naturais"). COVID-19 = B34 truncado em 3 caracteres e códigos U.
+CAUSAS <- c(naturais = "Causas naturais (capítulos A a R, sem COVID-19)", todas_sem_covid = "Todas as causas, exceto COVID-19",
+            todas = "Todas as causas, com COVID-19", externas = "Causas externas (não naturais, sem COVID-19)")
+
 # ---------------------------------------------------------------- dados
 cnes7 <- function(x) {                          # código CNES com 7 dígitos (zeros à esquerda restaurados)
   x <- sub("\\.0$", "", trimws(as.character(x)))
@@ -165,6 +169,36 @@ series_segmentos <- function(d, dias) {
     }
   }
   Y
+}
+
+# ---------------------------------------------------------------- causas de óbito no cache do Shiny
+COLUNAS_SERIE <- c("dia", "idade_anos", "raca", "local", "faixa")      # o que series_segmentos() e a tabela de raça/cor usam
+
+# Versão do contexto que vai para o cache: mantém os óbitos naturais em cx$d e guarda os de outras causas, só com as colunas necessárias, em cx$d_extra
+# (com a marca covid). Descarta as tabelas que o painel não usa.
+enxugar_contexto <- function(cx) {
+  d <- cx$d_todas_causas
+  if (!is.null(d)) {
+    ex <- d[!d$natural, c(COLUNAS_SERIE, "cid")]
+    ex$covid <- eh_covid(ex$cid); ex$cid <- NULL
+    rownames(ex) <- NULL
+    cx$d_extra <- ex
+  }
+  cx$d_todas_causas <- NULL; cx$cl_completo <- NULL
+  cx
+}
+
+# Óbitos de uma causa (ver CAUSAS) a partir de um contexto enxuto (cx$d naturais + cx$d_extra).
+obitos_causa <- function(cx, causa) {
+  stopifnot(causa %in% names(CAUSAS))
+  nat <- cx$d[, COLUNAS_SERIE]
+  if (causa == "naturais") return(nat)
+  if (is.null(cx$d_extra)) stop("o cache não traz as causas não naturais: rode shiny/atualizar_cache.R --forcar")
+  ex <- cx$d_extra
+  switch(causa,
+         externas = ex[!ex$covid, COLUNAS_SERIE],
+         todas_sem_covid = rbind(nat, ex[!ex$covid, COLUNAS_SERIE]),
+         todas = rbind(nat, ex[, COLUNAS_SERIE]))
 }
 
 # ---------------------------------------------------------------- contexto completo

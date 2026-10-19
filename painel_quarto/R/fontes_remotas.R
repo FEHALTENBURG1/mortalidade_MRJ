@@ -167,7 +167,7 @@ atualizar_cache <- function(pasta, pops = c("res", "todos"), cnes, arquivo_regra
     for (pop in pops) {
       log("montando o contexto:", pop)
       cx <- contexto(silver, haat, cnes, pop)
-      cx$d_todas_causas <- NULL; cx$cl_completo <- NULL                # o painel só usa os óbitos naturais
+      cx <- enxugar_contexto(cx)                                       # óbitos naturais em cx$d, outras causas em cx$d_extra; sem as tabelas que o painel não usa
       meta <- list(chave = chave, pop = pop, repo_sim = v$sim$repo, sim_atualizado = v$sim$atualizado, clima_atualizado = v$clima$atualizado,
                    gerado_em = format(Sys.time(), "%Y-%m-%d %H:%M"), inicio = as.character(cx$inicio), fim = as.character(cx$fim),
                    n_obitos = nrow(cx$d), n_dias = length(cx$dias))

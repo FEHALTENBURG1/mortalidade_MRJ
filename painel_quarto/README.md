@@ -53,8 +53,20 @@ Como funciona:
 
 1. `shiny/atualizar_cache.R` (rodado por cron, fora das sessões) consulta a API de Releases e, se o SIM (`sim-mrj`) ou o HAAT (`clima-mrj`) mudaram, baixa os arquivos, monta o contexto de cada população e troca o cache em `shiny/cache/`. Sem versão nova, não baixa nada. Se o GitHub estiver fora do ar, mantém o cache.
 2. Ao abrir, a página recebe só o calendário e o clima (cerca de 90 KB compactados). Nenhum modelo é ajustado nessa hora.
-3. Ao escolher local, faixa etária, raça/cor e medida de calor, o navegador pede o recorte ao servidor. Um trabalhador (processo separado do `future`) ajusta só esse modelo, em 2 a 9 segundos, e o resultado vai para `shiny/cache/ajustes/<versão dos dados>/`. O mesmo recorte, pedido de novo por qualquer pessoa, sai do disco na hora. O navegador também guarda o que já recebeu.
+3. Ao escolher local, faixa etária, raça/cor, medida de calor, causa do óbito e retiradas do ajuste, o navegador pede o recorte ao servidor. Um trabalhador (processo separado do `future`) ajusta só esse modelo, em 2 a 9 segundos, e o resultado vai para `shiny/cache/ajustes/<versão dos dados>/`. O mesmo recorte, pedido de novo por qualquer pessoa, sai do disco na hora. O navegador também guarda o que já recebeu.
 4. Quando o cron traz uma versão nova dos dados, os ajustes da versão antiga são apagados. Quem estava com a página aberta vê o aviso para recarregar.
+
+### Causa do óbito e retiradas do ajuste
+
+Dois filtros existem só no app. O primeiro é a causa do óbito: causas naturais (padrão), todas as causas exceto COVID-19, todas as causas com COVID-19 e causas externas (óbitos fora dos capítulos A a R da CID-10, sem COVID-19). O segundo é um conjunto de três caixas, em "Retirar do ajuste do modelo":
+
+| Caixa | Efeito no ajuste |
+|:--|:--|
+| Período COVID | os dias do período saem do ajuste e o modelo perde o termo `s(COVID)` |
+| Meses com registro não consolidado | os dias desses meses saem do ajuste |
+| Dias sem dados de clima | esses dias e os 10 seguintes saem do ajuste (sem a caixa, contam como dias sem calor) |
+
+Sem nenhuma caixa marcada, o ajuste é o do modelo de referência. Os dias sem registro no SIM saem sempre. Cada combinação de causa e de caixas é um modelo diferente, guardado em disco como os demais (`<causa>`, o código de três dígitos 0/1 das caixas e o recorte entram no nome do arquivo). O mínimo de 300 óbitos conta só os dias que ficam no ajuste. O cache de dados passou a guardar também os óbitos de outras causas (cerca de 10 MB por população), então a primeira atualização depois desta versão refaz o cache: `Rscript shiny/atualizar_cache.R --forcar`.
 
 Instalação no servidor (exemplo com o repositório em `/opt/mortalidade_MRJ`, dono `shiny`):
 
@@ -87,7 +99,7 @@ PAINEL_CACHE=pasta_do_cache python3 testes/teste_app.py
 
 O teste do download e do cache sobe um servidor local que imita a API e os arquivos das Releases e confere: primeira carga, versão igual (não baixa de novo), versão nova (troca e apaga a antiga), tamanho errado, GitHub fora do ar e bloqueio de atualização simultânea. Sem as variáveis de ambiente roda só os testes que não precisam de dados.
 
-O teste do serviço compara o resultado de cada recorte ajustado sob demanda com o do `calcular_figura1.R` (referência gerada com os mesmos dados), confere o cache em disco, os códigos de erro e os pedidos assíncronos. O teste do app sobe o Shiny e percorre a página no navegador: figura inicial, troca de filtros, população, recorte sem óbitos suficientes, outra sessão lendo do disco e aviso de dados novos.
+O teste do serviço compara o resultado de cada recorte ajustado sob demanda com o do `calcular_figura1.R` (referência gerada com os mesmos dados), confere o cache em disco, os códigos de erro e os pedidos assíncronos. O teste do app sobe o Shiny e percorre a página no navegador: figura inicial, troca de filtros, causa do óbito e retiradas do ajuste, população, recorte sem óbitos suficientes, outra sessão lendo do disco e aviso de dados novos.
 
 O teste do modelo simula uma série com efeito do calor conhecido e confere que o RR e o excesso de óbitos são recuperados. O teste da página percorre todos os recortes nas duas escalas e confere que o recorte muda o resultado.
 
@@ -96,5 +108,6 @@ O teste do modelo simula uma série com efeito do calor conhecido e confere que 
 - Estudo ecológico, descritivo e exploratório; um modelo por recorte, sem correção para comparações múltiplas.
 - A faixa de 95% do esperado não inclui a incerteza dos coeficientes.
 - Não há termo de dia da semana, como no modelo do João.
-- O período de COVID entra no ajuste com um termo suave próprio, então o esperado nesse período não serve de comparação.
+- O período de COVID entra no ajuste com um termo suave próprio, então o esperado nesse período não serve de comparação. No app, a caixa de retirada remove o período do ajuste e deixa o esperado sem traçado nele.
+- Os óbitos são contados e não há taxa por população: o modelo não usa a população como offset, e o spline de tempo absorve a mudança lenta dela ao longo dos anos. O RR não depende disso, mas comparar níveis entre populações ou entre anos pede uma taxa.
 - O clima existe desde 17/04/2007; antes disso o calor entra como ausente.

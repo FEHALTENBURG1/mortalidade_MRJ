@@ -14,7 +14,7 @@ for (f in c("funcoes.R", "fontes_remotas.R")) fonte_utf8(file.path(raiz, "R", f)
 dir.create(pasta, showWarnings = FALSE, recursive = TRUE)
 for (pop in pops) {
   cx <- contexto(silver, haat, file.path(raiz, "dados_auxiliares", "cnes_estab.csv"), pop)
-  cx$d_todas_causas <- NULL; cx$cl_completo <- NULL
+  cx <- enxugar_contexto(cx)
   meta <- list(chave = chave, pop = pop, repo_sim = "local/teste", sim_atualizado = "2026-10-13T20:50:39Z", clima_atualizado = "2026-10-19T12:18:53Z",
                gerado_em = format(Sys.time(), "%Y-%m-%d %H:%M"), inicio = as.character(cx$inicio), fim = as.character(cx$fim), n_obitos = nrow(cx$d), n_dias = length(cx$dias))
   destino <- file.path(pasta, sprintf("contexto_%s_%s.rds", pop, chave))

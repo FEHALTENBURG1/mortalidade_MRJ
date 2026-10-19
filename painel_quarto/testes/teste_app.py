@@ -5,7 +5,7 @@ Uso, a partir da pasta do projeto:
 Sem --url, sobe o app com Rscript numa porta livre (precisa de R com shiny, future, promises, commonmark, mgcv, dlnm) e derruba no fim.
 O cache precisa existir (shiny/atualizar_cache.R ou testes/montar_cache_local.R) com as populações res e todos.
 
-Confere: a página abre sem erro, a figura é pedida ao servidor e desenhada, trocar local, faixa, raça/cor e medida de calor gera novos pedidos com
+Confere: a página abre sem erro, a causa do óbito e as três retiradas do ajuste (COVID, meses não consolidados, dias sem clima) geram modelos próprios, a figura é pedida ao servidor e desenhada, trocar local, faixa, raça/cor e medida de calor gera novos pedidos com
 resultados diferentes, o recorte já visto não volta ao servidor, a troca de população recarrega os dados e o texto de métodos, recortes com menos de
 300 óbitos não geram pedido, pedidos inválidos e de versão antiga de dados mostram mensagem, o CSV baixa e a aba de métodos mostra a versão dos dados."""
 import os, re, subprocess, sys, time, socket, signal, urllib.request
@@ -85,6 +85,42 @@ try:
         checar("raça/cor Parda: faixa etária travada e resultado próprio", pg.is_disabled("#s-faixa") and k_parda != k_ini, k_parda)
         sel("s-raca", "Todas"); pronto()
 
+        # 5b. causa do óbito e retiradas do ajuste (cada combinação é um modelo próprio, pedido ao servidor)
+        texto = lambda i: pg.inner_text("#" + i)
+        checar("controles novos: causa com 4 opções e três caixas de retirada",
+               opcoes("s-causa") == ["naturais", "todas_sem_covid", "todas", "externas"] and all(pg.query_selector(f"#s-r-{c}") for c in ("covid", "nc", "clima")))
+        checar("a caixa de COVID mostra as datas do período", re.search(r"\d\d/\d\d/\d{4} a \d\d/\d\d/\d{4}", texto("s-r-covid-t")) is not None, texto("s-r-covid-t"))
+        checar("padrão: nenhuma caixa marcada e causas naturais", not any(pg.is_checked(f"#s-r-{c}") for c in ("covid", "nc", "clima")) and pg.input_value("#s-causa") == "naturais")
+        sel("s-causa", "externas"); pronto(); k_ext = kpis()
+        checar("causas externas: desenha, muda os resultados e o título", len(k_ext) > 0 and k_ext != k_ini and pixels() > 2000 and "causas externas" in texto("sub") and "causas externas" in texto("s-h2"), (k_ini, k_ext))
+        sel("s-causa", "todas"); pronto(); k_todas_c = kpis()
+        checar("todas as causas, com COVID: resultado próprio e título", k_todas_c != k_ini and k_todas_c != k_ext and "com COVID-19" in texto("sub"), k_todas_c)
+        checar("nota de raça/cor acompanha a causa", "todas as causas, com COVID-19" in texto("s-raca-nota"), texto("s-raca-nota"))
+        sel("s-causa", "todas_sem_covid"); pronto(); k_sc = kpis()
+        checar("todas as causas, exceto COVID: resultado próprio", k_sc != k_todas_c and k_sc != k_ini and "exceto COVID-19" in texto("sub"), k_sc)
+        sel("s-causa", "naturais")
+        t_nat = medir(pronto)
+        checar("voltar a causas naturais sai da memória do navegador e reproduz o resultado inicial", t_nat < 1.5 and kpis() == k_ini and "causas naturais" in texto("sub"), f"{t_nat:.2f} s")
+        pg.check("#s-r-covid"); pronto(); k_sem_cov = kpis()
+        checar("retirar o período COVID: refaz o modelo, muda os resultados e a legenda", k_sem_cov != k_ini and "COVID (fora do ajuste)" in texto("s-leg") and "retirado do ajuste" in nota(), (k_ini, k_sem_cov, texto("s-leg")))
+        checar("retirar o período COVID: a nota do modelo informa que não há termo para ele", "não tem termo para ele" in nota(), nota())
+        if capturas: pg.screenshot(path=os.path.join(capturas, "app_02b_sem_covid.png"))
+        pg.check("#s-r-nc"); pronto(); k_sem_cov_nc = kpis()
+        checar("retirar também os meses não consolidados: novo modelo e legenda", k_sem_cov_nc != k_sem_cov and "Registro não consolidado (fora do ajuste)" in texto("s-leg"), texto("s-leg"))
+        pg.uncheck("#s-r-covid"); pg.uncheck("#s-r-nc"); pg.check("#s-r-clima"); pronto(); k_clima = kpis()
+        checar("retirar dias sem clima (e os 10 seguintes): novo modelo e nota", len(k_clima) > 0 and "sem dados de clima e os 10 dias seguintes" in nota() and pixels() > 2000, nota()[-300:])
+        pg.uncheck("#s-r-clima")
+        t_pad = medir(pronto)
+        checar("desmarcar tudo volta ao resultado inicial, na hora", t_pad < 1.5 and kpis() == k_ini and "COVID (termo próprio no modelo)" in texto("s-leg"), f"{t_pad:.2f} s")
+        sel("s-causa", "externas"); pg.check("#s-r-covid"); pg.check("#s-r-nc"); pronto()
+        checar("causas externas com COVID e meses não consolidados retirados desenha", pixels() > 2000 and len(kpis()) > 0)
+        sel("s-local", "Ignorado"); sel("s-faixa", "30-39")
+        esperar_nota("Menos de 300 óbitos", 5000)
+        checar("depois das retiradas, recorte com poucos óbitos no ajuste informa o limite sem pedir ao servidor", "no ajuste" in nota(), nota())
+        sel("s-local", "Todos os locais"); sel("s-faixa", "Todas as idades")
+        pg.uncheck("#s-r-covid"); pg.uncheck("#s-r-nc"); sel("s-causa", "naturais"); pronto()
+        checar("estado restaurado para o padrão", kpis() == k_ini)
+
         # 6. escala diária e CSV
         sel("s-esc", "dia"); pronto()
         checar("escala diária desenha", pixels() > 2000)
@@ -92,6 +128,7 @@ try:
         with pg.expect_download(timeout=15000) as d:
             pg.click("#s-csv")
         caminho = d.value.path(); txt = open(caminho, encoding="utf-8-sig").read()
+        checar("o nome do CSV identifica a causa", "_naturais.csv" in d.value.suggested_filename, d.value.suggested_filename)
         checar("CSV baixa com cabeçalho e linhas", txt.count("\n") > 100, txt[:200])
 
         # 7. recorte com menos de 300 óbitos: mensagem, sem pedido ao servidor
@@ -104,6 +141,8 @@ try:
         pg.evaluate("""()=>Shiny.setInputValue('pedido',{key:'Local inexistente|Todas as idades',ex:'horas',pop:'res',chave:'x',n:99},{priority:'event'})""")
         pg.evaluate("""()=>Shiny.setInputValue('pedido',{key:1,ex:null},{priority:'event'})""")
         pg.evaluate("""()=>Shiny.setInputValue('pedido','lixo',{priority:'event'})""")
+        for causa, opc in (("xx", "000"), ("naturais", "2"), ("naturais", "1000"), ("todas", "abc")):
+            pg.evaluate("""([c,o])=>Shiny.setInputValue('pedido',{key:'Todos os locais|Todas as idades',ex:'horas',pop:'res',chave:'x',causa:c,opc:o,n:200},{priority:'event'})""", [causa, opc])
         time.sleep(1.5)
         sel("s-local", "UPA / pronto atendimento"); pronto()
         checar("app segue respondendo depois de pedidos malformados", len(kpis()) > 0 and not erros, erros)
@@ -116,6 +155,7 @@ try:
         pg.wait_for_function("document.getElementById('tab-sobre').innerText.includes('todos os óbitos ocorridos no Rio, residentes ou não')", timeout=15000)
         sobre = pg.inner_text("#tab-sobre")
         checar("métodos mudam com a população", "residentes ou não" in sobre)
+        checar("métodos explicam a causa do óbito e as retiradas do ajuste", "Causa do óbito" in sobre and "Retirar períodos do ajuste" in sobre and "não há taxa por população" in sobre, sobre[:300])
         checar("métodos mostram a versão dos dados", "Versão dos dados" in sobre and "UTC" in sobre, sobre[-400:])
         checar("métodos sem marcação crua", "##" not in sobre and "**" not in sobre and "```" not in sobre)
         if capturas: pg.screenshot(path=os.path.join(capturas, "app_03_metodos.png"), full_page=True)

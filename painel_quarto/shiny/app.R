@@ -38,10 +38,11 @@ base_info <- function(pop) {
   if (!is.null(b) && identical(b$chave, m$chave)) return(b)
   P <- obter_P(pasta, pop)
   if (is.null(P)) return(NULL)
-  base <- base_sob_demanda(P)
+  elig <- obter_elegibilidade(pasta, pop, P)
+  base <- base_sob_demanda(P, elig)
   M <- jsonlite::fromJSON(json_utf8(base$meta), simplifyVector = TRUE)             # mesma forma que o Quarto lê do resumo
-  b <- list(chave = P$chave, elegiveis = P$elegiveis,
-            json_base = json_utf8(base), json_troca = json_utf8(list(meta = base$meta, rc = base$rc)),
+  b <- list(chave = P$chave, elegiveis = elig,
+            json_base = json_utf8(base), json_troca = json_utf8(list(meta = base$meta, rc = base$rc, rcs = base$rcs)),
             metodos = texto_metodos(M, sum(is.na(P$cx$d$idade_anos)), NULL, base$meta$dados))
   if (exists(pop, envir = .servico, inherits = FALSE)) rm(list = pop, envir = .servico)
   assign(pop, b, envir = .base)
@@ -51,10 +52,17 @@ base_info <- function(pop) {
 # ---------------------------------------------------------------- página
 corpo_html <- paste(readLines(file.path(raiz, "assets", "figura1_corpo.html"), encoding = "UTF-8", warn = FALSE), collapse = "\n")
 
-seletor_pop <- function(pops, pop) {
-  if (length(pops) < 2) return("")
-  opc <- paste0(sprintf("<option value=\"%s\"%s>%s</option>", pops, ifelse(pops == pop, " selected", ""), ROTULO_POP[pops]), collapse = "")
-  sprintf("\n    <label>População<select id=\"s-pop\">%s</select></label>", opc)
+# Controles que só existem no app: população, causa do óbito e o que retirar do ajuste (o JavaScript da figura os reconhece pelo id).
+controles_shiny <- function(pops, pop) {
+  opc_pop <- if (length(pops) < 2) "" else sprintf("\n    <label>População<select id=\"s-pop\">%s</select></label>",
+    paste0(sprintf("<option value=\"%s\"%s>%s</option>", pops, ifelse(pops == pop, " selected", ""), ROTULO_POP[pops]), collapse = ""))
+  causas <- sprintf("\n    <label>Causa do óbito<select id=\"s-causa\">%s</select></label>",
+                    paste0(sprintf("<option value=\"%s\">%s</option>", names(CAUSAS), CAUSAS), collapse = ""))
+  retirar <- paste0("\n    <fieldset class=\"ret\"><legend>Retirar do ajuste do modelo</legend>",
+    "<label class=\"chk\"><input type=\"checkbox\" id=\"s-r-covid\"> <span id=\"s-r-covid-t\">Período COVID</span></label>",
+    "<label class=\"chk\"><input type=\"checkbox\" id=\"s-r-nc\"> Meses com registro não consolidado</label>",
+    "<label class=\"chk\"><input type=\"checkbox\" id=\"s-r-clima\"> Dias sem dados de clima (e os 10 seguintes)</label></fieldset>")
+  paste0(opc_pop, causas, retirar)
 }
 
 modelo_pagina <- paste0(
@@ -92,7 +100,7 @@ ui <- function(req) {
   b <- base_info(pop)
   if (is.null(b)) { disparar_atualizacao(); return(pagina_sem_cache()) }
   htmlTemplate(text_ = modelo_pagina, document_ = TRUE,
-               corpo = HTML(sub("<div class=\"ctl\">", paste0("<div class=\"ctl\">", seletor_pop(pops, pop)), corpo_html, fixed = TRUE)),
+               corpo = HTML(sub("<div class=\"ctl\">", paste0("<div class=\"ctl\">", controles_shiny(pops, pop)), corpo_html, fixed = TRUE)),
                metodos = uiOutput("metodos"), dados = dados_b64(b$json_base))
 }
 
@@ -126,15 +134,17 @@ server <- function(input, output, session) {
 
   observeEvent(input$pedido, {
     q <- input$pedido
-    if (!is.list(q) || !all(c("key", "ex", "pop", "chave") %in% names(q)) || !all(vapply(q[c("key", "ex", "pop", "chave")], texto1, TRUE))) return()
-    eco <- list(pop = q$pop, key = q$key, ex = q$ex, chave = q$chave)
+    campos <- c("key", "ex", "pop", "chave", "causa", "opc")
+    if (!is.list(q) || !all(campos %in% names(q)) || !all(vapply(q[campos], texto1, TRUE))) return()
+    eco <- list(pop = q$pop, key = q$key, ex = q$ex, chave = q$chave, causa = q$causa, opc = q$opc)
     erro <- function(codigo, mensagem) session$sendCustomMessage("erro_segmento", c(eco, list(codigo = codigo, mensagem = mensagem)))
     b <- if (q$pop %in% names(ROTULO_POP)) base_info(q$pop) else NULL
     if (is.null(b)) return(erro("recorte_invalido", "população fora da lista"))
     if (!identical(b$chave, q$chave)) return(erro("dados_mudaram", "os dados foram atualizados no servidor"))
-    if (!q$key %in% b$elegiveis || !q$ex %in% names(EXPOSICOES)) return(erro("recorte_invalido", "recorte ou medida de calor fora da lista"))
+    if (!q$causa %in% names(CAUSAS) || !codigo_valido(q$opc) || !q$ex %in% names(EXPOSICOES)) return(erro("recorte_invalido", "causa, retiradas ou medida de calor fora da lista"))
+    if (!q$key %in% b$elegiveis[[q$causa]][[q$opc]]) return(erro("recorte_invalido", "recorte fora da lista ou com poucos óbitos no ajuste"))
 
-    pedir_ajuste(raiz, pasta, q$pop, q$chave, q$key, q$ex) |>
+    pedir_ajuste(raiz, pasta, q$pop, q$chave, q$key, q$ex, q$causa, q$opc) |>
       promises::then(
         onFulfilled = function(r) if (!session$isClosed()) session$sendCustomMessage("segmento", c(eco, list(json = json_utf8(r$payload)))),
         onRejected = function(e) if (!session$isClosed()) { x <- erro_para_cliente(e); erro(x$codigo, x$mensagem) })

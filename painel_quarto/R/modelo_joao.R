@@ -27,6 +27,22 @@ base_modelo <- function(cx) {
   b
 }
 
+# Dias fora do ajuste (resposta ausente). Sempre saem os dias sem registro no SIM. Opcionalmente, e na ordem das caixas do app:
+#   covid = os dias do período COVID (sem eles, o termo suave do período some do modelo);
+#   nc    = os dias de meses com registro não consolidado;
+#   clima = os dias sem dado de clima e os LAG dias seguintes (a cross-basis deles dependeria de exposição ausente).
+# opc: list(covid, nc, clima) de TRUE/FALSE. Sem opc, só os dias sem registro (o que a Figura 1 em Quarto faz).
+fora_ajuste <- function(cx, opc = list(covid = FALSE, nc = FALSE, clima = FALSE)) {
+  fora <- cx$sem_registro
+  if (isTRUE(opc$covid)) fora <- fora | cx$covid
+  if (isTRUE(opc$nc)) fora <- fora | cx$nao_consolidado
+  if (isTRUE(opc$clima)) {
+    sem <- which(is.na(cx$clima$hi_max)); n <- length(fora)
+    fora[unique(pmin(rep(sem, each = LAG + 1) + 0:LAG, n))] <- TRUE
+  }
+  fora
+}
+
 k_tempo <- function(n_dias) max(round(K_REF * n_dias / (ANOS_REF * 365.25)), 6)
 
 # Cross-basis de uma exposição. Os 10 dias anteriores ao início entram como dia sem calor, para a cross-basis valer desde o primeiro dia.

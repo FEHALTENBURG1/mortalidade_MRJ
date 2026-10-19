@@ -48,4 +48,17 @@ ok(all(w$l <= w$e | is.na(w$e)) && all(w$e <= w$u | is.na(w$e)), "faixa semanal 
 cbh <- cross_exposicao(b, EXPOSICOES$haat)
 rh <- ajustar_segmento(y, b, cbh, cx$sem_registro, kt)
 ok(is.finite(rh$rr[1, 1]) && rh$rr[1, 1] > 1, sprintf("HAAT: RR acumulado com 5 °C·h acima de 1 (%.3f)", rh$rr[1, 1]))
+# fora_ajuste(): o que cada caixa de "retirar do ajuste" tira
+d3 <- seq(as.Date("2020-01-01"), by = "day", length.out = 200); n3 <- length(d3)
+cx3 <- list(dias = d3, sem_registro = rep(FALSE, n3), covid = rep(FALSE, n3), nao_consolidado = rep(FALSE, n3), clima = data.frame(dia = d3, hi_max = rep(30, n3)))
+cx3$sem_registro[5] <- TRUE; cx3$covid[20:40] <- TRUE; cx3$nao_consolidado[60:70] <- TRUE; cx3$clima$hi_max[c(100, 101, 195)] <- NA
+f <- function(...) fora_ajuste(cx3, modifyList(list(covid = FALSE, nc = FALSE, clima = FALSE), list(...)))
+ok(identical(f(), cx3$sem_registro), "retiradas: sem nenhuma caixa, só os dias sem registro saem do ajuste")
+ok(identical(f(covid = TRUE), cx3$sem_registro | cx3$covid), "retiradas: período COVID")
+ok(identical(f(nc = TRUE), cx3$sem_registro | cx3$nao_consolidado), "retiradas: meses não consolidados")
+fc <- f(clima = TRUE)
+ok(identical(which(fc & !cx3$sem_registro), c(100:111, 195:200)), "retiradas: dia sem clima e os dez seguintes, até o fim da série")
+ok(identical(f(covid = TRUE, nc = TRUE, clima = TRUE), cx3$sem_registro | cx3$covid | cx3$nao_consolidado | fc), "retiradas: as três juntas somam os dias retirados")
+cx3$clima$hi_max <- 30
+ok(identical(fora_ajuste(cx3, list(clima = TRUE)), cx3$sem_registro), "retiradas: sem dia sem clima, a caixa não tira nada")
 cat("\nTodos os testes do modelo passaram.\n")
