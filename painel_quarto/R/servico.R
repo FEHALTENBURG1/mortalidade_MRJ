@@ -24,7 +24,7 @@ preparar_modelo <- function(cx) {
   sem <- semanas(cx$dias)
   g <- factor(as.character(sem$ini), levels = as.character(sem$ini_ok))
   list(cx = cx, Yc = new.env(), b = base_modelo(cx), kt = k_tempo(length(cx$dias)), sem = sem,
-       cov_w = as.logical(tapply(cx$covid, g, any)), cbi = new.env())
+       cov_w = as.logical(tapply(cx$covid, g, any)), cbi = new.env(), Rc = new.env())
 }
 
 # Séries diárias por segmento de uma causa (calculadas na primeira vez que a causa é pedida).
@@ -62,27 +62,35 @@ cbi_de <- function(P, expo) {
   P$cbi[[expo]]
 }
 
-# Medida de calor válida: uma das EXPOSICOES (modelo de referência) ou "mapa<K>" (coluna do mapa de horas por limiar, K em LIMIARES).
-expo_valida <- function(expo) is.character(expo) && length(expo) == 1 && !is.na(expo) && (expo %in% names(EXPOSICOES) || !is.na(limiar_do_id(expo)))
+# Pedido válido: uma das EXPOSICOES (modelo de referência), "mapa<K>" (coluna do mapa de horas por limiar, K em LIMIARES) ou um pedido da aba de causas
+# específicas ("cidlista", "cid_<CID>_<medida>", "cidsem_<CID>_<medida>"; ver cid_do_id()).
+expo_valida <- function(expo) is.character(expo) && length(expo) == 1 && !is.na(expo) &&
+  (expo %in% names(EXPOSICOES) || !is.na(limiar_do_id(expo)) || !is.null(cid_do_id(expo)))
 
 # Ajusta um recorte (chave "local|faixa" ou "local|Todas as idades|raça") para uma medida de calor, uma causa e um conjunto de retiradas;
 # devolve o payload da figura (ou, para "mapa<K>", o payload da coluna K do mapa).
 ajustar_recorte <- function(P, key, expo, causa = "naturais", cod = "000") {
-  y <- y_causa(P, causa)[[key]]
-  stopifnot(!is.null(y), expo_valida(expo), codigo_valido(cod))
+  stopifnot(expo_valida(expo), codigo_valido(cod))
+  y <- y_do_pedido(P, causa, key, expo)
+  stopifnot(!is.null(y))
+  fora <- fora_ajuste(P$cx, opc_de_codigo(cod))
   K <- limiar_do_id(expo)
-  if (!is.na(K)) return(ajustar_mapa_limiar(y, P$b, P$cx$clima[[paste0("num_hr_", K)]], fora_ajuste(P$cx, opc_de_codigo(cod)), P$kt, K))
-  r <- ajustar_segmento(y, P$b, cbi_de(P, expo), fora_ajuste(P$cx, opc_de_codigo(cod)), P$kt)
+  if (!is.na(K)) return(ajustar_mapa_limiar(y, P$b, P$cx$clima[[paste0("num_hr_", K)]], fora, P$kt, K))
+  pc <- cid_do_id(expo)
+  if (!is.null(pc)) return(ajustar_pedido_cid(P, pc, key, causa, cod, y, fora))
+  r <- ajustar_segmento(y, P$b, cbi_de(P, expo), fora, P$kt)
   payload_segmento(r, y, P$sem, P$cov_w, curvas = TRUE)
 }
 
 # Dados-base da figura (calendário, clima, sinalizações) mais o que o navegador precisa saber no modo sob demanda: causas, recortes elegíveis
 # para cada combinação de causa e retiradas e a distribuição de raça/cor de cada causa. `elig` = elegibilidade(P), lida do disco quando existe.
-base_sob_demanda <- function(P, elig = elegibilidade(P)) {
+base_sob_demanda <- function(P, elig = elegibilidade(P), cid_nomes = NULL) {
   b <- base_figura1(P$cx, P$kt)
   b$meta$elegiveis <- lapply(elig, function(porcod) lapply(porcod, I))
   b$meta$causas <- as.list(CAUSAS)
   b$meta$sob_demanda <- TRUE
+  b$meta$cid_min <- CID_MIN
+  if (!is.null(cid_nomes)) b$meta$cid_nomes <- as.list(cid_nomes)
   b$meta$dados <- list(chave = P$meta$chave, sim_atualizado = P$meta$sim_atualizado, clima_atualizado = P$meta$clima_atualizado, repo_sim = P$meta$repo_sim,
                        gerado_em = P$meta$gerado_em)
   b$rcs <- sapply(names(CAUSAS), function(causa) { rc <- table(obitos_causa(P$cx, causa)$raca); as.list(setNames(as.integer(rc), names(rc))) }, simplify = FALSE)
@@ -98,6 +106,88 @@ obter_elegibilidade <- function(pasta, pop, P) {
   tmp <- paste0(f, ".", Sys.getpid(), ".parte"); saveRDS(x, tmp); file.rename(tmp, f)
   unlink(setdiff(Sys.glob(file.path(pasta, sprintf("elegibilidade_%s_*.rds", pop))), f))
   x
+}
+
+# ---------------------------------------------------------------- causas específicas (CID-10)
+# A aba de causas específicas avalia, para um recorte (local, faixa etária ou raça/cor), cada causa básica de 3 caracteres com pelo menos CID_MIN óbitos no
+# ajuste. Cada causa é um modelo de referência próprio. Os pedidos usam o campo "medida de calor" do protocolo com identificadores próprios:
+#   cidlista               causas avaliadas no recorte e o número de óbitos de cada uma (sem ajuste de modelo)
+#   cid_<CID>_<medida>     RR nos dois níveis de referência da medida (horas ou haat), com IC 95% e valor de p
+#   cidsem_<CID>_<medida>  o mesmo ajuste com a série semanal observada e esperada da causa (a Figura 1 de uma causa)
+CID_MIN <- 1500
+
+cid_do_id <- function(id) {
+  if (!is.character(id) || length(id) != 1 || is.na(id)) return(NULL)
+  if (identical(id, "cidlista")) return(list(tipo = "cidlista", cid = NA_character_, medida = NA_character_))
+  m <- regmatches(id, regexec("^(cid|cidsem)_([A-Z][0-9]{2})_(horas|haat)$", id))[[1]]
+  if (length(m) == 4) list(tipo = m[2], cid = m[3], medida = m[4]) else NULL
+}
+
+ler_cid_nomes <- function(raiz) jsonlite::fromJSON(file.path(raiz, "dados_auxiliares", "cid_nomes.json"))
+
+# Óbitos de uma causa (ver CAUSAS) com a causa básica de 3 caracteres, a partir de um contexto enxuto.
+obitos_causa_cid <- function(cx, causa) {
+  stopifnot(causa %in% names(CAUSAS))
+  cols <- c(COLUNAS_SERIE, "cid")
+  nat <- cx$d[, cols]
+  if (causa == "naturais") return(nat)
+  if (is.null(cx$d_extra$cid)) stop("recorte_invalido: o cache do servidor não traz a causa básica dos óbitos não naturais; atualize-o com shiny/atualizar_cache.R --forcar", call. = FALSE)
+  ex <- cx$d_extra
+  switch(causa,
+         externas = ex[!ex$covid, cols],
+         todas_sem_covid = rbind(nat, ex[!ex$covid, cols]),
+         todas = rbind(nat, ex[, cols]))
+}
+
+# Óbitos do recorte `key` na causa `causa` (dia como posição no calendário e causa básica). Fica na memória do processo; só os últimos recortes são mantidos.
+obitos_recorte_cid <- function(P, causa, key) {
+  id <- paste(causa, key, sep = "\r")
+  if (!is.null(P$Rc[[id]])) return(P$Rc[[id]])
+  d <- obitos_causa_cid(P$cx, causa)
+  p <- strsplit(key, "|", fixed = TRUE)[[1]]
+  sel <- rep(TRUE, nrow(d))
+  if (p[1] != "Todos os locais") sel <- sel & d$local == p[1]
+  if (p[2] != "Todas as idades") sel <- sel & d$faixa %in% p[2]
+  if (length(p) >= 3) sel <- sel & (if (p[3] == "PPI") d$raca %in% PPI else d$raca == p[3])
+  r <- list(dia = match(as.integer(d$dia[sel]), as.integer(P$cx$dias)), cid = d$cid[sel], n_dias = length(P$cx$dias))
+  velhos <- setdiff(ls(P$Rc), id)
+  if (length(velhos) >= 4) rm(list = velhos, envir = P$Rc)
+  assign(id, r, envir = P$Rc)
+  r
+}
+
+# Série diária de óbitos de uma causa básica no recorte.
+y_cid <- function(P, causa, key, cid) {
+  r <- obitos_recorte_cid(P, causa, key)
+  tabulate(r$dia[r$cid == cid], nbins = r$n_dias)
+}
+
+# Série diária do pedido (segmento da Figura 1, coluna do mapa ou causa específica); NULL se o recorte não existe.
+y_do_pedido <- function(P, causa, key, expo) {
+  y <- y_causa(P, causa)[[key]]
+  pc <- cid_do_id(expo)
+  if (is.null(y) || is.null(pc) || pc$tipo == "cidlista") return(y)
+  y_cid(P, causa, key, pc$cid)
+}
+
+# Causas avaliadas no recorte: as com pelo menos CID_MIN óbitos nos dias do ajuste, da maior para a menor.
+lista_cid <- function(P, causa, cod, key) {
+  r <- obitos_recorte_cid(P, causa, key)
+  fora <- fora_ajuste(P$cx, opc_de_codigo(cod))
+  ok <- !is.na(r$dia); ok[ok] <- !fora[r$dia[ok]]
+  tb <- table(r$cid[ok]); tb <- sort(tb[tb >= CID_MIN], decreasing = TRUE)
+  list(tipo = "cidlista", n_dias_ajuste = sum(!fora), cid = I(names(tb)), n = I(as.integer(tb)))
+}
+
+# Ajuste de uma causa. Payload leve (cid_*): RR nos dois níveis de referência, IC 95% e valor de p (aproximação normal do log do RR).
+# Com série semanal (cidsem_*): o payload completo de um recorte da Figura 1, para a causa.
+ajustar_pedido_cid <- function(P, pc, key, causa, cod, y, fora) {
+  if (pc$tipo == "cidlista") return(lista_cid(P, causa, cod, key))
+  r <- ajustar_segmento(y, P$b, cbi_de(P, pc$medida), fora, P$kt)
+  if (pc$tipo == "cidsem") return(c(list(tipo = "cidsem", cid = pc$cid, medida = pc$medida), payload_segmento(r, y, P$sem, P$cov_w, curvas = FALSE)))
+  list(tipo = "cid", cid = pc$cid, medida = pc$medida, n = sum(y[!fora]), ref = I(EXPOSICOES[[pc$medida]]$ref),
+       rr = arred(r$rr["rr", ], 4), lo = arred(r$rr["lo", ], 4), hi = arred(r$rr["hi", ], 4),
+       p = unname(signif(2 * pnorm(-abs(log(r$rr["rr", ]) / r$se)), 4)), f = r$fam, d = arred(r$disp, 3))
 }
 
 # ---------------------------------------------------------------- cache de ajustes em disco
@@ -139,9 +229,10 @@ executar_ajuste <- function(pasta, pop, chave, key, expo, causa = "naturais", co
   if (!is.null(x)) return(list(payload = x, do_cache = TRUE, segundos = 0))
   P <- obter_P(pasta, pop, chave)
   if (is.null(P)) stop("dados_mudaram: o cache de dados mudou de versão; recarregue a página", call. = FALSE)
-  y <- if (expo_valida(expo)) y_causa(P, causa)[[key]] else NULL
+  y <- if (expo_valida(expo)) y_do_pedido(P, causa, key, expo) else NULL
   if (is.null(y)) stop("recorte_invalido: recorte ou medida de calor não reconhecidos", call. = FALSE)
-  if (sum(y[!fora_ajuste(P$cx, opc_de_codigo(cod))]) < MIN_OBITOS) stop("recorte_invalido: óbitos insuficientes no ajuste", call. = FALSE)
+  minimo <- if (!is.null(cid_do_id(expo)) && cid_do_id(expo)$tipo != "cidlista") CID_MIN else MIN_OBITOS
+  if (sum(y[!fora_ajuste(P$cx, opc_de_codigo(cod))]) < minimo) stop("recorte_invalido: óbitos insuficientes no ajuste", call. = FALSE)
   t0 <- Sys.time()
   x <- ajustar_recorte(P, key, expo, causa, cod)
   gravar_ajuste(x, pasta, chave, pop, expo, key, causa, cod)

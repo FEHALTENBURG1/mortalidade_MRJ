@@ -221,6 +221,60 @@ try:
         sel("x-local2", "__sem__"); xpronto()
         checar("sem comparação de novo: a aba volta ao recorte único", not visivel("y-kpis") and xk() == xk_ini)
 
+        # 5f. aba de causas específicas (CID-10): um modelo por causa, valor q de Benjamini e Hochberg na família escolhida
+        # (precisa de um cache com a causa básica de cada óbito; com cache antigo o servidor avisa e esta parte é pulada)
+        kcod = lambda: pg.evaluate("()=>[...document.querySelectorAll('#k-fig g[data-c]')].map(g=>g.dataset.c)")
+        ktit = lambda: pg.evaluate("()=>[...document.querySelectorAll('#k-fig g[data-c] title')].map(t=>t.textContent)")
+        kpronto = lambda t=420000: pg.wait_for_function("document.getElementById('k-prog').innerText==='' && /causas avaliadas|Nenhuma causa|Menos de/.test(document.getElementById('k-interp').innerText + document.getElementById('k-note').innerText)", timeout=t)
+        num_br = lambda t: 0.0005 if t.startswith("<") else float(t.replace(",", "."))
+        pg.click("nav button[data-tab=cid]")
+        pg.wait_for_function("!document.getElementById('tab-cid').classList.contains('hide')", timeout=5000)
+        checar("aba CID: filtros de recorte, medida, nível, conjunto e capítulo, e filtros de causa e retiradas próprios",
+               opcoes("k-exp") == ["horas", "haat"] and opcoes("k-conj") == ["todas", "apriori"] and len(opcoes("k-cap")) == 19 and len(opcoes("k-nivel")) == 2
+               and opcoes("k-causa") == ["naturais", "todas_sem_covid", "todas", "externas"] and all(pg.query_selector(f"#k-r-{c}") for c in ("covid", "nc", "clima")))
+        pg.wait_for_function("document.getElementById('k-prog').innerText!=='' || document.querySelectorAll('#k-fig g[data-c]').length>0 || document.getElementById('k-note').innerText!==''", timeout=120000)
+        pg.wait_for_function("!document.getElementById('k-prog').innerText.startsWith('Obtendo')", timeout=120000)
+        if "não traz a causa básica" in pg.inner_text("#k-prog") or "Não foi possível obter" in pg.inner_text("#k-prog"):
+            print("PULADO: o cache deste teste não traz a causa básica de cada óbito (refaça com atualizar_cache.R --forcar ou montar_cache_local.R): ", pg.inner_text("#k-prog")[:160], flush=True)
+        else:
+            sel("k-conj", "apriori"); sel("k-cap", "I"); kpronto()
+            cods = kcod()
+            checar("aba CID: lista a priori do capítulo IX (aparelho circulatório): só causas I, com figura e interpretação", len(cods) > 0 and all(c.startswith("I") for c in cods) and "causas avaliadas" in pg.inner_text("#k-interp"), (cods, pg.inner_text("#k-interp")[:200]))
+            qs = [num_br(re.search(r"q = (<?[0-9,]+)", t).group(1)) for t in ktit()]
+            checar("aba CID: com o filtro padrão só aparecem causas com q < 0,05", all(q < 0.05 for q in qs), qs)
+            pg.check("#k-todos"); n_todas = len(kcod())
+            tit = ktit(); ps = [num_br(re.search(r"p = (<?[0-9,]+)", t).group(1)) for t in tit]; qs2 = [num_br(re.search(r"q = (<?[0-9,]+)", t).group(1)) for t in tit]
+            checar("aba CID: incluir as causas sem diferença traz todas as causas da família", n_todas >= len(cods) and sum(1 for q in qs2 if q < 0.05) == len(cods), (n_todas, len(cods)))
+            ordem = sorted(range(len(ps)), key=lambda i: (ps[i], qs2[i]))             # p e q vêm arredondados em 3 casas: empates em p ordenam por q
+            checar("aba CID: o valor q nunca fica abaixo do p e não decresce com o p (Benjamini e Hochberg)", all(q2 >= p - 0.0006 for p, q2 in zip(ps, qs2)) and all(qs2[ordem[i]] <= qs2[ordem[i + 1]] + 0.0011 for i in range(len(ordem) - 1)), list(zip(ps, qs2))[:8])
+            checar("aba CID: nota e interpretação sem travessão", not re.search("[—–]", pg.inner_text("#k-note") + pg.inner_text("#k-interp")))
+            pg.uncheck("#k-todos")
+            pg.wait_for_function("document.getElementById('k-h2b').innerText.length>20 && document.getElementById('k-chart')", timeout=120000)
+            pg.wait_for_function("document.getElementById('k-selnote').innerText.startsWith('Causa escolhida')", timeout=120000)
+            checar("aba CID: a Figura 5b abre com uma causa já escolhida e desenha a série semanal", xpix("k-chart") > 1500 and "Óbitos semanais por causa: " in pg.inner_text("#k-h2b"), pg.inner_text("#k-h2b"))
+            if capturas: pg.screenshot(path=os.path.join(capturas, "app_02f_cid.png"), full_page=True)
+            outra = [c for c in kcod() if c not in pg.inner_text("#k-h2b")]
+            if outra:
+                pg.click(f"#k-fig g[data-c={outra[0]}]")
+                pg.wait_for_function("c=>document.getElementById('k-h2b').innerText.includes(c) && document.getElementById('k-selnote').innerText.startsWith('Causa escolhida')", arg=outra[0], timeout=120000)
+                checar("aba CID: clicar em uma causa troca a série semanal", outra[0] in pg.inner_text("#k-selnote") and xpix("k-chart") > 1500, pg.inner_text("#k-selnote"))
+            sel("k-exp", "haat")
+            checar("aba CID: a medida HAAT refaz os níveis e pede as causas de novo", opcoes("k-nivel") == ["0", "1"] and ("Avaliando" in pg.inner_text("#k-prog") or len(kcod()) > 0))
+            kpronto()
+            checar("aba CID: com o HAAT o resultado é outro", ktit() != tit, (len(ktit()), len(tit)))
+            sel("k-exp", "horas"); sel("k-nivel", "1"); kpronto()
+            checar("aba CID: o segundo nível de exposição dá outro resultado", ktit() != tit)
+            sel("k-nivel", "0"); sel("k-conj", "todas"); sel("k-cap", "all"); sel("k-causa", "externas"); kpronto()
+            ext = kcod()
+            checar("aba CID: causas externas na aba só listam causas dos capítulos V a Y", len(ext) > 0 and all(c[0] in "VWXY" for c in ext) and "causas externas" in pg.inner_text("#k-sub"), ext)
+            sel("k-causa", "naturais"); sel("k-local", "Todos os locais"); sel("k-faixa", "5-9"); kpronto(120000)
+            checar("aba CID: recorte com menos de 1.500 óbitos por causa informa o limite", "Nenhuma causa tem pelo menos 1.500 óbitos" in pg.inner_text("#k-note") and len(kcod()) == 0, pg.inner_text("#k-note")[:200])
+            sel("k-local", "Ignorado"); sel("k-faixa", "30-39")
+            pg.wait_for_function("document.getElementById('k-note').innerText.includes('Menos de 300 óbitos')", timeout=5000)
+            checar("aba CID: recorte com menos de 300 óbitos informa o limite sem pedir ao servidor", "modelo não estimado" in pg.inner_text("#k-note"))
+            sel("k-local", "Todos os locais"); sel("k-faixa", "Todas as idades")
+            checar("aba CID: os filtros da aba não mudam os da Figura 1", pg.input_value("#s-causa") == "naturais" and pg.input_value("#x-causa") == "naturais")
+
         pg.click("nav button[data-tab=serie]"); pronto()
         checar("voltar para a Figura 1 mantém a figura", kpis() == k_ini and pixels() > 2000)
 

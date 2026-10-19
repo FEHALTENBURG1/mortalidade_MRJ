@@ -107,7 +107,7 @@ ajustar_segmento <- function(y, b, cbi, fora, k_time) {
   pr <- crosspred(cbi$obj, coef = beta, vcov = V, model.link = "log", at = cbi$e$ref, cen = 0)
   disp <- if (fam == "nb") fit$family$getTheta(TRUE) else fit$scale   # theta (NB: var = mu + mu^2/theta) ou φ (var = φ mu)
   list(fam = fam, disp = disp, n = sum(dd$y[ok]),
-       rr = rbind(rr = pr$allRRfit, lo = pr$allRRlow, hi = pr$allRRhigh),
+       rr = rbind(rr = pr$allRRfit, lo = pr$allRRlow, hi = pr$allRRhigh), se = as.numeric(pr$allse),     # se = erro-padrão do log do RR em cada nível de referência
        curvas = curvas_modelo(cbi, beta, V, ceiling(quantile(b[[cbi$e$var]][b[[cbi$e$var]] > 0], 0.99))),
        mu_ajustado = exp(eta), mu_sem_calor = exp(eta - efeito), efeito = efeito,
        dev_expl = summary(fit)$dev.expl)

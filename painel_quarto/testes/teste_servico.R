@@ -164,6 +164,40 @@ checar("mapa: recorte com poucos óbitos: erro recorte_invalido", identical(cod(
 checar("mapa: versão de dados antiga: erro dados_mudaram", identical(cod(executar_ajuste(pasta, "res", chave2 <- "chave_antiga", KM, "mapa36")), "dados_mudaram"))
 checar("mapa: expo_valida aceita as duas medidas e as colunas, e nada mais", all(vapply(c("horas", "haat", paste0("mapa", 32:44)), expo_valida, TRUE)) && !any(vapply(c("mapa31", "xyz", "", NA_character_), expo_valida, TRUE)))
 
+# causas específicas (CID-10): lista de causas, RR por causa e série semanal
+KC <- "Todos os locais|Todas as idades"
+check_cid_soma <- function(causa, key) {                                  # as séries das causas somam a série do recorte
+  r <- obitos_recorte_cid(P, causa, key)
+  tot <- Reduce(`+`, lapply(unique(r$cid), function(c) y_cid(P, causa, key, c)))
+  identical(as.integer(tot), as.integer(y_causa(P, causa)[[key]]))
+}
+checar("cid: as séries por causa somam a série do recorte (naturais, Todos os locais)", check_cid_soma("naturais", KC))
+checar("cid: o mesmo para um recorte por local e faixa etária", check_cid_soma("naturais", "Domicílio|60-69"))
+checar("cid: o mesmo para raça/cor e para todas as causas sem COVID", check_cid_soma("todas_sem_covid", "Hospital|Todas as idades|Parda"))
+lc <- executar_ajuste(pasta, "res", chave, KC, "cidlista")
+pl <- json_de(lc$payload)
+checar("cid: a lista traz as causas com pelo menos CID_MIN óbitos, da maior para a menor", length(pl$cid) > 20 && length(pl$cid) == length(pl$n) && all(num(pl$n) >= CID_MIN) && !is.unsorted(rev(num(pl$n))), length(pl$cid))
+checar("cid: a lista de causas externas só tem causas externas (letras V a Y)", { le <- json_de(executar_ajuste(pasta, "res", chave, KC, "cidlista", "externas")$payload)$cid; length(le) > 0 && all(substr(unlist(le), 1, 1) %in% c("V", "W", "X", "Y")) })
+checar("cid: a lista com COVID retirada do ajuste tem menos óbitos por causa", { lr <- json_de(executar_ajuste(pasta, "res", chave, KC, "cidlista", "todas", "100")$payload); lo <- json_de(executar_ajuste(pasta, "res", chave, KC, "cidlista", "todas", "000")$payload); sum(num(lr$n)) < sum(num(lo$n)) })
+cc <- executar_ajuste(pasta, "res", chave, KC, "cid_I21_horas")
+pc <- json_de(cc$payload)
+checar("cid: a causa traz RR, IC 95% e p nos dois níveis de referência", identical(pc$tipo, "cid") && identical(pc$cid, "I21") && length(pc$rr) == 2 && all(num(pc$lo) < num(pc$rr) & num(pc$rr) < num(pc$hi)) && all(num(pc$p) >= 0 & num(pc$p) <= 1) && !cc$do_cache)
+checar("cid: o RR de todas as causas somadas é o do recorte (modelo da Figura 1) e o de uma causa parte do mesmo modelo", {
+  y <- y_cid(P, "naturais", KC, "I21"); r <- ajustar_segmento(y, P$b, cbi_de(P, "horas"), fora_ajuste(P$cx, opc_de_codigo("000")), P$kt)
+  isTRUE(all.equal(num(pc$rr), round(as.numeric(r$rr["rr", ]), 4))) && isTRUE(all.equal(num(pc$p), unname(signif(2 * pnorm(-abs(log(r$rr["rr", ]) / r$se)), 4)))) })
+checar("cid: com a medida de horas o valor de p é o mesmo nos dois níveis (resposta linear no log)", abs(num(pc$p)[1] - num(pc$p)[2]) < 1e-12)
+checar("cid: o segundo pedido sai do disco", executar_ajuste(pasta, "res", chave, KC, "cid_I21_horas")$do_cache)
+cs <- executar_ajuste(pasta, "res", chave, KC, "cidsem_I21_horas")
+psj <- json_de(cs$payload)
+checar("cid: a série semanal traz observado e esperado semanal com a faixa", identical(psj$tipo, "cidsem") && length(psj$So) == length(psj$S$e) && length(psj$S$l) == length(psj$S$u) && sum(num(psj$So)) > 0.5 * CID_MIN)
+checar("cid: o RR da série semanal é o do pedido leve", isTRUE(all.equal(num(psj$rr)[c(1, 4)], num(pc$rr))))
+checar("cid: causa fora do recorte ou sem óbitos suficientes: erro recorte_invalido", all(vapply(c("cid_Z99_horas", "cid_O80_horas", "cidsem_Z99_horas"), function(x) identical(cod(executar_ajuste(pasta, "res", chave, KC, x)), "recorte_invalido"), TRUE)))
+checar("cid: ids malformados: erro recorte_invalido", all(vapply(c("cid_I21", "cid_I21_xyz", "cid_i21_horas", "cid_I2_horas", "cid_I211_horas", "cidlista2", "cidsem__horas", "CID_I21_horas"), function(x) identical(cod(executar_ajuste(pasta, "res", chave, KC, x)), "recorte_invalido"), TRUE)))
+checar("cid: recorte inexistente: erro recorte_invalido", identical(cod(executar_ajuste(pasta, "res", chave, "Marte|Todas as idades", "cidlista")), "recorte_invalido"))
+checar("cid: versão de dados antiga: erro dados_mudaram", identical(cod(executar_ajuste(pasta, "res", "chave_antiga", KC, "cidlista")), "dados_mudaram"))
+checar("cid: expo_valida reconhece os pedidos de causa e só eles", all(vapply(c("cidlista", "cid_I21_haat", "cidsem_J18_horas"), expo_valida, TRUE)) && !any(vapply(c("cid_I21", "cidsem_I21_haat_x", "cid"), expo_valida, TRUE)))
+checar("cid: a base traz os nomes das causas e o mínimo de óbitos", { bb <- base_sob_demanda(P, cid_nomes = ler_cid_nomes(raiz)); length(bb$meta$cid_nomes) > 100 && identical(bb$meta$cid_min, CID_MIN) && all(unlist(pl$cid) %in% names(bb$meta$cid_nomes)) })
+
 # pedidos assíncronos pelo future: pedidos iguais compartilham a promessa e o resultado é o mesmo
 suppressWarnings(future::plan("multisession", workers = 1))
 p1 <- pedir_ajuste(raiz, pasta, "res", chave, "Via pública|40-49", "horas")                 # a primeira chamada sobe o trabalhador e cria o pedido
