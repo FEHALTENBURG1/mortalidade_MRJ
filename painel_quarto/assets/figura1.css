@@ -59,3 +59,27 @@ header#title-block-header{display:none}
 .sobre a{color:var(--azul)}
 
 .calc{opacity:.4;transition:opacity .15s}
+/* aba Exposição-resposta: um recorte (Figuras 2 e 3 lado a lado) ou dois recortes em colunas, uma figura por linha */
+.cmp{display:grid;grid-template-columns:1fr 1fr;gap:14px;align-items:stretch}
+.cmp>.full{grid-column:1/-1}
+.cmp .card,.cmp .interp,.cmp .kpis,.cmp .note.sub{margin:0}
+.cmp .note.sub{padding:12px 2px 0}
+.cmp .card .interp{margin:12px 0 4px}
+.cmp:not(.dois)>.y,.cmp:not(.dois)>.cmpb{display:none}
+.cmp>.kpis{grid-template-columns:repeat(3,1fr)}
+.cmp>.cmpb:empty{display:none!important}
+.cmp.dois>.full{grid-column:auto}
+.cmp.dois>.cmpb{grid-column:1/-1}
+.cmp.dois>.x{grid-column:1}.cmp.dois>.y{grid-column:2}
+.cmp.dois>[data-sec=sub]{grid-row:1}.cmp.dois>[data-sec=k]{grid-row:2}.cmp.dois>[data-sec=f2]{grid-row:3}.cmp.dois>[data-sec=f3]{grid-row:4}
+.cmp.dois>[data-sec=i]{grid-row:5}.cmp.dois>.cmpb{grid-row:6}.cmp.dois>[data-sec=hm]{grid-row:7}
+.cmp.dois .kpi{padding:8px 10px}.cmp.dois .kpi .v{font-size:16px}.cmp.dois .kpi .l{font-size:11px}
+.cmp.dois table.hm{font-size:11px}.cmp.dois table.hm th{padding:3px 1px}.cmp.dois table.hm td{padding:5px 1px}
+.cmp>.cmpb{margin-top:0}
+.forestbox{position:relative}
+.forestbox svg{display:block;width:100%;height:auto}
+@media(max-width:860px){
+  .cmp,.cmp.dois{grid-template-columns:1fr}
+  .cmp.dois>*{grid-column:1!important;grid-row:auto!important}
+  .cmp>.kpis{grid-template-columns:repeat(auto-fit,minmax(210px,1fr))}
+}
