@@ -3,7 +3,7 @@
 ## O que tem aqui
 - `sim_datalake.py`: baixa os CSVs do SIM (OpenDATASUS), filtra o MRJ (330455) e grava Parquet (silver) por ocorrência e por residência.
 - `.github/workflows/atualizar_sim.yml`: atualização mensal automática; publica na Release `sim-mrj` o silver (`silver_sim_mrj.tar.gz`) e `obitos_diarios_ocorrencia_mrj.csv`.
-- `painel/`: cálculo do painel (Python: modelo quase-Poisson com erro-padrão robusto, ver `painel/nucleo.py`) e painel HTML autocontido; `painel_shiny/`: app Shiny que lê as tabelas pré-calculadas.
+- `painel/`: cálculo do painel (Python: modelo quase-Poisson com erro-padrão robusto, ver `painel/nucleo.py`) e painel HTML autocontido. O Shiny atual está em `painel_quarto/shiny` (ver `painel_quarto/README.md`).
 - `.github/workflows/atualizar_painel.yml`: recalcula o painel a partir do silver do SIM e do HAAT do clima e publica o Release `painel-mrj`.
 
 - `clima_datalake.py`: série histórica de clima do MRJ (INMET e Alerta Rio), um conjunto de dados por tipo de aferição.
@@ -14,7 +14,6 @@ Actions > "Atualizar SIM (MRJ)" > Run workflow, com os anos de 2006 a 2026 no ca
 
 ## Painel
 - HTML autocontido: `painel_calor_mrj.html`, no Release `painel-mrj` (e em `docs/`, se a variável de repositório `PUBLICAR_PAGES` for `true`).
-- Shiny: copiar `painel_shiny/` para `/srv/shiny-server/painel`; instalar os pacotes listados em `painel_shiny/README.md`.
 - Fontes do workflow `atualizar_painel.yml`, lidas por endereço público dos Releases: o silver do SIM (`sim-mrj`, arquivo `silver_sim_mrj.tar.gz`) vem do repositório que tiver o arquivo mais recente entre `FEHALTENBURG1/Dados_clima_MRJ` e `FEHALTENBURG1/mortalidade_MRJ` (variável de repositório `SIM_REPOS`, nomes separados por espaço); o HAAT do clima (`clima-mrj`, `haat_diario_municipal.csv`) vem de `FEHALTENBURG1/Dados_clima_MRJ` (variável `CLIMA_REPO`). O log do passo "Baixar silver do SIM e HAAT do clima" mostra de onde veio cada arquivo.
 - Período da análise: o painel HTML tem seletores "De / Até" (anos civis inteiros). Cada janela é recalculada no workflow por `painel/janelas.py`, que refaz o modelo do zero; o navegador só escolhe entre as tabelas prontas. A grade padrão é `completa` (horas × limiar e CIDs em todas as janelas, mais de uma hora de cálculo); ao rodar o workflow à mão, a opção `pesada = reduzida` calcula essas duas abas só nas janelas que começam no primeiro ano ou terminam no último.
 - Figura 1: colunas diárias com o índice de calor do dia, coloridas pelos Níveis de Calor NC1 a NC5 do protocolo da Prefeitura (reconstruídos a partir das colunas `num_hr_36`, `num_hr_40` e `num_hr_44` do HAAT; ver seção 16 dos Métodos).
