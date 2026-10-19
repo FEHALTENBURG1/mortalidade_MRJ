@@ -1,4 +1,4 @@
-# Monta o JSON da Figura 1 a partir do contexto de dados e dos ajustes do modelo do João.
+# Monta o JSON da Figura 1 a partir do contexto de dados e dos ajustes do modelo de referência (GAM com DLNM, adaptado de Morais et al.).
 
 arred <- function(x, d) { x <- round(as.numeric(x), d); x[is.nan(x)] <- NA; x }
 dec <- function(x) as.integer(round(x * 10))         # esperados diários em décimos de óbito (inteiros ocupam menos no JSON)

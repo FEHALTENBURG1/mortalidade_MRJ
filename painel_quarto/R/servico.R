@@ -1,7 +1,7 @@
 # Serviço de ajuste sob demanda do painel Shiny.
 #
 # O app não ajusta nada ao abrir: lê o contexto já pronto do cache de dados (R/fontes_remotas.R) e, quando o usuário escolhe um recorte, uma medida
-# de calor, uma causa de óbito e o que retirar do ajuste, ajusta só aquele modelo do João (R/modelo_joao.R) e guarda o resultado em disco. O mesmo
+# de calor, uma causa de óbito e o que retirar do ajuste, ajusta só aquele modelo de referência (R/modelo_joao.R) e guarda o resultado em disco. O mesmo
 # pedido, feito de novo por qualquer usuário, sai do disco. As mesmas funções rodam no processo principal (testes) e nos trabalhadores do pacote future (app).
 #
 # Pedido = população + causa + retiradas + medida de calor + recorte.
@@ -127,14 +127,14 @@ limpar_ajustes_antigos <- function(pasta, chave_atual) {
 # ---------------------------------------------------------------- execução de um pedido (processo principal ou trabalhador)
 # Devolve list(payload, do_cache, segundos). Erros começam com um código: "dados_mudaram:" (o cache saiu da versão do pedido) ou "recorte_invalido:".
 executar_ajuste <- function(pasta, pop, chave, key, expo, causa = "naturais", cod = "000") {
-  if (!causa %in% names(CAUSAS) || !codigo_valido(cod)) stop("recorte_invalido: causa ou retiradas fora da lista", call. = FALSE)
+  if (!causa %in% names(CAUSAS) || !codigo_valido(cod)) stop("recorte_invalido: causa do óbito ou retiradas do ajuste não reconhecidas", call. = FALSE)
   x <- ler_ajuste(pasta, chave, pop, expo, key, causa, cod)
   if (!is.null(x)) return(list(payload = x, do_cache = TRUE, segundos = 0))
   P <- obter_P(pasta, pop, chave)
   if (is.null(P)) stop("dados_mudaram: o cache de dados mudou de versão; recarregue a página", call. = FALSE)
   y <- if (expo %in% names(EXPOSICOES)) y_causa(P, causa)[[key]] else NULL
-  if (is.null(y)) stop("recorte_invalido: recorte ou medida de calor fora da lista", call. = FALSE)
-  if (sum(y[!fora_ajuste(P$cx, opc_de_codigo(cod))]) < MIN_OBITOS) stop("recorte_invalido: poucos óbitos no ajuste", call. = FALSE)
+  if (is.null(y)) stop("recorte_invalido: recorte ou medida de calor não reconhecidos", call. = FALSE)
+  if (sum(y[!fora_ajuste(P$cx, opc_de_codigo(cod))]) < MIN_OBITOS) stop("recorte_invalido: óbitos insuficientes no ajuste", call. = FALSE)
   t0 <- Sys.time()
   x <- ajustar_recorte(P, key, expo, causa, cod)
   gravar_ajuste(x, pasta, chave, pop, expo, key, causa, cod)

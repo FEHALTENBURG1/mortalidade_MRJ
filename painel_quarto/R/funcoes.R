@@ -26,8 +26,8 @@ eh_natural <- function(cid) {
 }
 
 # Causas de óbito que o filtro do Shiny oferece (a Figura 1 em Quarto usa só "naturais"). COVID-19 = B34 truncado em 3 caracteres e códigos U.
-CAUSAS <- c(naturais = "Causas naturais (capítulos A a R, sem COVID-19)", todas_sem_covid = "Todas as causas, exceto COVID-19",
-            todas = "Todas as causas, com COVID-19", externas = "Causas externas (não naturais, sem COVID-19)")
+CAUSAS <- c(naturais = "Causas naturais (CID-10, códigos A00 a R99, exceto COVID-19)", todas_sem_covid = "Todas as causas, exceto COVID-19",
+            todas = "Todas as causas, com COVID-19", externas = "Causas externas (óbitos fora de A00 a R99, exceto COVID-19)")
 
 # ---------------------------------------------------------------- dados
 cnes7 <- function(x) {                          # código CNES com 7 dígitos (zeros à esquerda restaurados)

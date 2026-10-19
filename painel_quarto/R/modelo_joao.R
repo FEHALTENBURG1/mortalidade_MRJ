@@ -1,14 +1,14 @@
-# Modelo do João (GAM + DLNM) aplicado a cada segmento da Figura 1.
+# Modelo de referência (GAM + DLNM, adaptado de Morais et al.) aplicado a cada segmento da Figura 1.
 #
 # Para cada série diária de óbitos por causas naturais (local x faixa etária, ou local x raça/cor):
 #   y_t ~ NB(mu_t),  log(mu_t) = cross-basis(calor, defasagem 0 a 10) + s(tempo) + s(dia do ano, cíclico) + s(período COVID, cíclico)
 # estimado com mgcv::gam (REML). A cross-basis é a do dlnm: função da exposição (ns com 1 gl para horas; spline penalizado com 15 gl para o HAAT)
-# x função da defasagem (ns com 3 gl). Os termos suaves e as dimensões seguem o script 02_model_fitting.R do João, com um ajuste: a série
+# x função da defasagem (ns com 3 gl). Os termos suaves e as dimensões seguem o script 02_model_fitting.R de Morais et al., com um ajuste: a série
 # aqui tem mais anos, então o número de nós do spline de tempo cresce na mesma proporção (12 nós para 12,5 anos).
 #
 # Esperado sem calor (contrafactual): o preditor linear do modelo com a cross-basis trocada pela exposição zero, em cada dia.
 # Dias sem registro no SIM saem do ajuste (resposta ausente); dias de COVID ficam e o termo s(covid_id) absorve o período.
-# Não há termo de dia da semana, como no modelo do João (o dia da semana foi uma análise de sensibilidade à parte).
+# Não há termo de dia da semana, como no modelo de referência (o dia da semana foi uma análise de sensibilidade à parte).
 
 suppressPackageStartupMessages({ library(mgcv); library(dlnm) })
 

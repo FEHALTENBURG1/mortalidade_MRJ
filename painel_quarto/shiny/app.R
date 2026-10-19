@@ -13,7 +13,7 @@ library(shiny)
 
 raiz <- normalizePath(Sys.getenv("PAINEL_RAIZ", file.path(getwd(), "..")), mustWork = TRUE)
 if (!file.exists(file.path(raiz, "R", "funcoes.R")))
-  stop("Não achei o projeto em ", raiz, ". Defina a variável de ambiente PAINEL_RAIZ com a pasta painel_quarto.")
+  stop("Projeto não encontrado em ", raiz, ". Defina a variável de ambiente PAINEL_RAIZ com a pasta painel_quarto.")
 pasta <- Sys.getenv("PAINEL_CACHE", file.path(raiz, "shiny", "cache"))
 n_trab <- max(1L, suppressWarnings(as.integer(Sys.getenv("PAINEL_TRABALHADORES", "2"))), na.rm = TRUE)
 
@@ -23,7 +23,7 @@ for (f in c("funcoes.R", "modelo_joao.R", "exportar.R", "metodos.R", "fontes_rem
 future::plan("multisession", workers = n_trab)
 addResourcePath("painel", file.path(raiz, "assets"))
 
-ROTULO_POP <- c(res = "Residentes no Rio que morreram no Rio", todos = "Todos os óbitos ocorridos no Rio")
+ROTULO_POP <- c(res = "Residentes no Rio com óbito ocorrido no próprio município", todos = "Todos os óbitos ocorridos no Rio (residentes ou não)")
 
 # ---------------------------------------------------------------- dados-base de cada população (calculados uma vez por versão dos dados)
 .base <- new.env()
@@ -59,7 +59,7 @@ controles_shiny <- function(pops, pop) {
   causas <- sprintf("\n    <label>Causa do óbito<select id=\"s-causa\">%s</select></label>",
                     paste0(sprintf("<option value=\"%s\">%s</option>", names(CAUSAS), CAUSAS), collapse = ""))
   retirar <- paste0("\n    <fieldset class=\"ret\"><legend>Retirar do ajuste do modelo</legend>",
-    "<label class=\"chk\"><input type=\"checkbox\" id=\"s-r-covid\"> <span id=\"s-r-covid-t\">Período COVID</span></label>",
+    "<label class=\"chk\"><input type=\"checkbox\" id=\"s-r-covid\"> <span id=\"s-r-covid-t\">Período da COVID-19</span></label>",
     "<label class=\"chk\"><input type=\"checkbox\" id=\"s-r-nc\"> Meses com registro não consolidado</label>",
     "<label class=\"chk\"><input type=\"checkbox\" id=\"s-r-clima\"> Dias sem dados de clima (e os 10 seguintes)</label></fieldset>")
   paste0(opc_pop, causas, retirar)
@@ -74,8 +74,8 @@ modelo_pagina <- paste0(
 pagina_sem_cache <- function() {
   st <- tryCatch(jsonlite::fromJSON(file.path(pasta, "ultima_tentativa.json")), error = function(e) NULL)
   msg <- if (!is.null(st) && st$status %in% c("offline", "falhou"))
-    sprintf("A última tentativa de baixar os dados (%s) terminou com o status \"%s\": %s. Confira a conexão do servidor com o GitHub e rode shiny/atualizar_cache.R.", st$quando, st$status, st$detalhe)
-  else "O servidor está baixando e preparando os dados das Releases do GitHub. Isso leva cerca de 1 a 2 minutos na primeira vez. Esta página recarrega sozinha."
+    sprintf("A última tentativa de obter os dados (%s) terminou com o status \"%s\": %s. Verifique a conexão do servidor com o GitHub e execute shiny/atualizar_cache.R.", st$quando, st$status, st$detalhe)
+  else "O servidor está obtendo e preparando os dados das Releases do GitHub, o que leva cerca de 1 a 2 minutos na primeira vez. Esta página é atualizada automaticamente."
   httpResponse(200, "text/html; charset=UTF-8", paste0("<!DOCTYPE html><html lang=\"pt-BR\"><head><meta charset=\"utf-8\"><meta http-equiv=\"refresh\" content=\"20\"><title>Preparando os dados</title>",
               "<style>body{font:16px/1.5 system-ui,sans-serif;max-width:640px;margin:15vh auto;padding:0 16px;color:#222}</style></head><body>",
               "<h1 style=\"font-size:20px\">Preparando os dados do painel</h1><p>", msg, "</p></body></html>"))
@@ -109,7 +109,7 @@ erro_para_cliente <- function(e) {
   m <- conditionMessage(e)
   codigo <- if (grepl("^dados_mudaram:", m)) "dados_mudaram" else if (grepl("^recorte_invalido:", m)) "recorte_invalido" else "erro"
   if (codigo == "erro") message("[painel] erro no ajuste: ", m)                    # o detalhe fica no log do servidor
-  list(codigo = codigo, mensagem = if (codigo == "erro") "erro interno no ajuste (veja o log do servidor)" else sub("^[a-z_]+: ", "", m))
+  list(codigo = codigo, mensagem = if (codigo == "erro") "erro interno no ajuste do modelo (consulte o registro do servidor)" else sub("^[a-z_]+: ", "", m))
 }
 
 texto1 <- function(v) is.character(v) && length(v) == 1 && !is.na(v)
@@ -139,10 +139,10 @@ server <- function(input, output, session) {
     eco <- list(pop = q$pop, key = q$key, ex = q$ex, chave = q$chave, causa = q$causa, opc = q$opc)
     erro <- function(codigo, mensagem) session$sendCustomMessage("erro_segmento", c(eco, list(codigo = codigo, mensagem = mensagem)))
     b <- if (q$pop %in% names(ROTULO_POP)) base_info(q$pop) else NULL
-    if (is.null(b)) return(erro("recorte_invalido", "população fora da lista"))
+    if (is.null(b)) return(erro("recorte_invalido", "população não reconhecida"))
     if (!identical(b$chave, q$chave)) return(erro("dados_mudaram", "os dados foram atualizados no servidor"))
-    if (!q$causa %in% names(CAUSAS) || !codigo_valido(q$opc) || !q$ex %in% names(EXPOSICOES)) return(erro("recorte_invalido", "causa, retiradas ou medida de calor fora da lista"))
-    if (!q$key %in% b$elegiveis[[q$causa]][[q$opc]]) return(erro("recorte_invalido", "recorte fora da lista ou com poucos óbitos no ajuste"))
+    if (!q$causa %in% names(CAUSAS) || !codigo_valido(q$opc) || !q$ex %in% names(EXPOSICOES)) return(erro("recorte_invalido", "causa do óbito, retiradas do ajuste ou medida de calor não reconhecidas"))
+    if (!q$key %in% b$elegiveis[[q$causa]][[q$opc]]) return(erro("recorte_invalido", "recorte inexistente ou com óbitos insuficientes no ajuste"))
 
     pedir_ajuste(raiz, pasta, q$pop, q$chave, q$key, q$ex, q$causa, q$opc) |>
       promises::then(

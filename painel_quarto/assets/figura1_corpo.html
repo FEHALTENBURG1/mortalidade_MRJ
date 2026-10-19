@@ -1,5 +1,5 @@
 <header class="top"><div class="in"><h1>Mortalidade e calor no município do Rio de Janeiro</h1>
-<p id="sub">Óbitos por causas naturais (SIM/DATASUS) contra o número esperado sem calor, por local do óbito, faixa etária e raça/cor. Estudo ecológico de séries temporais, descritivo e exploratório. O esperado vem de um modelo próprio para cada recorte (GAM com defasagens distribuídas, o modelo do João).</p></div></header>
+<p id="sub">Óbitos por causas naturais (SIM/DATASUS): observados e esperados sem calor, por local do óbito, faixa etária e raça/cor. Estudo ecológico de séries temporais, descritivo e exploratório. O número esperado é estimado por um modelo ajustado a cada recorte: modelo aditivo generalizado (GAM) com defasagens distribuídas (DLNM), adaptado do modelo de referência de Morais et al. (ver Métodos e fontes).</p></div></header>
 <div class="wrap">
 <nav role="tablist">
   <button role="tab" aria-selected="true" data-tab="serie">Série de óbitos</button>
@@ -11,19 +11,19 @@
     <label>Local do óbito<select id="s-local"></select></label>
     <label>Faixa etária (anos)<select id="s-faixa"></select></label>
     <label>Raça/cor<select id="s-raca"></select></label>
-    <label>Escala<select id="s-esc"><option value="sem">Semanal</option><option value="dia">Diária (cada dia um ponto)</option></select></label>
+    <label>Escala<select id="s-esc"><option value="sem">Semanal</option><option value="dia">Diária (um ponto por dia)</option></select></label>
     <label>Medida de calor do modelo<select id="s-exp"></select></label>
     <label id="s-critw">Sombrear semanas com<select id="s-crit">
-      <option value="ic">Calor intenso: ≥ 3 dias com índice de calor máx. ≥ 36 °C</option>
-      <option value="nc">Protocolo: ≥ 1 dia em NC2 a NC5 (≥ 4 h com IC ≥ 36 °C)</option>
-      <option value="no">Nada</option></select></label>
-    <label>De<select id="s-ini"></select></label>
-    <label>Até<select id="s-fim"></select></label>
-    <label>Barras ao fundo (diárias)<select id="s-bar">
+      <option value="ic">Calor intenso: ≥ 3 dias com índice de calor máximo ≥ 36 °C</option>
+      <option value="nc">Protocolo: ≥ 1 dia em NC2 a NC5 (≥ 4 h com índice de calor ≥ 36 °C)</option>
+      <option value="no">Sem sombreamento</option></select></label>
+    <label>Ano inicial<select id="s-ini"></select></label>
+    <label>Ano final<select id="s-fim"></select></label>
+    <label>Colunas ao fundo (valores diários)<select id="s-bar">
       <option value="hi_med">Índice de calor médio do dia</option>
-      <option value="hi_max">Índice de calor máx. do dia</option>
+      <option value="hi_max">Índice de calor máximo do dia</option>
       <option value="t_med">Temperatura média do dia</option>
-      <option value="no">Sem barras</option></select></label>
+      <option value="no">Sem colunas</option></select></label>
     <label>Cor das colunas<select id="s-cor">
       <option value="nc">Nível de calor do protocolo (NC1 a NC5)</option>
       <option value="lim">Laranja acima de um limiar (°C)</option></select></label>
@@ -33,7 +33,7 @@
   <p class="note" id="s-raca-nota" style="margin:12px 2px 14px"></p>
   <div class="kpis" id="s-kpis"></div>
   <div class="card">
-    <div class="fn">Figura 1</div><h2 id="s-h2">Óbitos semanais por causas naturais: observados, esperados e semanas de calor</h2>
+    <div class="fn">Figura 1</div><h2 id="s-h2">Óbitos semanais por causas naturais: observados, esperados sem calor e semanas de calor</h2>
     <div class="legend" id="s-leg"></div>
     <div class="chartbox"><canvas id="s-chart"></canvas></div>
     <p class="note" id="s-note">Carregando a série…</p>

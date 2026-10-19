@@ -1,15 +1,15 @@
 # Painel de mortalidade e calor em R e Quarto: Figura 1
 
-Versão em R e Quarto da Figura 1 do painel (óbitos por causas naturais contra o número esperado sem calor, Rio de Janeiro). O painel em Python continua como está; esta pasta cobre só a Figura 1 e as demais abas serão migradas uma a uma.
+Versão em R e Quarto da Figura 1 do painel (óbitos por causas naturais contra o número esperado sem calor, Rio de Janeiro). O painel em Python permanece inalterado; esta pasta cobre apenas a Figura 1, e as demais abas serão migradas gradualmente.
 
 O resultado é um arquivo HTML único (`painel_figura1.html`), sem servidor: o R ajusta os modelos, grava os resultados em JSON e o Quarto embute tudo na página. Os filtros (local do óbito, faixa etária, raça/cor, escala semanal ou diária, medida de calor, período) só escolhem entre modelos já calculados.
 
 ## O que mudou
 
-- Modelo. Cada recorte tem um modelo do João (GAM com `mgcv` mais cross-basis do `dlnm`, defasagem de 0 a 10 dias, binomial negativa), ajustado só aos óbitos daquele recorte. O esperado é o contrafactual sem calor desse modelo. No painel anterior a linha esperada da figura semanal vinha de um modelo só de tendência e sazonalidade, o que deixava a razão observado ÷ esperado perto de 1,00 em qualquer recorte.
-- Faixas etárias da UNICEF: 0-4, 5-9, 10-19, 20-29, 30-39, 40-49, 50-59, 60-69, 70-79 e 80+.
+- Modelo. Cada recorte tem um modelo adaptado do modelo de Morais et al. (GAM com `mgcv` e cross-basis do `dlnm`, defasagem de 0 a 10 dias, binomial negativa), ajustado apenas aos óbitos daquele recorte. O esperado é o contrafactual sem calor desse modelo. No painel anterior a linha esperada da figura semanal vinha de um modelo só de tendência e sazonalidade, o que deixava a razão observado ÷ esperado perto de 1,00 em qualquer recorte.
+- Faixas etárias, definidas para este estudo: 0-4, 5-9, 10-19, 20-29, 30-39, 40-49, 50-59, 60-69, 70-79 e 80+.
 - Registro não consolidado. Mesma regra do painel em Python: meses abaixo de 80% da mediana de referência ficam no ajuste e aparecem hachurados; dias sem nenhum óbito no SIM saem do ajuste.
-- Duas medidas de calor. Horas por dia com índice de calor ≥ 36 °C (spline natural, 1 gl) e HAAT, os graus-hora acima de 36 °C (spline penalizado, 15 gl).
+- Duas medidas de calor. Horas por dia com índice de calor ≥ 36 °C (spline natural, 1 grau de liberdade) e HAAT, os graus-hora acima de 36 °C (spline penalizado, 15 graus de liberdade).
 
 ## Estrutura
 
@@ -38,8 +38,8 @@ quarto render painel_figura1.qmd
 ```
 
 - `--silver`: pasta `silver` do data lake do SIM (`sim/ocorrencia_mrj/ano_arquivo=*/part-0.parquet`).
-- `--haat`: `haat_diario_municipal.csv` do Release `clima-mrj`.
-- `--pop res` (padrão, residentes que morreram no Rio) ou `--pop todos`. Para a página usar `todos`, defina `PAINEL_POP=todos` antes de `quarto render`.
+- `--haat`: `haat_diario_municipal.csv` da Release `clima-mrj`.
+- `--pop res` (padrão, residentes com óbito ocorrido no Rio) ou `--pop todos`. Para a página usar `todos`, defina `PAINEL_POP=todos` antes de `quarto render`.
 - `--cores N`: processos em paralelo (no Windows roda em um só).
 - `--reusar`: não reajusta; refaz só o JSON a partir de `saida/modelos_<pop>.rds`.
 
@@ -47,13 +47,13 @@ São cerca de 90 recortes por medida de calor; o ajuste leva alguns minutos por 
 
 ## Shiny
 
-O app Shiny (`shiny/app.R`) lê os dados direto das Releases do GitHub e ajusta o modelo do João quando o recorte é escolhido, com as mesmas funções de R da página em Quarto. Por enquanto só tem a Figura 1. A página traz os mesmos filtros, mais a escolha da população (residentes ou todos os óbitos ocorridos no Rio).
+O app Shiny (`shiny/app.R`) lê os dados direto das Releases do GitHub e ajusta o modelo de referência quando o recorte é escolhido, com as mesmas funções de R da página em Quarto. Por enquanto só tem a Figura 1. A página traz os mesmos filtros, mais a escolha da população (residentes ou todos os óbitos ocorridos no Rio).
 
 Como funciona:
 
 1. `shiny/atualizar_cache.R` (rodado por cron, fora das sessões) consulta a API de Releases e, se o SIM (`sim-mrj`) ou o HAAT (`clima-mrj`) mudaram, baixa os arquivos, monta o contexto de cada população e troca o cache em `shiny/cache/`. Sem versão nova, não baixa nada. Se o GitHub estiver fora do ar, mantém o cache.
 2. Ao abrir, a página recebe só o calendário e o clima (cerca de 90 KB compactados). Nenhum modelo é ajustado nessa hora.
-3. Ao escolher local, faixa etária, raça/cor, medida de calor, causa do óbito e retiradas do ajuste, o navegador pede o recorte ao servidor. Um trabalhador (processo separado do `future`) ajusta só esse modelo, em 2 a 9 segundos, e o resultado vai para `shiny/cache/ajustes/<versão dos dados>/`. O mesmo recorte, pedido de novo por qualquer pessoa, sai do disco na hora. O navegador também guarda o que já recebeu.
+3. Ao escolher local, faixa etária, raça/cor, medida de calor, causa do óbito e retiradas do ajuste, o navegador pede o recorte ao servidor. Um trabalhador (processo separado do `future`) ajusta só esse modelo, em geral em 2 a 9 segundos nos testes locais (a interface informa de 3 a 15 segundos, para cobrir servidores mais lentos), e o resultado vai para `shiny/cache/ajustes/<versão dos dados>/`. O mesmo recorte, pedido de novo por qualquer pessoa, é lido do disco, sem novo ajuste. O navegador também guarda o que já recebeu.
 4. Quando o cron traz uma versão nova dos dados, os ajustes da versão antiga são apagados. Quem estava com a página aberta vê o aviso para recarregar.
 
 ### Causa do óbito e retiradas do ajuste
@@ -78,11 +78,11 @@ sudo ln -s /opt/mortalidade_MRJ/painel_quarto/shiny /srv/shiny-server/mortalidad
 sudo -u shiny crontab -e     # 0 6 * * *  /usr/bin/Rscript /opt/mortalidade_MRJ/painel_quarto/shiny/atualizar_cache.R >> /opt/mortalidade_MRJ/painel_quarto/shiny/cache/cron.log 2>&1
 ```
 
-O app abre em `http://servidor:3838/mortalidade_calor/`. O Shiny Server derruba um app que passa de 60 s para iniciar, por isso o download não acontece dentro da sessão. Se alguém abrir o app sem cache, ele dispara a atualização em segundo plano e a página recarrega sozinha quando os dados estiverem prontos.
+O app abre em `http://servidor:3838/mortalidade_calor/`. O Shiny Server encerra um app que leva mais de 60 s para iniciar, por isso o download não acontece dentro da sessão. Se alguém abrir o app sem cache, ele dispara a atualização em segundo plano e a página é atualizada automaticamente quando os dados estiverem prontos.
 
 Rodar localmente: `PAINEL_CACHE=pasta_do_cache Rscript -e 'shiny::runApp("shiny")'` a partir desta pasta. Para montar um cache sem rede a partir de arquivos locais: `Rscript testes/montar_cache_local.R --silver pasta/silver --haat haat_diario_municipal.csv --cache pasta_do_cache --pop res,todos`.
 
-Variáveis de ambiente (todas opcionais): `PAINEL_RAIZ` (pasta do projeto, se o app não achar sozinho), `PAINEL_CACHE`, `PAINEL_TRABALHADORES` (modelos ajustados ao mesmo tempo, padrão 2; cada trabalhador usa cerca de 300 MB), `PAINEL_SIM_REPOS`, `PAINEL_CLIMA_REPO` e `GITHUB_PAT` (só para subir o limite de 60 consultas por hora da API).
+Variáveis de ambiente (todas opcionais): `PAINEL_RAIZ` (pasta do projeto, se o app não localizar a pasta automaticamente), `PAINEL_CACHE`, `PAINEL_TRABALHADORES` (modelos ajustados ao mesmo tempo, padrão 2; cada trabalhador usa cerca de 300 MB), `PAINEL_SIM_REPOS`, `PAINEL_CLIMA_REPO` e `GITHUB_PAT` (só para subir o limite de 60 consultas por hora da API).
 
 O download só é aceito com o tamanho igual ao que o GitHub informa, e a troca do cache é atômica: o app nunca lê arquivo pela metade. Mudar `R/funcoes.R` (as regras) também invalida o cache.
 
@@ -107,7 +107,7 @@ O teste do modelo simula uma série com efeito do calor conhecido e confere que 
 
 - Estudo ecológico, descritivo e exploratório; um modelo por recorte, sem correção para comparações múltiplas.
 - A faixa de 95% do esperado não inclui a incerteza dos coeficientes.
-- Não há termo de dia da semana, como no modelo do João.
+- Não há termo de dia da semana, como no modelo de referência.
 - O período de COVID entra no ajuste com um termo suave próprio, então o esperado nesse período não serve de comparação. No app, a caixa de retirada remove o período do ajuste e deixa o esperado sem traçado nele.
 - Os óbitos são contados e não há taxa por população: o modelo não usa a população como offset, e o spline de tempo absorve a mudança lenta dela ao longo dos anos. O RR não depende disso, mas comparar níveis entre populações ou entre anos pede uma taxa.
 - O clima existe desde 17/04/2007; antes disso o calor entra como ausente.
