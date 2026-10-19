@@ -177,6 +177,7 @@ atualizar_cache <- function(pasta, pops = c("res", "todos"), cnes, arquivo_regra
       file.rename(paste0(caminho_meta(pasta, pop), ".parte"), caminho_meta(pasta, pop))     # só agora o app passa a ler a versão nova
       unlink(setdiff(Sys.glob(file.path(pasta, sprintf("contexto_%s_*.rds", pop))), destino))
     }
+    if (exists("limpar_ajustes_antigos", mode = "function")) limpar_ajustes_antigos(pasta, chave)      # ajustes do app Shiny (R/servico.R) são por versão
     NULL
   }, error = function(e) conditionMessage(e))
 

@@ -98,8 +98,9 @@ with sync_playwright() as p:
     # métodos
     pg.click("button[data-tab=sobre]")
     mt = pg.inner_text("#tab-sobre")
-    for trecho in ["984.588", "binomial negativa", "0-4, 5-9, 10-19", "registro não consolidado"]:
+    for trecho in ["binomial negativa", "0-4, 5-9, 10-19", "registro não consolidado"]:
         if trecho not in mt: falha(f"Métodos sem '{trecho}'")
+    if not re.search(r"\d{1,3}(\.\d{3})+ óbitos por causas naturais entre", mt): falha("Métodos sem o total de óbitos por causas naturais")      # o valor muda a cada versão dos dados
     if shots: pg.screenshot(path=os.path.join(shots, "metodos.png"), full_page=True)
     b.close()
 

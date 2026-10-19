@@ -4,7 +4,7 @@
 #   sudo Rscript shiny/instalar_pacotes.R
 # Se a compilação do nanoparquet falhar por falta de compilador: sudo apt install build-essential
 
-pacotes <- c("shiny", "mgcv", "dlnm", "nanoparquet", "jsonlite", "future", "promises")
+pacotes <- c("shiny", "mgcv", "dlnm", "nanoparquet", "jsonlite", "future", "promises", "commonmark")
 faltam <- pacotes[!vapply(pacotes, requireNamespace, TRUE, quietly = TRUE)]
 if (length(faltam)) {
   cat("Instalando:", paste(faltam, collapse = ", "), "\n")

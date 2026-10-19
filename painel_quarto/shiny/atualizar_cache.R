@@ -9,11 +9,12 @@
 # --forcar  refaz o cache mesmo que a versão das Releases não tenha mudado
 #
 # Para rodar todo dia às 06:00, com o usuário que executa os apps (crontab -e de `sudo -u shiny crontab -e`):
-#   0 6 * * *  Rscript /srv/shiny-server/painel_quarto/shiny/atualizar_cache.R >> /srv/shiny-server/painel_quarto/shiny/cache/cron.log 2>&1
+#   0 6 * * *  /usr/bin/Rscript /opt/mortalidade_MRJ/painel_quarto/shiny/atualizar_cache.R >> /opt/mortalidade_MRJ/painel_quarto/shiny/cache/cron.log 2>&1
+# (ajuste o caminho do projeto e confirme o do Rscript com `which Rscript`)
 #
 # Código de saída: 0 se o cache está em dia, foi atualizado, há outra atualização em andamento, ou o GitHub está fora mas já existe cache; 1 nos demais casos.
 
-try(suppressWarnings(Sys.setlocale("LC_ALL", "C.UTF-8")), silent = TRUE)
+invisible(try(suppressWarnings(Sys.setlocale("LC_ALL", "C.UTF-8")), silent = TRUE))
 args <- commandArgs(trailingOnly = TRUE)
 opcao <- function(nome, padrao = NULL) { i <- match(paste0("--", nome), args); if (is.na(i)) padrao else args[i + 1] }
 raiz <- local({
@@ -25,7 +26,7 @@ pops  <- strsplit(opcao("pop", "res,todos"), ",")[[1]]
 stopifnot(all(pops %in% c("res", "todos")))
 
 source(file.path(raiz, "R", "utf8.R"))
-for (f in c("funcoes.R", "fontes_remotas.R")) fonte_utf8(file.path(raiz, "R", f))
+for (f in c("funcoes.R", "fontes_remotas.R", "servico.R")) fonte_utf8(file.path(raiz, "R", f))
 
 r <- atualizar_cache(pasta, pops, cnes = file.path(raiz, "dados_auxiliares", "cnes_estab.csv"),
                      arquivo_regras = file.path(raiz, "R", "funcoes.R"), forcar = "--forcar" %in% args)

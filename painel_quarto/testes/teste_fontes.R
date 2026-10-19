@@ -7,11 +7,11 @@
 # Sem as variáveis, roda só os testes que não precisam de dados. PAINEL_TESTE_SILVER (opcional) é o silver já extraído, para comparar o cache com
 # a leitura direta. Precisa de python3 (http.server). Demora alguns minutos, porque monta o contexto várias vezes.
 
-try(suppressWarnings(Sys.setlocale("LC_ALL", "C.UTF-8")), silent = TRUE)
+invisible(try(suppressWarnings(Sys.setlocale("LC_ALL", "C.UTF-8")), silent = TRUE))
 Sys.setenv(no_proxy = "127.0.0.1,localhost", NO_PROXY = "127.0.0.1,localhost")      # o servidor de teste não passa por proxy
 raiz <- local({ a <- sub("^--file=", "", grep("^--file=", commandArgs(FALSE), value = TRUE)); if (length(a)) dirname(dirname(normalizePath(a[1]))) else getwd() })
 source(file.path(raiz, "R", "utf8.R"))
-for (f in c("funcoes.R", "fontes_remotas.R")) fonte_utf8(file.path(raiz, "R", f))
+for (f in c("funcoes.R", "fontes_remotas.R", "servico.R")) fonte_utf8(file.path(raiz, "R", f))
 regras <- file.path(raiz, "R", "funcoes.R"); cnes <- file.path(raiz, "dados_auxiliares", "cnes_estab.csv")
 
 falhas <- character(0)
@@ -25,7 +25,7 @@ v3 <- v1; v3$clima$id <- "3"
 checar("chave: mesma versão dá a mesma chave", identical(chave_cache(v1, regras), chave_cache(v1, regras)))
 checar("chave: muda com a data do SIM", chave_cache(v1, regras) != chave_cache(v2, regras))
 checar("chave: muda com o arquivo do clima", chave_cache(v1, regras) != chave_cache(v3, regras))
-regras2 <- tempfile(fileext = ".R"); file.copy(regras, regras2); cat("# mudou\n", file = regras2, append = TRUE)
+regras2 <- tempfile(fileext = ".R"); invisible(file.copy(regras, regras2)); cat("# mudou\n", file = regras2, append = TRUE)
 checar("chave: muda com o código das regras", chave_cache(v1, regras) != chave_cache(v1, regras2))
 
 p0 <- tempfile("cache0_"); dir.create(p0)
@@ -102,10 +102,12 @@ if (!nzchar(tar_in) || !nzchar(haat_in) || !file.exists(tar_in) || !file.exists(
 
   # 3. versão nova no GitHub: troca o cache e apaga o antigo
   chave_antiga <- meta_cache(pasta, "res")$chave
+  dir.create(file.path(pasta, "ajustes", chave_antiga), recursive = TRUE); saveRDS(1, file.path(pasta, "ajustes", chave_antiga, "res_horas_x.rds"))    # ajuste do app Shiny na versão antiga
   publicar("2026-10-10T09:00:00Z", 12)
   r3 <- rodar()
   checar("versão nova: status atualizado", identical(r3$status, "atualizado"))
   checar("versão nova: chave mudou e só resta o arquivo novo", meta_cache(pasta, "res")$chave != chave_antiga && length(arquivos("res")) == 1 && !grepl(chave_antiga, arquivos("res")))
+  checar("versão nova: ajustes da versão antiga (app Shiny) foram apagados", !dir.exists(file.path(pasta, "ajustes", chave_antiga)))
   checar("versão nova: meta traz a data da Release", identical(meta_cache(pasta, "res")$sim_atualizado, "2026-10-10T09:00:00Z"))
 
   # 4. download com tamanho diferente do informado: falha sem estragar o cache

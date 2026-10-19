@@ -17,18 +17,20 @@ O resultado é um arquivo HTML único (`painel_figura1.html`), sem servidor: o R
 calcular_figura1.R        driver: lê o SIM e o clima, ajusta os modelos e grava saida/figura1_<pop>.json
 R/funcoes.R               óbitos (nanoparquet), causas, local, raça/cor, faixas, registro do SIM, clima, semanas
 R/modelo_joao.R           GAM + DLNM por segmento, contrafactual e esperado semanal
-R/exportar.R              JSON da figura e bloco compactado para a página
+R/exportar.R              JSON da figura (inteiro ou por recorte) e bloco compactado para a página
+R/metodos.R               texto da aba Métodos e fontes, igual no Quarto e no Shiny
 R/fontes_remotas.R        Shiny: baixa o SIM e o HAAT das Releases do GitHub e mantém o cache em disco
-shiny/                    Shiny: atualizar_cache.R (cron), instalar_pacotes.R e a pasta cache/ (fora do Git)
+R/servico.R               Shiny: ajuste de um recorte sob demanda, cache de ajustes e pedidos assíncronos
+shiny/                    Shiny: app.R, atualizar_cache.R (cron), instalar_pacotes.R e a pasta cache/ (fora do Git)
 painel_figura1.qmd        página (métodos em texto, números calculados em R)
 assets/                   CSS, JavaScript da figura, Chart.js e markup dos filtros
 dados_auxiliares/         cnes_estab.csv (tipo dos estabelecimentos)
-testes/                   testes das funções, do modelo (dados simulados) e da página (Playwright)
+testes/                   testes das funções, do modelo (dados simulados), da página e do app (Playwright), das fontes e do serviço
 ```
 
 ## Como rodar
 
-Pacotes de R: `mgcv`, `dlnm`, `nanoparquet`, `jsonlite`, `knitr`. Quarto 1.4 ou mais novo.
+Pacotes de R: `mgcv`, `dlnm`, `nanoparquet`, `jsonlite`, `knitr`. Quarto 1.4 ou mais novo. O app Shiny também usa `shiny`, `future`, `promises` e `commonmark`.
 
 ```
 Rscript calcular_figura1.R --silver entrada/sim/silver --haat entrada/haat_diario_municipal.csv
@@ -43,15 +45,34 @@ quarto render painel_figura1.qmd
 
 São cerca de 90 recortes por medida de calor; o ajuste leva alguns minutos por medida. A leitura do SIM leva cerca de 15 segundos.
 
-## Shiny (em construção)
+## Shiny
 
-A versão em Shiny lê os dados direto das Releases do GitHub e ajusta o modelo do João sob demanda, com as mesmas funções da página em Quarto. A etapa pronta é a dos dados; o app vem nas próximas.
+O app Shiny (`shiny/app.R`) lê os dados direto das Releases do GitHub e ajusta o modelo do João quando o recorte é escolhido, com as mesmas funções de R da página em Quarto. Por enquanto só tem a Figura 1. A página traz os mesmos filtros, mais a escolha da população (residentes ou todos os óbitos ocorridos no Rio).
 
-- `sudo Rscript shiny/instalar_pacotes.R` instala os pacotes que faltam (`dlnm`, `nanoparquet`, `future` e os demais).
-- `Rscript shiny/atualizar_cache.R` consulta a API de Releases e, se o SIM (`sim-mrj`) ou o HAAT (`clima-mrj`) mudaram, baixa os arquivos, monta o contexto e troca o cache em `shiny/cache/`. Sem versão nova, não baixa nada. Se o GitHub estiver fora do ar, mantém o cache. Opções: `--pop res,todos`, `--cache pasta`, `--forcar`.
-- O download só é aceito com o tamanho igual ao que o GitHub informa, e a troca do cache é atômica: o app nunca lê arquivo pela metade. Mudar `R/funcoes.R` (as regras) também invalida o cache.
-- No servidor, rode o script pelo usuário que executa os apps (`sudo -u shiny crontab -e`), por exemplo todo dia às 06:00. O Shiny Server derruba um app que passa de 60 s para iniciar, por isso o download não acontece dentro da sessão.
-- Variáveis opcionais: `PAINEL_CACHE`, `PAINEL_SIM_REPOS`, `PAINEL_CLIMA_REPO` e `GITHUB_PAT` (só para subir o limite de 60 consultas por hora da API).
+Como funciona:
+
+1. `shiny/atualizar_cache.R` (rodado por cron, fora das sessões) consulta a API de Releases e, se o SIM (`sim-mrj`) ou o HAAT (`clima-mrj`) mudaram, baixa os arquivos, monta o contexto de cada população e troca o cache em `shiny/cache/`. Sem versão nova, não baixa nada. Se o GitHub estiver fora do ar, mantém o cache.
+2. Ao abrir, a página recebe só o calendário e o clima (cerca de 90 KB compactados). Nenhum modelo é ajustado nessa hora.
+3. Ao escolher local, faixa etária, raça/cor e medida de calor, o navegador pede o recorte ao servidor. Um trabalhador (processo separado do `future`) ajusta só esse modelo, em 2 a 9 segundos, e o resultado vai para `shiny/cache/ajustes/<versão dos dados>/`. O mesmo recorte, pedido de novo por qualquer pessoa, sai do disco na hora. O navegador também guarda o que já recebeu.
+4. Quando o cron traz uma versão nova dos dados, os ajustes da versão antiga são apagados. Quem estava com a página aberta vê o aviso para recarregar.
+
+Instalação no servidor (exemplo com o repositório em `/opt/mortalidade_MRJ`, dono `shiny`):
+
+```
+cd /opt/mortalidade_MRJ && sudo -u shiny git pull
+sudo Rscript painel_quarto/shiny/instalar_pacotes.R
+sudo -u shiny Rscript painel_quarto/shiny/atualizar_cache.R
+sudo ln -s /opt/mortalidade_MRJ/painel_quarto/shiny /srv/shiny-server/mortalidade_calor
+sudo -u shiny crontab -e     # 0 6 * * *  /usr/bin/Rscript /opt/mortalidade_MRJ/painel_quarto/shiny/atualizar_cache.R >> /opt/mortalidade_MRJ/painel_quarto/shiny/cache/cron.log 2>&1
+```
+
+O app abre em `http://servidor:3838/mortalidade_calor/`. O Shiny Server derruba um app que passa de 60 s para iniciar, por isso o download não acontece dentro da sessão. Se alguém abrir o app sem cache, ele dispara a atualização em segundo plano e a página recarrega sozinha quando os dados estiverem prontos.
+
+Rodar localmente: `PAINEL_CACHE=pasta_do_cache Rscript -e 'shiny::runApp("shiny")'` a partir desta pasta. Para montar um cache sem rede a partir de arquivos locais: `Rscript testes/montar_cache_local.R --silver pasta/silver --haat haat_diario_municipal.csv --cache pasta_do_cache --pop res,todos`.
+
+Variáveis de ambiente (todas opcionais): `PAINEL_RAIZ` (pasta do projeto, se o app não achar sozinho), `PAINEL_CACHE`, `PAINEL_TRABALHADORES` (modelos ajustados ao mesmo tempo, padrão 2; cada trabalhador usa cerca de 300 MB), `PAINEL_SIM_REPOS`, `PAINEL_CLIMA_REPO` e `GITHUB_PAT` (só para subir o limite de 60 consultas por hora da API).
+
+O download só é aceito com o tamanho igual ao que o GitHub informa, e a troca do cache é atômica: o app nunca lê arquivo pela metade. Mudar `R/funcoes.R` (as regras) também invalida o cache.
 
 ## Testes
 
@@ -60,9 +81,13 @@ Rscript testes/teste_funcoes.R
 Rscript testes/teste_modelo.R
 python3 testes/teste_pagina.py painel_figura1.html capturas/
 PAINEL_TESTE_TAR=silver_sim_mrj.tar.gz PAINEL_TESTE_HAAT=haat_diario_municipal.csv Rscript testes/teste_fontes.R
+PAINEL_CACHE=pasta_do_cache PAINEL_TESTE_BASE=saida/figura1_res.json Rscript testes/teste_servico.R
+PAINEL_CACHE=pasta_do_cache python3 testes/teste_app.py
 ```
 
 O teste do download e do cache sobe um servidor local que imita a API e os arquivos das Releases e confere: primeira carga, versão igual (não baixa de novo), versão nova (troca e apaga a antiga), tamanho errado, GitHub fora do ar e bloqueio de atualização simultânea. Sem as variáveis de ambiente roda só os testes que não precisam de dados.
+
+O teste do serviço compara o resultado de cada recorte ajustado sob demanda com o do `calcular_figura1.R` (referência gerada com os mesmos dados), confere o cache em disco, os códigos de erro e os pedidos assíncronos. O teste do app sobe o Shiny e percorre a página no navegador: figura inicial, troca de filtros, população, recorte sem óbitos suficientes, outra sessão lendo do disco e aviso de dados novos.
 
 O teste do modelo simula uma série com efeito do calor conhecido e confere que o RR e o excesso de óbitos são recuperados. O teste da página percorre todos os recortes nas duas escalas e confere que o recorte muda o resultado.
 

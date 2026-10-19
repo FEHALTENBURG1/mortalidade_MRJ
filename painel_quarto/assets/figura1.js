@@ -34,7 +34,14 @@ lerDados().then(iniciar).catch(e=>{ $("s-note").textContent = e.message });
 function iniciar(D){
 const M = D.meta, sem = D.sem, dias = D.dias, cl = D.cl, fl = D.fl;
 const nSem = sem.ini.length;
-const ix = new Map(D.k.map((k,i)=>[k,i]));
+/* Modo Shiny (M.sob_demanda): a página traz só o calendário e o clima; cada recorte e medida de calor chega do servidor quando é escolhido e
+   fica guardado aqui (D.k, D.o, D.m, D.So, D.S têm o mesmo formato do JSON completo do Quarto, preenchido aos poucos). */
+const SH = !!(M.sob_demanda && window.Shiny);
+let ELEG = new Set(M.elegiveis||[]), POP = M.pop, CHAVE = M.dados && M.dados.chave, nPedidos = 0;
+const PEND = new Set(), idPedido = (pop,key,ex) => pop+"|"+ex+"|"+key;
+const ix = new Map();
+const zerar = () => { D.k=[]; D.o=[]; D.m={}; D.S={}; D.So={}; Object.keys(M.exposicoes).forEach(e=>{ D.m[e]={f:[],d:[],rr:[],e:[]}; D.S[e]={} }); ix.clear() };
+if(SH) zerar(); else D.k.forEach((k,i)=>ix.set(k,i));
 const cd = {hi_max:cl.hi_max, hi_med:{o:cl.hi_med}, t_med:{o:cl.t_med}, nc:cl.nc};
 const diaIx = new Map(dias.map((d,i)=>[d,i]));
 const anos = [...new Set(sem.ano)].sort();
@@ -110,12 +117,56 @@ function desenhar(){
   $("s-critw").classList.toggle("hide",dia);
   $("s-h2").textContent=(dia?"Óbitos diários por causas naturais: cada dia em relação ao esperado sem calor":"Óbitos semanais por causas naturais: observados, esperados sem calor e semanas de calor")+($("s-raca").value!=="Todas"?` (raça/cor: ${({PPI:"preta, parda e indígena"})[$("s-raca").value]||$("s-raca").value.toLowerCase()})`:"");
   racaNota();
+  const key=keyF1(), ex=$("s-exp").value;
+  if(SH && ELEG.has(key) && !carregado(key,ex)){ pedir(key,ex); return }       // mantém a figura anterior, esmaecida, até o servidor responder
+  quadros(false);
   if(chS){chS.destroy();chS=null}
-  const k=ix.get(keyF1());
+  const k=ix.get(key);
   if(k==null){ $("s-kpis").innerHTML=""; $("s-leg").innerHTML=""; $("i-serie").innerHTML=""; $("s-note").textContent=`Menos de ${M.min_obitos} óbitos nesta combinação de filtros: série não estimada.`; return }
   dia?desenharDia(k):desenharSemana(k)
 }
 window.__desenhar=desenhar;
+
+/* ---------- modo Shiny: pedir recortes ao servidor ---------- */
+const quadros = on => { $("s-kpis").classList.toggle("calc",on); $("s-chart").parentNode.classList.toggle("calc",on) };
+const carregado = (key,ex) => ix.has(key) && D.m[ex] && D.m[ex].f[ix.get(key)]!==undefined && D.S[ex][key]!==undefined;
+function pedir(key,ex){
+  quadros(true);
+  $("s-note").textContent="Calculando o modelo deste recorte (de 3 a 15 segundos na primeira vez; depois o resultado fica guardado no servidor)…";
+  const id=idPedido(POP,key,ex); if(PEND.has(id)) return; PEND.add(id);
+  window.Shiny.setInputValue("pedido",{key,ex,pop:POP,chave:CHAVE,n:++nPedidos},{priority:"event"});
+}
+function mesclar(key,ex,p){
+  let k=ix.get(key); if(k==null){ k=D.k.length; D.k.push(key); ix.set(key,k) }
+  D.o[k]=p.o; const m=D.m[ex]; m.f[k]=p.f; m.d[k]=p.d; m.rr[k]=p.rr; m.e[k]=p.e;
+  D.So[key]=p.So; D.S[ex][key]=p.S;
+}
+function registrarShiny(){
+  const S=window.Shiny;
+  S.addCustomMessageHandler("segmento", msg=>{
+    PEND.delete(idPedido(msg.pop,msg.key,msg.ex));
+    if(msg.pop!==POP || msg.chave!==CHAVE) return;                                // resposta de outra população ou de uma versão antiga dos dados
+    mesclar(msg.key,msg.ex,JSON.parse(msg.json));
+    if(msg.key===keyF1() && msg.ex===$("s-exp").value) desenhar();
+  });
+  S.addCustomMessageHandler("base", msg=>{                                         // troca de população
+    const b=JSON.parse(msg.json);
+    if(b.meta.n_dias!==dias.length){ location.reload(); return }                   // calendário diferente: recarrega a página
+    Object.assign(M,b.meta); D.rc=b.rc; ELEG=new Set(M.elegiveis); POP=M.pop; CHAVE=M.dados.chave; PEND.clear(); zerar(); desenhar();
+  });
+  S.addCustomMessageHandler("erro_segmento", msg=>{
+    PEND.delete(idPedido(msg.pop,msg.key,msg.ex));
+    if(msg.pop!==POP || msg.key!==keyF1() || msg.ex!==$("s-exp").value) return;     // erro de um pedido que o usuário já deixou para trás
+    quadros(false);
+    $("s-note").innerHTML = msg.codigo==="dados_mudaram"
+      ? 'Os dados foram atualizados no servidor. <a href="">Recarregue a página</a> para ver a versão nova.'
+      : "Não foi possível ajustar o modelo deste recorte: "+String(msg.mensagem||"erro desconhecido").replace(/[<>&]/g,"");
+  });
+  const sel=$("s-pop");
+  if(sel){ sel.value=POP;
+    sel.onchange=()=>{ POP=sel.value; CHAVE=null; ELEG=new Set(); PEND.clear(); zerar(); quadros(true);
+      $("s-note").textContent="Carregando a população selecionada…"; S.setInputValue("pop",POP,{priority:"event"}) } }
+}
 
 /* ---------- barras de clima ao fundo (comum às duas escalas) ---------- */
 function barrasClima(idxDias, porSemana){
@@ -280,6 +331,9 @@ function desenharDia(k){
     baixar(`serie_diaria_${ex}_${key.replace(/[^a-z0-9]+/gi,"_")}.csv`,"﻿"+t)};
 }
 
-racaSync(); window.__desenhar();
+if(SH){ registrarShiny();
+  const go=()=>{ racaSync(); window.__desenhar() };
+  (window.Shiny.shinyapp && window.Shiny.shinyapp.isConnected && window.Shiny.shinyapp.isConnected()) ? go() : window.jQuery(document).one("shiny:connected",go) }
+else { racaSync(); window.__desenhar() }
 }
 })();

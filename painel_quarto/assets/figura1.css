@@ -52,3 +52,5 @@ header#title-block-header{display:none}
 .sobre h3{font-size:14.5px;margin:20px 0 6px;color:var(--azul)}
 .sobre code{font-size:12.5px;background:var(--faixa);padding:1px 4px;border-radius:2px}
 .sobre a{color:var(--azul)}
+
+.calc{opacity:.4;transition:opacity .15s}
