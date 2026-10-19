@@ -1,0 +1,27 @@
+<section id="tab-exp" class="hide">
+  <div class="ctl">
+    <label>Local do óbito<select id="x-local"></select></label>
+    <label>Faixa etária (anos)<select id="x-faixa"></select></label>
+    <label>Raça/cor<select id="x-raca"></select></label>
+    <label>Medida de calor do modelo<select id="x-exp"></select></label>
+    <!--FILTROS-->
+    <label>Defasagem (Figura 3)<select id="x-lag"><option value="rr">RR em cada defasagem</option><option value="ac">RR acumulado até cada defasagem</option></select></label>
+  </div>
+  <p class="note" id="x-sub" style="margin:12px 2px 14px"></p>
+  <div class="kpis" id="x-kpis"></div>
+  <div class="grid2">
+    <div class="card">
+      <div class="fn">Figura 2</div><h2 id="x-h2">Resposta à exposição ao calor</h2>
+      <div class="legend" id="x-leg"></div>
+      <div class="chartbox"><canvas id="x-chart"></canvas></div>
+      <p class="note" id="x-note"></p>
+    </div>
+    <div class="card">
+      <div class="fn">Figura 3</div><h2 id="x-h3">Resposta por defasagem</h2>
+      <div class="legend" id="x-leg2"></div>
+      <div class="chartbox"><canvas id="x-chart2"></canvas></div>
+      <p class="note" id="x-note2"></p>
+    </div>
+  </div>
+  <div class="interp" id="x-interp"></div>
+</section>

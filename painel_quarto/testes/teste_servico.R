@@ -121,6 +121,13 @@ checar("o ajuste guardado de uma causa não é lido como de outra", !is.null(ler
 unlink(f_fake)
 r_cov2 <- executar_ajuste(pasta, "res", chave, K, "horas", "naturais", "100")
 checar("o mesmo pedido com retirada sai do disco", r_cov2$do_cache && identical(r_cov2$payload, r_cov$payload))
+cvj <- json_de(r_nat)$cv; rrj <- json_de(r_nat)$rr
+checar("curvas: o payload do app traz a grade de exposição, o RR acumulado e dois níveis de referência", !is.null(cvj) && length(cvj$x) == 41 && cvj$x[[1]] == 0 && cvj$rr[[1]] == 1 && length(cvj$lag) == 2)
+checar("curvas: o RR acumulado na última defasagem é o RR dos quadros", abs(cvj$lag[[1]]$ac[[11]] - rrj[[1]]) < 5e-4 && abs(cvj$lag[[2]]$ac[[11]] - rrj[[4]]) < 5e-4, c(cvj$lag[[1]]$ac[[11]], rrj[[1]]))
+checar("curvas: o intervalo envolve a curva e há 11 defasagens", all(num(cvj$lo) <= num(cvj$rr) + 1e-9) && all(num(cvj$rr) <= num(cvj$hi) + 1e-9) && length(cvj$lag[[1]]$rr) == 11 && length(cvj$lag[[2]]$achi) == 11)
+checar("curvas: o payload sem o pedido de curvas (Quarto) não as traz", is.null(json_de(payload_segmento(ajustar_segmento(y_causa(P, "naturais")[[K]], P$b, cbi_de(P, "horas"), fora_ajuste(cx, opc_de_codigo("000")), P$kt), y_causa(P, "naturais")[[K]], P$sem, P$cov_w))$cv))
+f_v <- arquivo_ajuste(pasta, chave, "res", "horas", K); x_v <- readRDS(f_v); x_v$versao <- NULL; saveRDS(x_v, f_v)
+checar("ajuste gravado por versão antiga do payload é refeito", is.null(ler_ajuste(pasta, chave, "res", "horas", K)) && !executar_ajuste(pasta, "res", chave, K, "horas")$do_cache)
 checar("causa fora da lista: erro recorte_invalido", identical(cod(executar_ajuste(pasta, "res", chave, K, "horas", "inexistente", "000")), "recorte_invalido"))
 checar("retirada fora da lista: erro recorte_invalido", all(vapply(c("2", "1000", "abc", NA_character_), function(x) identical(cod(executar_ajuste(pasta, "res", chave, K, "horas", "naturais", x)), "recorte_invalido"), TRUE)))
 checar("poucos óbitos depois da retirada: erro recorte_invalido", {

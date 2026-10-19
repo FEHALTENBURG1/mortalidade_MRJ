@@ -42,13 +42,21 @@ base_figura1 <- function(cx, k_time, versao = "1.0") {
 
 # Tudo que a figura precisa de um recorte e uma medida de calor, a partir do ajuste r (ajustar_segmento) e da série diária y:
 # família e dispersão, RR, esperado diário (décimos), observado diário e semanal e o esperado semanal com a faixa de 95%.
-payload_segmento <- function(r, y, sem, cov_w) {
+# Com curvas = TRUE (app Shiny), traz também as curvas de exposição-resposta e de defasagem do modelo (`cv`), usadas na aba de exposição-resposta.
+payload_segmento <- function(r, y, sem, cov_w, curvas = FALSE) {
   w <- semanal(r, y, sem, cov_w)
   g <- factor(as.character(sem$ini), levels = as.character(sem$ini_ok))
-  list(f = r$fam, d = arred(r$disp, 3), rr = arred(as.numeric(r$rr), 4), e = dec(r$mu_sem_calor),
-       o = as.integer(y), So = as.integer(tapply(y, g, sum)),
-       S = list(e = arred(w$e, 1), l = arred(w$l, 1), u = arred(w$u, 1), phi = arred(w$phi, 2)))
+  p <- list(f = r$fam, d = arred(r$disp, 3), rr = arred(as.numeric(r$rr), 4), e = dec(r$mu_sem_calor),
+            o = as.integer(y), So = as.integer(tapply(y, g, sum)),
+            S = list(e = arred(w$e, 1), l = arred(w$l, 1), u = arred(w$u, 1), phi = arred(w$phi, 2)))
+  if (curvas) p$cv <- curvas_payload(r$curvas)
+  p
 }
+
+curvas_payload <- function(cv) list(
+  x = arred(cv$x, 3), rr = arred(cv$rr, 4), lo = arred(cv$lo, 4), hi = arred(cv$hi, 4),
+  lag = unname(lapply(cv$lag, function(l) list(ref = l$ref, rr = arred(l$rr, 4), lo = arred(l$lo, 4), hi = arred(l$hi, 4),
+                                              ac = arred(l$ac, 4), aclo = arred(l$aclo, 4), achi = arred(l$achi, 4)))))
 
 montar_figura1 <- function(cx, Y, ajustes, k_time, versao = "1.0") {
   sem <- semanas(cx$dias); chaves <- names(ajustes[[1]])

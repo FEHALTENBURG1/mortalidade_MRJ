@@ -18,7 +18,7 @@ nav button[aria-selected="true"]{color:var(--azul);border-bottom-color:var(--azu
 .ctl fieldset.ret{display:flex;flex-wrap:wrap;gap:4px 16px;align-items:center;margin:0;padding:3px 12px 7px;border:1px solid var(--line);border-radius:4px}
 .ctl fieldset.ret legend{padding:0 4px;font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:var(--mut);font-weight:600}
 .ctl fieldset.ret label.chk{font-size:12.5px}
-.ctl select#s-causa{min-width:30em}
+.ctl select[id$="-causa"]{min-width:30em}
 .ctl select#s-pop{min-width:27em}
 select,input[type=number]{font:inherit;font-size:13.5px;padding:5px 8px;border:1px solid var(--line);border-radius:3px;background:var(--card);color:var(--ink);max-width:340px;text-transform:none;letter-spacing:0;font-weight:400}
 #pop{min-width:420px;max-width:100%}

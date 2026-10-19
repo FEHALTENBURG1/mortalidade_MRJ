@@ -57,6 +57,23 @@ cross_exposicao <- function(b, e) {
   list(obj = cb, m = m, c0 = m[i0, ], pen = if (e$fun == "ps") cbPen(cb) else NULL, e = e)
 }
 
+# Curvas do modelo para a aba de exposição-resposta, a partir dos coeficientes da cross-basis (beta) e da sua matriz de covariância (V):
+#   x, rr, lo, hi: RR acumulado em 0 a LAG dias para uma exposição x mantida em todos os dias, em relação a x = 0 (grade de 41 pontos até o percentil 99 dos dias com exposição, porque acima disso há poucos dias);
+#   lag: para cada nível de referência, o RR em cada defasagem (rr, lo, hi) e o RR acumulado até cada defasagem (ac, aclo, achi).
+curvas_modelo <- function(cbi, beta, V, x_max) {
+  e <- cbi$e
+  grade <- seq(0, x_max, length.out = 41)
+  at <- sort(unique(c(grade, e$ref)))
+  pr <- crosspred(cbi$obj, coef = beta, vcov = V, model.link = "log", at = at, cen = 0, cumul = TRUE)
+  i_g <- match(round(grade, 8), round(pr$predvar, 8))
+  nivel <- lapply(e$ref, function(r) {
+    i <- which.min(abs(pr$predvar - r))
+    list(ref = r, rr = pr$matRRfit[i, ], lo = pr$matRRlow[i, ], hi = pr$matRRhigh[i, ],
+         ac = pr$cumRRfit[i, ], aclo = pr$cumRRlow[i, ], achi = pr$cumRRhigh[i, ])
+  })
+  list(x = grade, rr = pr$allRRfit[i_g], lo = pr$allRRlow[i_g], hi = pr$allRRhigh[i_g], lag = nivel)
+}
+
 # Ajusta um segmento. y = óbitos por dia (calendário completo); fora = dias fora do ajuste (sem registro no SIM).
 # Devolve a família usada, o RR acumulado nas exposições de referência e os vetores diários (NA fora do ajuste).
 ajustar_segmento <- function(y, b, cbi, fora, k_time) {
@@ -78,10 +95,12 @@ ajustar_segmento <- function(y, b, cbi, fora, k_time) {
   beta <- coef(fit)[ib]
   efeito <- as.numeric(cb_i %*% beta) - sum(cbi$c0 * beta)             # log do efeito do calor em cada dia do calendário
   eta <- rep(NA_real_, nrow(dd)); eta[ok] <- as.numeric(predict(fit, type = "link"))
-  pr <- crosspred(cbi$obj, coef = beta, vcov = vcov(fit)[ib, ib], model.link = "log", at = cbi$e$ref, cen = 0)
+  V <- vcov(fit)[ib, ib]
+  pr <- crosspred(cbi$obj, coef = beta, vcov = V, model.link = "log", at = cbi$e$ref, cen = 0)
   disp <- if (fam == "nb") fit$family$getTheta(TRUE) else fit$scale   # theta (NB: var = mu + mu^2/theta) ou φ (var = φ mu)
   list(fam = fam, disp = disp, n = sum(dd$y[ok]),
        rr = rbind(rr = pr$allRRfit, lo = pr$allRRlow, hi = pr$allRRhigh),
+       curvas = curvas_modelo(cbi, beta, V, ceiling(quantile(b[[cbi$e$var]][b[[cbi$e$var]] > 0], 0.99))),
        mu_ajustado = exp(eta), mu_sem_calor = exp(eta - efeito), efeito = efeito,
        dev_expl = summary(fit)$dev.expl)
 }

@@ -25,8 +25,8 @@ async function lerDados(){
 /* ---------- abas ---------- */
 document.querySelectorAll("nav button").forEach(b=>b.onclick=()=>{
   document.querySelectorAll("nav button").forEach(x=>x.setAttribute("aria-selected",x===b));
-  ["serie","sobre"].forEach(t=>{ const e=$("tab-"+t); if(e) e.classList.toggle("hide",t!==b.dataset.tab) });
-  if(b.dataset.tab==="serie" && window.__desenhar) window.__desenhar();
+  document.querySelectorAll("[id^=tab-]").forEach(e=>e.classList.toggle("hide",e.id!=="tab-"+b.dataset.tab));
+  const f=window.__abas && window.__abas[b.dataset.tab]; if(f) f();
 });
 
 lerDados().then(iniciar).catch(e=>{ $("s-note").textContent = e.message });
@@ -42,12 +42,14 @@ const PEND = new Set(), idPedido = (pop,key,ex,causa,cod) => [pop,causa,cod,ex,k
 /* Causa do óbito e retiradas do ajuste (só no app): a causa e três caixas (COVID, meses não consolidados, dias sem clima) formam o código "000" a "111". */
 const CAUSA_POR = {naturais:"por causas naturais", todas_sem_covid:"por todas as causas, exceto COVID-19", todas:"por todas as causas, com COVID-19", externas:"por causas externas"};
 const CAUSA_ROT = {todas_sem_covid:"todas as causas, exceto COVID-19", todas:"todas as causas, com COVID-19", externas:"causas externas"};
-const modo = () => (SH && $("s-causa")) ? {covid:$("s-r-covid").checked, nc:$("s-r-nc").checked, clima:$("s-r-clima").checked, causa:$("s-causa").value} : {covid:false,nc:false,clima:false,causa:"naturais"};
-const codOpc = () => { const m=modo(); return (m.covid?"1":"0")+(m.nc?"1":"0")+(m.clima?"1":"0") };
+/* Cada aba tem o seu próprio conjunto de filtros; o prefixo dos ids (s = Figura 1, x = exposição-resposta, ...) diz de qual aba se lê o estado. */
+const modo = (p="s") => (SH && $(p+"-causa")) ? {covid:$(p+"-r-covid").checked, nc:$(p+"-r-nc").checked, clima:$(p+"-r-clima").checked, causa:$(p+"-causa").value} : {covid:false,nc:false,clima:false,causa:"naturais"};
+const codOpc = (p="s") => { const m=modo(p); return (m.covid?"1":"0")+(m.nc?"1":"0")+(m.clima?"1":"0") };
+const OUV = {seg:[], erro:[], base:[]};                                          // ouvintes das outras abas: recorte recebido, erro do servidor, população trocada
 const ELEGC = new Map();
-const eleg = () => { const c=modo().causa, o=codOpc(), id=c+"|"+o; if(!ELEGC.has(id)) ELEGC.set(id,new Set((((M.elegiveis||{})[c])||{})[o]||[])); return ELEGC.get(id) };
+const eleg = (c=modo().causa, o=codOpc()) => { const id=c+"|"+o; if(!ELEGC.has(id)) ELEGC.set(id,new Set((((M.elegiveis||{})[c])||{})[o]||[])); return ELEGC.get(id) };
 const ix = new Map();
-const zerar = () => { D.k=[]; D.o=[]; D.m={}; D.S={}; D.So={}; ELEGC.clear(); Object.keys(M.exposicoes).forEach(e=>{ D.m[e]={f:[],d:[],rr:[],e:[]}; D.S[e]={} }); ix.clear() };
+const zerar = () => { D.k=[]; D.o=[]; D.m={}; D.S={}; D.So={}; D.cv={}; ELEGC.clear(); Object.keys(M.exposicoes).forEach(e=>{ D.m[e]={f:[],d:[],rr:[],e:[]}; D.S[e]={} }); ix.clear() };
 if(SH) zerar(); else D.k.forEach((k,i)=>ix.set(k,i));
 const cd = {hi_max:cl.hi_max, hi_med:{o:cl.hi_med}, t_med:{o:cl.t_med}, nc:cl.nc};
 const diaIx = new Map(dias.map((d,i)=>[d,i]));
@@ -138,22 +140,25 @@ function desenhar(){
   if(k==null){ $("s-kpis").innerHTML=""; $("s-leg").innerHTML=""; $("i-serie").innerHTML=""; $("s-note").textContent=`Menos de ${M.min_obitos} óbitos ${SH&&codOpc()!=="000"?"no ajuste ":""}neste recorte: série não estimada.`; return }
   dia?desenharDia(k):desenharSemana(k)
 }
-window.__desenhar=desenhar;
+window.__desenhar=desenhar; window.__abas={serie:desenhar};
 
 /* ---------- modo Shiny: pedir recortes ao servidor ---------- */
 const quadros = on => { $("s-kpis").classList.toggle("calc",on); $("s-chart").parentNode.classList.toggle("calc",on) };
 const carregado = (kd,ex) => ix.has(kd) && D.m[ex] && D.m[ex].f[ix.get(kd)]!==undefined && D.S[ex][kd]!==undefined;
-function pedir(key,ex){
-  const causa=modo().causa, cod=codOpc();
-  quadros(true);
-  $("s-note").textContent="Calculando o modelo deste recorte (3 a 15 segundos na primeira solicitação; o resultado é armazenado no servidor)…";
+function enviar(key,ex,causa,cod){
   const id=idPedido(POP,key,ex,causa,cod); if(PEND.has(id)) return; PEND.add(id);
   window.Shiny.setInputValue("pedido",{key,ex,pop:POP,chave:CHAVE,causa,opc:cod,n:++nPedidos},{priority:"event"});
+}
+function pedir(key,ex){
+  quadros(true);
+  $("s-note").textContent="Calculando o modelo deste recorte (3 a 15 segundos na primeira solicitação; o resultado é armazenado no servidor)…";
+  enviar(key,ex,modo().causa,codOpc());
 }
 function mesclar(key,ex,p){
   let k=ix.get(key); if(k==null){ k=D.k.length; D.k.push(key); ix.set(key,k) }
   D.o[k]=p.o; const m=D.m[ex]; m.f[k]=p.f; m.d[k]=p.d; m.rr[k]=p.rr; m.e[k]=p.e;
   D.So[key]=p.So; D.S[ex][key]=p.S;
+  if(p.cv){ (D.cv[ex]||(D.cv[ex]={}))[key]=p.cv }
 }
 function registrarShiny(){
   const S=window.Shiny;
@@ -163,14 +168,16 @@ function registrarShiny(){
     const kd=msg.causa+"~"+msg.opc+"~"+msg.key;
     mesclar(kd,msg.ex,JSON.parse(msg.json));
     if(kd===keyD() && msg.ex===$("s-exp").value) desenhar();
+    OUV.seg.forEach(f=>f(kd,msg.ex));
   });
   S.addCustomMessageHandler("base", msg=>{                                         // troca de população
     const b=JSON.parse(msg.json);
     if(b.meta.n_dias!==dias.length){ location.reload(); return }                   // calendário diferente: recarrega a página
-    Object.assign(M,b.meta); D.rc=b.rc; D.rcs=b.rcs; POP=M.pop; CHAVE=M.dados.chave; PEND.clear(); zerar(); desenhar();
+    Object.assign(M,b.meta); D.rc=b.rc; D.rcs=b.rcs; POP=M.pop; CHAVE=M.dados.chave; PEND.clear(); zerar(); desenhar(); OUV.base.forEach(f=>f());
   });
   S.addCustomMessageHandler("erro_segmento", msg=>{
     PEND.delete(idPedido(msg.pop,msg.key,msg.ex,msg.causa,msg.opc));
+    OUV.erro.forEach(f=>f(msg));
     if(msg.pop!==POP || msg.key!==keyF1() || msg.ex!==$("s-exp").value || msg.causa!==modo().causa || msg.opc!==codOpc()) return;     // erro de um pedido que o usuário já deixou para trás
     quadros(false);
     $("s-note").innerHTML = msg.codigo==="dados_mudaram"
@@ -206,13 +213,13 @@ const NOTA_BARRAS = B => B.bars?` Colunas ao fundo: ${BARRA_NOME[B.bv].toLowerCa
    :`Em laranja, os dias acima de ${fn(B.lim,1)} °C: ${fn(B.bAcima)} de ${fn(B.bDias)} dias no período mostrado (${fn(100*B.bAcima/Math.max(B.bDias,1),1)}%).`):"";
 const kpiHtml = lista => lista.map(([v,l])=>`<div class="kpi"><div class="v">${v}</div><div class="l">${l}</div></div>`).join("");
 /* Textos que dependem do que foi retirado do ajuste (sem as caixas marcadas, saem idênticos aos da página do Quarto). */
-const rotCov = () => modo().covid ? "Período da COVID-19 (fora do ajuste)" : "Período da COVID-19 (termo próprio no modelo)";
-const rotNC = () => modo().nc ? "Registro não consolidado (fora do ajuste)" : "Registro não consolidado (no ajuste)";
-const linhaCov = () => modo().covid ? "Período da COVID-19 (retirado do ajuste; sem esperado e fora dos indicadores)" : "Período da COVID-19 (o modelo inclui um termo para o período; fora dos indicadores)";
-const linhaNC = u => modo().nc ? `Registro não consolidado (${u} retirado do ajuste; sem esperado)` : `Registro não consolidado (${u} no ajuste; o observado pode estar abaixo do real)`;
-const compExp = () => modo().covid ? "tendência de longo prazo e sazonalidade anual" : "tendência de longo prazo, sazonalidade anual e período da COVID-19";
-const notaClima = () => modo().clima ? " Os dias sem dados de clima e os 10 dias seguintes foram retirados do ajuste, e o esperado não é traçado nesses dias." : "";
-const notaCausa = () => { const c=modo().causa; return c==="naturais" ? "" : " Causa do óbito: "+(c==="externas" ? "causas externas, sem COVID-19 (óbitos fora dos códigos A00 a R99 da CID-10)" : c==="todas" ? "todas as causas, com COVID-19" : "todas as causas, exceto COVID-19")+"." };
+const rotCov = (m=modo()) => m.covid ? "Período da COVID-19 (fora do ajuste)" : "Período da COVID-19 (termo próprio no modelo)";
+const rotNC = (m=modo()) => m.nc ? "Registro não consolidado (fora do ajuste)" : "Registro não consolidado (no ajuste)";
+const linhaCov = (m=modo()) => m.covid ? "Período da COVID-19 (retirado do ajuste; sem esperado e fora dos indicadores)" : "Período da COVID-19 (o modelo inclui um termo para o período; fora dos indicadores)";
+const linhaNC = (u,m=modo()) => m.nc ? `Registro não consolidado (${u} retirado do ajuste; sem esperado)` : `Registro não consolidado (${u} no ajuste; o observado pode estar abaixo do real)`;
+const compExp = (m=modo()) => m.covid ? "tendência de longo prazo e sazonalidade anual" : "tendência de longo prazo, sazonalidade anual e período da COVID-19";
+const notaClima = (m=modo()) => m.clima ? " Os dias sem dados de clima e os 10 dias seguintes foram retirados do ajuste, e o esperado não é traçado nesses dias." : "";
+const notaCausa = (m=modo()) => { const c=m.causa; return c==="naturais" ? "" : " Causa do óbito: "+(c==="externas" ? "causas externas, sem COVID-19 (óbitos fora dos códigos A00 a R99 da CID-10)" : c==="todas" ? "todas as causas, com COVID-19" : "todas as causas, exceto COVID-19")+"." };
 const baixar = (nome, conteudo) => { const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([conteudo],{type:"text/csv"}));a.download=nome;a.click() };
 
 /* ---------- semanal ---------- */
@@ -286,9 +293,9 @@ function desenharSemana(k){
     baixar(`serie_semanal_${ex}_${key.replace(/[^a-z0-9]+/gi,"_")}${sufixoArq()}.csv`,"﻿"+t)};
 }
 
-function notaModelo(k,ex){
+function notaModelo(k,ex,m=modo()){
   const e=EXP[ex];
-  return `O esperado sem calor é estimado por um modelo aditivo generalizado (GAM) com família ${modeloTxt(k,ex)}, ajustado apenas a este recorte, com uma base cruzada (cross-basis) do pacote dlnm para a medida de calor selecionada (${e.nome}; ${e.fun==="ns"?"spline natural com 1 grau de liberdade":"spline penalizado com 15 graus de liberdade"}) e defasagem de 0 a ${M.lag} dias (spline natural com 3 graus de liberdade), mais um spline de tempo (base de dimensão k = ${M.k_tempo}), um spline cíclico do dia do ano${modo().covid?". O período da COVID-19 foi retirado do ajuste, de modo que o modelo não tem termo para ele.":" e um spline cíclico para o período da COVID-19."} O modelo não inclui termo de dia da semana. O esperado de cada dia é o preditor do modelo com a exposição ao calor igual a zero.`
+  return `O esperado sem calor é estimado por um modelo aditivo generalizado (GAM) com família ${modeloTxt(k,ex)}, ajustado apenas a este recorte, com uma base cruzada (cross-basis) do pacote dlnm para a medida de calor selecionada (${e.nome}; ${e.fun==="ns"?"spline natural com 1 grau de liberdade":"spline penalizado com 15 graus de liberdade"}) e defasagem de 0 a ${M.lag} dias (spline natural com 3 graus de liberdade), mais um spline de tempo (base de dimensão k = ${M.k_tempo}), um spline cíclico do dia do ano${m.covid?". O período da COVID-19 foi retirado do ajuste, de modo que o modelo não tem termo para ele.":" e um spline cíclico para o período da COVID-19."} O modelo não inclui termo de dia da semana. O esperado de cada dia é o preditor do modelo com a exposição ao calor igual a zero.`
 }
 
 /* ---------- diária ---------- */
@@ -354,6 +361,12 @@ function desenharDia(k){
     baixar(`serie_diaria_${ex}_${key.replace(/[^a-z0-9]+/gi,"_")}${sufixoArq()}.csv`,"﻿"+t)};
 }
 
+/* Interface das outras abas (assets/aba_*.js): cada uma se registra em window.PainelAbas e recebe este objeto. */
+const P = {$, css, fn, fr, fp, dBR, fillSel, nm, mkCor, M, D, SH, EXP, KEXP, ix, modo, cod:codOpc, eleg, enviar, ouvir:OUV, abas:window.__abas,
+  kd:(c,o,k)=>c+"~"+o+"~"+k, cv:(kd,ex)=>(D.cv&&D.cv[ex]&&D.cv[ex][kd])||null, pop:()=>POP,
+  rrKpi:(kd,ex)=>rrDoModelo(ix.get(kd),ex), notaModelo:(kd,ex,m)=>notaModelo(ix.get(kd),ex,m), modeloTxt:(kd,ex)=>modeloTxt(ix.get(kd),ex),
+  texto:{rotCov, rotNC, linhaCov, linhaNC, compExp, notaClima, notaCausa, causaPor:c=>CAUSA_POR[c], causaRot:c=>CAUSA_ROT[c]}};
+if(SH) (window.PainelAbas||[]).forEach(f=>f(P));
 if(SH){ registrarShiny();
   const go=()=>{ racaSync(); window.__desenhar() };
   (window.Shiny.shinyapp && window.Shiny.shinyapp.isConnected && window.Shiny.shinyapp.isConnected()) ? go() : window.jQuery(document).one("shiny:connected",go) }

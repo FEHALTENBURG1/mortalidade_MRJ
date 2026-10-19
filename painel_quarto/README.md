@@ -16,14 +16,14 @@ O resultado é um arquivo HTML único (`painel_figura1.html`), sem servidor: o R
 ```
 calcular_figura1.R        driver: lê o SIM e o clima, ajusta os modelos e grava saida/figura1_<pop>.json
 R/funcoes.R               óbitos (nanoparquet), causas, local, raça/cor, faixas, registro do SIM, clima, semanas
-R/modelo_joao.R           GAM + DLNM por segmento, contrafactual e esperado semanal
+R/modelo_joao.R           GAM + DLNM por segmento, contrafactual, esperado semanal e curvas de exposição-resposta
 R/exportar.R              JSON da figura (inteiro ou por recorte) e bloco compactado para a página
 R/metodos.R               texto da aba Métodos e fontes, igual no Quarto e no Shiny
 R/fontes_remotas.R        Shiny: baixa o SIM e o HAAT das Releases do GitHub e mantém o cache em disco
 R/servico.R               Shiny: ajuste de um recorte sob demanda, cache de ajustes e pedidos assíncronos
 shiny/                    Shiny: app.R, atualizar_cache.R (cron), instalar_pacotes.R e a pasta cache/ (fora do Git)
 painel_figura1.qmd        página (métodos em texto, números calculados em R)
-assets/                   CSS, JavaScript da figura, Chart.js e markup dos filtros
+assets/                   CSS, JavaScript da figura (figura1.js) e das abas do app (aba_*.js, aba_*.html), Chart.js e markup dos filtros
 dados_auxiliares/         cnes_estab.csv (tipo dos estabelecimentos)
 testes/                   testes das funções, do modelo (dados simulados), da página e do app (Playwright), das fontes e do serviço
 ```
@@ -67,6 +67,17 @@ Dois filtros existem só no app. O primeiro é a causa do óbito: causas naturai
 | Dias sem dados de clima | esses dias e os 10 seguintes saem do ajuste (sem a caixa, contam como dias sem calor) |
 
 Sem nenhuma caixa marcada, o ajuste é o do modelo de referência. Os dias sem registro no SIM saem sempre. Cada combinação de causa e de caixas é um modelo diferente, guardado em disco como os demais (`<causa>`, o código de três dígitos 0/1 das caixas e o recorte entram no nome do arquivo). O mínimo de 300 óbitos conta só os dias que ficam no ajuste. O cache de dados passou a guardar também os óbitos de outras causas (cerca de 10 MB por população), então a primeira atualização depois desta versão refaz o cache: `Rscript shiny/atualizar_cache.R --forcar`.
+
+### Abas do app
+
+O app tem uma aba por assunto, todas ajustadas pelo mesmo modelo (GAM com DLNM) e com filtros próprios de causa do óbito e de retirada do ajuste. A população vale para todas e fica acima das abas. Cada aba é um par `assets/aba_<nome>.html` e `assets/aba_<nome>.js`, registrado em `ABAS` no `shiny/app.R`; o script recebe de `figura1.js` um objeto com os pedidos ao servidor, os filtros e os textos comuns.
+
+| Aba | Conteúdo |
+|:--|:--|
+| Série de óbitos | Figura 1: observados e esperados sem calor, semanal e diária |
+| Exposição-resposta e defasagem | Figura 2: RR acumulado em 0 a 10 dias pela exposição; Figura 3: RR por defasagem e acumulado, nos dois níveis de referência |
+
+As curvas vêm do mesmo ajuste de cada recorte (`curvas_modelo()` em `R/modelo_joao.R`), então um recorte já pedido na Figura 1 abre na hora na aba de exposição-resposta. Os ajustes guardados em disco levam uma versão do formato (`VERSAO_AJUSTE` em `R/servico.R`): um ajuste gravado por versão anterior é refeito ao ser pedido.
 
 Instalação no servidor (exemplo com o repositório em `/opt/mortalidade_MRJ`, dono `shiny`):
 

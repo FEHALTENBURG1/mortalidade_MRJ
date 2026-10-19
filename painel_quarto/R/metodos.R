@@ -35,6 +35,12 @@ texto_metodos <- function(M, n_sem_idade, resumo = NULL, dados = NULL) {
     pg("Semanas com algum dia fora do ajuste ficam sem esperado. Cada combinação de causa e de retiradas corresponde a um modelo distinto, ajustado e armazenado no servidor na primeira solicitação. O mínimo de ", M$min_obitos, " óbitos considera apenas os dias mantidos no ajuste."))
   else ""
 
+  curvas_p <- if (demanda) paste0(
+    "### Curvas de exposição-resposta e de defasagem\n\n",
+    pg("A aba Exposição-resposta e defasagem mostra, para o recorte escolhido, duas curvas obtidas do mesmo modelo que gera o esperado sem calor. A Figura 2 traz o RR acumulado em 0 a ", M$lag, " dias em função da exposição, mantida constante em todos os dias da janela, em relação a nenhuma exposição. O intervalo de confiança de 95% usa a matriz de covariância dos coeficientes da cross-basis (função `crosspred` do pacote `dlnm`). A grade de exposição vai de zero ao percentil 99 dos dias com exposição, porque acima disso há poucos dias. A Figura 3 traz o RR em cada defasagem e o RR acumulado até cada defasagem, nos dois níveis de referência."),
+    pg("Com a medida de horas, a resposta à exposição tem 1 grau de liberdade, de modo que o logaritmo do RR é linear na exposição por construção e a curva não identifica limiar. O HAAT, com spline penalizado de 15 graus de liberdade, permite curvatura. A aba tem filtros próprios de recorte, causa do óbito e retirada do ajuste, e reaproveita os modelos já ajustados nas outras abas."))
+  else ""
+
   pop_frase <- if (demanda) "A população selecionada corresponde a" else "A população desta versão corresponde a"
 
   trocas <- if (demanda)
@@ -94,6 +100,7 @@ texto_metodos <- function(M, n_sem_idade, resumo = NULL, dados = NULL) {
     "| HAAT | graus-hora acima de 36 °C no dia (`auc36`) | spline penalizado, 15 gl | ", a[1], " e ", a[2], " °C·h por dia |\n\n",
     pg(rr_frase),
     retirar_p,
+    curvas_p,
     "### Esperado sem calor\n\n",
     pg("O esperado de cada dia é o preditor linear do modelo com a cross-basis substituída pela cross-basis de exposição zero em todas as defasagens, isto é, o número de óbitos que o modelo prevê na ausência de calor (contrafactual). O esperado semanal é a soma dos sete esperados diários da semana (semanas epidemiológicas completas, de domingo a sábado). A faixa de 95% usa uma aproximação normal, com variância igual à soma das variâncias diárias (μ + μ²/θ) multiplicada por uma dispersão semanal φ (no mínimo 1). Dias vizinhos têm resíduos correlacionados, por epidemias e outros eventos que o modelo não descreve, e a soma de variâncias independentes subestima a variância da semana. O fator φ é a razão entre o erro quadrático semanal e essa soma, medida nos resíduos do modelo ajustado e fora do período da COVID-19. ",
         phi_frase, " Semanas com algum dia fora do ajuste ficam sem esperado."),

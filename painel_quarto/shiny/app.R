@@ -52,24 +52,42 @@ base_info <- function(pop) {
 # ---------------------------------------------------------------- página
 corpo_html <- paste(readLines(file.path(raiz, "assets", "figura1_corpo.html"), encoding = "UTF-8", warn = FALSE), collapse = "\n")
 
-# Controles que só existem no app: população, causa do óbito e o que retirar do ajuste (o JavaScript da figura os reconhece pelo id).
-controles_shiny <- function(pops, pop) {
-  opc_pop <- if (length(pops) < 2) "" else sprintf("\n    <label>População<select id=\"s-pop\">%s</select></label>",
-    paste0(sprintf("<option value=\"%s\"%s>%s</option>", pops, ifelse(pops == pop, " selected", ""), ROTULO_POP[pops]), collapse = ""))
-  causas <- sprintf("\n    <label>Causa do óbito<select id=\"s-causa\">%s</select></label>",
+# Abas além da Figura 1: cada uma tem o seu HTML (assets/aba_*.html), o seu script (assets/aba_*.js) e um prefixo para os ids dos seus filtros.
+ABAS <- list(
+  list(id = "exp", rotulo = "Exposição-resposta e defasagem", arquivo = "aba_exposicao", prefixo = "x"))
+ler_texto <- function(f) paste(readLines(f, encoding = "UTF-8", warn = FALSE), collapse = "\n")
+for (i in seq_along(ABAS)) ABAS[[i]]$html <- ler_texto(file.path(raiz, "assets", paste0(ABAS[[i]]$arquivo, ".html")))
+
+# Filtros que só existem no app e que cada aba repete com o seu prefixo: causa do óbito e o que retirar do ajuste do modelo.
+# O JavaScript os reconhece pelo id (<prefixo>-causa, <prefixo>-r-covid, <prefixo>-r-nc, <prefixo>-r-clima).
+filtros_modelo <- function(p) {
+  causas <- sprintf("\n    <label>Causa do óbito<select id=\"%s-causa\">%s</select></label>", p,
                     paste0(sprintf("<option value=\"%s\">%s</option>", names(CAUSAS), CAUSAS), collapse = ""))
-  retirar <- paste0("\n    <fieldset class=\"ret\"><legend>Retirar do ajuste do modelo</legend>",
-    "<label class=\"chk\"><input type=\"checkbox\" id=\"s-r-covid\"> <span id=\"s-r-covid-t\">Período da COVID-19</span></label>",
-    "<label class=\"chk\"><input type=\"checkbox\" id=\"s-r-nc\"> Meses com registro não consolidado</label>",
-    "<label class=\"chk\"><input type=\"checkbox\" id=\"s-r-clima\"> Dias sem dados de clima (e os 10 seguintes)</label></fieldset>")
-  paste0(opc_pop, causas, retirar)
+  retirar <- gsub("@", p, paste0("\n    <fieldset class=\"ret\"><legend>Retirar do ajuste do modelo</legend>",
+    "<label class=\"chk\"><input type=\"checkbox\" id=\"@-r-covid\"> <span id=\"@-r-covid-t\">Período da COVID-19</span></label>",
+    "<label class=\"chk\"><input type=\"checkbox\" id=\"@-r-nc\"> Meses com registro não consolidado</label>",
+    "<label class=\"chk\"><input type=\"checkbox\" id=\"@-r-clima\"> Dias sem dados de clima (e os 10 seguintes)</label></fieldset>"), fixed = TRUE)
+  paste0(causas, retirar)
 }
+
+# Corpo da página: a Figura 1, as abas novas e a população, que vale para todas as abas e por isso fica acima delas.
+corpo_pagina <- function(pops, pop) {
+  barra_pop <- if (length(pops) < 2) "" else sprintf("\n<div class=\"ctl glob\"><label>População<select id=\"s-pop\">%s</select></label></div>",
+    paste0(sprintf("<option value=\"%s\"%s>%s</option>", pops, ifelse(pops == pop, " selected", ""), ROTULO_POP[pops]), collapse = ""))
+  nav <- paste0(vapply(ABAS, function(a) sprintf("<button role=\"tab\" aria-selected=\"false\" data-tab=\"%s\">%s</button>", a$id, a$rotulo), ""), collapse = "\n  ")
+  secoes <- paste0(vapply(ABAS, function(a) sub("<!--FILTROS-->", filtros_modelo(a$prefixo), a$html, fixed = TRUE), ""), collapse = "\n")
+  x <- sub("<div class=\"ctl\">", paste0("<div class=\"ctl\">", filtros_modelo("s")), corpo_html, fixed = TRUE)
+  x <- sub("<!--ABAS_NAV-->", nav, x, fixed = TRUE)
+  x <- sub("<!--ABAS_SECOES-->", secoes, x, fixed = TRUE)
+  sub("</nav>", paste0("</nav>", barra_pop), x, fixed = TRUE)
+}
+scripts_abas <- paste0(vapply(ABAS, function(a) sprintf("<script src=\"painel/%s.js\"></script>", a$arquivo), ""), collapse = "\n")
 
 modelo_pagina <- paste0(
   "<!DOCTYPE html>\n<html lang=\"pt-BR\">\n<head>\n<meta charset=\"utf-8\">\n<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n",
   "<title>Mortalidade e calor no município do Rio de Janeiro</title>\n{{ headContent() }}\n<link rel=\"stylesheet\" href=\"painel/figura1.css\">\n</head>\n<body>\n",
   "{{ corpo }}\n<div id=\"tab-sobre\" class=\"sobre hide\">{{ metodos }}</div>\n</div>\n",
-  "<script id=\"dados-b64\" type=\"text/plain\">{{ dados }}</script>\n<script src=\"painel/chart.umd.js\"></script>\n<script src=\"painel/figura1.js\"></script>\n</body>\n</html>")
+  "<script id=\"dados-b64\" type=\"text/plain\">{{ dados }}</script>\n<script src=\"painel/chart.umd.js\"></script>\n{{ scripts_abas }}\n<script src=\"painel/figura1.js\"></script>\n</body>\n</html>")
 
 pagina_sem_cache <- function() {
   st <- tryCatch(jsonlite::fromJSON(file.path(pasta, "ultima_tentativa.json")), error = function(e) NULL)
@@ -100,7 +118,7 @@ ui <- function(req) {
   b <- base_info(pop)
   if (is.null(b)) { disparar_atualizacao(); return(pagina_sem_cache()) }
   htmlTemplate(text_ = modelo_pagina, document_ = TRUE,
-               corpo = HTML(sub("<div class=\"ctl\">", paste0("<div class=\"ctl\">", controles_shiny(pops, pop)), corpo_html, fixed = TRUE)),
+               corpo = HTML(corpo_pagina(pops, pop)), scripts_abas = HTML(scripts_abas),
                metodos = uiOutput("metodos"), dados = dados_b64(b$json_base))
 }
 

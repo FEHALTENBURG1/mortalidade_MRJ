@@ -13,6 +13,8 @@
 
 .servico <- new.env()                       # estado do processo: modelo preparado de cada população
 
+VERSAO_AJUSTE <- 2L                         # muda quando o conteúdo do payload muda (ajustes gravados com outra versão são refeitos)
+
 CODIGOS_OPC <- c("000", "001", "010", "011", "100", "101", "110", "111")
 opc_de_codigo <- function(cod) { v <- strsplit(cod, "")[[1]] == "1"; list(covid = v[1], nc = v[2], clima = v[3]) }
 codigo_valido <- function(cod) is.character(cod) && length(cod) == 1 && !is.na(cod) && cod %in% CODIGOS_OPC
@@ -66,7 +68,7 @@ ajustar_recorte <- function(P, key, expo, causa = "naturais", cod = "000") {
   y <- y_causa(P, causa)[[key]]
   stopifnot(!is.null(y), expo %in% names(EXPOSICOES), codigo_valido(cod))
   r <- ajustar_segmento(y, P$b, cbi_de(P, expo), fora_ajuste(P$cx, opc_de_codigo(cod)), P$kt)
-  payload_segmento(r, y, P$sem, P$cov_w)
+  payload_segmento(r, y, P$sem, P$cov_w, curvas = TRUE)
 }
 
 # Dados-base da figura (calendário, clima, sinalizações) mais o que o navegador precisa saber no modo sob demanda: causas, recortes elegíveis
@@ -101,7 +103,7 @@ ler_ajuste <- function(pasta, chave, pop, expo, key, causa = "naturais", cod = "
   f <- arquivo_ajuste(pasta, chave, pop, expo, key, causa, cod)
   if (!file.exists(f)) return(NULL)
   x <- tryCatch(readRDS(f), error = function(e) NULL)
-  if (is.null(x) || !identical(x$key, key) || !identical(x$expo, expo) || !identical(x$causa, causa) || !identical(x$cod, cod)) return(NULL)   # corrompido ou colisão de hash
+  if (is.null(x) || !identical(x$versao, VERSAO_AJUSTE) || !identical(x$key, key) || !identical(x$expo, expo) || !identical(x$causa, causa) || !identical(x$cod, cod)) return(NULL)   # corrompido, de versão antiga ou colisão de hash
   x$payload
 }
 
@@ -109,7 +111,7 @@ gravar_ajuste <- function(payload, pasta, chave, pop, expo, key, causa = "natura
   f <- arquivo_ajuste(pasta, chave, pop, expo, key, causa, cod)
   dir.create(dirname(f), showWarnings = FALSE, recursive = TRUE)
   tmp <- paste0(f, ".", Sys.getpid(), ".parte")
-  saveRDS(list(key = key, expo = expo, causa = causa, cod = cod, pop = pop, chave = chave, payload = payload), tmp)
+  saveRDS(list(versao = VERSAO_AJUSTE, key = key, expo = expo, causa = causa, cod = cod, pop = pop, chave = chave, payload = payload), tmp)
   file.rename(tmp, f)
   invisible(f)
 }
