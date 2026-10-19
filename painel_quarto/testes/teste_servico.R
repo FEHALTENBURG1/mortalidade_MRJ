@@ -134,6 +134,36 @@ checar("poucos óbitos depois da retirada: erro recorte_invalido", {
   el <- unlist(b$meta$elegiveis$naturais[["000"]]); sem111 <- setdiff(el, unlist(b$meta$elegiveis$naturais[["111"]]))
   length(sem111) == 0 || identical(cod(executar_ajuste(pasta, "res", chave, sem111[1], "horas", "naturais", "111")), "recorte_invalido") })
 
+# mapa de horas por dia x limiar (Figura 4): uma coluna por pedido, "mapa<K>"
+KM <- "Via pública|40-49"                                                     # recorte pequeno (poucas centenas de óbitos por ano), para o teste ser rápido
+rm1 <- executar_ajuste(pasta, "res", chave, KM, "mapa36")
+pm <- json_de(rm1$payload)
+checar("mapa: a coluna traz o limiar, as 8 linhas de horas e os intervalos", identical(pm$tipo, "mapa") && pm$limiar == 36 && length(pm$h) == 8 && length(pm$rr) == 8 && length(pm$lo) == 8 && length(pm$hi) == 8 && length(pm$nd) == 8 && !rm1$do_cache)
+est <- !is.na(num(pm$rr))
+checar("mapa: o intervalo envolve a estimativa em toda célula estimada", any(est) && all(num(pm$lo)[est] < num(pm$rr)[est] & num(pm$rr)[est] < num(pm$hi)[est]))
+checar("mapa: as células são aninhadas (mais horas, menos dias expostos)", all(diff(num(pm$nd)) <= 0))
+checar("mapa: célula com menos de 15 dias expostos fica sem estimativa", all(is.na(num(pm$rr))[num(pm$nd) < MIN_DIAS_EXPOSTOS]) && all(!is.na(num(pm$rr))[num(pm$nd) >= MIN_DIAS_EXPOSTOS & num(pm$nd) <= pm$n]))
+checar("mapa: o segundo pedido sai do disco", executar_ajuste(pasta, "res", chave, KM, "mapa36")$do_cache && identical(executar_ajuste(pasta, "res", chave, KM, "mapa36")$payload, rm1$payload))
+# a célula (36 °C, 4 h) refeita à mão com o mesmo GAM deve dar o mesmo RR
+h4 <- match(4, pm$h)
+if (!is.na(num(pm$rr)[h4])) {
+  yk <- y_causa(P, "naturais")[[KM]]; fora0 <- fora_ajuste(cx, opc_de_codigo("000"))
+  nh <- cx$clima$num_hr_36; nh[is.na(nh)] <- 0; x4 <- as.numeric(nh >= 4)
+  cb4 <- crossbasis(c(rep(0, LAG), x4), lag = LAG, argvar = list(fun = "lin"), arglag = list(fun = "ns", df = 3))
+  cbi4 <- matrix(as.numeric(cb4[-seq_len(LAG), , drop = FALSE]), nrow = length(x4), dimnames = list(NULL, colnames(cb4)))
+  dd4 <- P$b; dd4$y <- yk; dd4$y[fora0] <- NA
+  ft4 <- suppressWarnings(gam(y ~ cbi4 + s(time_id, k = P$kt, bs = "tp") + s(dia_ano, k = 6, bs = "cc") + s(covid_id, k = 8, bs = "cc"), data = dd4, family = nb(), method = "REML"))
+  ib4 <- grep("^cbi4", names(coef(ft4)))
+  pr4 <- crosspred(cb4, coef = coef(ft4)[ib4], vcov = vcov(ft4)[ib4, ib4], model.link = "log", at = 1, cen = 0)
+  checar("mapa: a célula (36 °C, 4 h) é o RR do GAM com a cross-basis binária ajustado à mão", abs(num(pm$rr)[h4] - pr4$allRRfit) < 1e-6 && abs(num(pm$lo)[h4] - pr4$allRRlow) < 1e-6 && abs(num(pm$hi)[h4] - pr4$allRRhigh) < 1e-6, c(num(pm$rr)[h4], pr4$allRRfit))
+}
+checar("mapa: outra causa e outras retiradas dão outra coluna", !identical(json_de(executar_ajuste(pasta, "res", chave, KM, "mapa36", "externas", "100")$payload)$rr, pm$rr))
+checar("mapa: o arquivo de cache é próprio de cada limiar", !identical(arquivo_ajuste(pasta, chave, "res", "mapa36", KM), arquivo_ajuste(pasta, chave, "res", "mapa37", KM)))
+checar("mapa: limiar fora de 32 a 44 ou id malformado: erro recorte_invalido", all(vapply(c("mapa31", "mapa45", "mapa3", "mapa036", "mapa36x", "mapa", "Mapa36"), function(x) identical(cod(executar_ajuste(pasta, "res", chave, KM, x)), "recorte_invalido"), TRUE)))
+checar("mapa: recorte com poucos óbitos: erro recorte_invalido", identical(cod(executar_ajuste(pasta, "res", chave, "Ignorado|30-39", "mapa36")), "recorte_invalido"))
+checar("mapa: versão de dados antiga: erro dados_mudaram", identical(cod(executar_ajuste(pasta, "res", chave2 <- "chave_antiga", KM, "mapa36")), "dados_mudaram"))
+checar("mapa: expo_valida aceita as duas medidas e as colunas, e nada mais", all(vapply(c("horas", "haat", paste0("mapa", 32:44)), expo_valida, TRUE)) && !any(vapply(c("mapa31", "xyz", "", NA_character_), expo_valida, TRUE)))
+
 # pedidos assíncronos pelo future: pedidos iguais compartilham a promessa e o resultado é o mesmo
 suppressWarnings(future::plan("multisession", workers = 1))
 p1 <- pedir_ajuste(raiz, pasta, "res", chave, "Via pública|40-49", "horas")                 # a primeira chamada sobe o trabalhador e cria o pedido

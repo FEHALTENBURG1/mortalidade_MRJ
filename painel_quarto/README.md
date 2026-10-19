@@ -75,7 +75,9 @@ O app tem uma aba por assunto, todas ajustadas pelo mesmo modelo (GAM com DLNM) 
 | Aba | Conteúdo |
 |:--|:--|
 | Série de óbitos | Figura 1: observados e esperados sem calor, semanal e diária |
-| Exposição-resposta e defasagem | Figura 2: RR acumulado em 0 a 10 dias pela exposição; Figura 3: RR por defasagem e acumulado, nos dois níveis de referência |
+| Exposição-resposta e defasagem | Figura 2: RR acumulado em 0 a 10 dias pela exposição; Figura 3: RR por defasagem e acumulado, nos dois níveis de referência; Figura 4: mapa de RR por horas no dia (H) e limiar do índice de calor (K), um modelo por célula |
+
+O mapa da Figura 4 tem 104 células (13 limiares, de 32 a 44 °C, e 8 níveis de horas). Cada célula é um GAM com DLNM próprio, com a exposição binária "pelo menos H horas com índice de calor ≥ K" (`ajustar_mapa_limiar()` em `R/modelo_joao.R`). O app pede uma coluna por limiar (medida `mapa32` a `mapa44`), no máximo duas ao mesmo tempo, e cada coluna leva cerca de 15 segundos na primeira vez; depois fica no cache em disco como qualquer outro ajuste. `Rscript shiny/atualizar_cache.R --aquecer` calcula de antemão as colunas do recorte inicial.
 
 As curvas vêm do mesmo ajuste de cada recorte (`curvas_modelo()` em `R/modelo_joao.R`), então um recorte já pedido na Figura 1 abre na hora na aba de exposição-resposta. Os ajustes guardados em disco levam uma versão do formato (`VERSAO_AJUSTE` em `R/servico.R`): um ajuste gravado por versão anterior é refeito ao ser pedido.
 

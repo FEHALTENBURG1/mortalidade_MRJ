@@ -41,6 +41,12 @@ texto_metodos <- function(M, n_sem_idade, resumo = NULL, dados = NULL) {
     pg("Com a medida de horas, a resposta à exposição tem 1 grau de liberdade, de modo que o logaritmo do RR é linear na exposição por construção e a curva não identifica limiar. O HAAT, com spline penalizado de 15 graus de liberdade, permite curvatura. A aba tem filtros próprios de recorte, causa do óbito e retirada do ajuste, e reaproveita os modelos já ajustados nas outras abas."))
   else ""
 
+  mapa_p <- if (demanda) paste0(
+    "### Mapa de horas por dia e limiar do índice de calor\n\n",
+    pg("A Figura 4 refaz, com o modelo de referência, o mapa de horas por dia e limiar da versão anterior do painel. Para cada limiar K (32 a 44 °C) e cada número mínimo de horas H (1, 2, 3, 4, 6, 8, 10 e 12), a exposição é binária: vale 1 nos dias com pelo menos H horas de índice de calor igual ou superior a K, e 0 nos demais, inclusive nos dias sem dado de clima. Cada célula é um modelo próprio, com o mesmo GAM da Figura 1 (binomial negativa, spline do tempo, ciclo anual e termo do período COVID) e a mesma defasagem de 0 a ", M$lag, " dias, com cross-basis linear na exposição e spline natural de 3 graus de liberdade na defasagem. O RR de cada célula é o acumulado em 0 a ", M$lag, " dias para a exposição mantida em todos os ", M$lag + 1, " dias, em relação a nenhum dia exposto, com intervalo de confiança de 95% a partir da matriz de covariância dos coeficientes."),
+    pg("A versão anterior definia a exposição como um dia com a condição em t, t−1, t−2 ou t−3 e estimava cada célula por quase-Poisson com termo de dia da semana. O modelo atual usa a defasagem distribuída do DLNM e não tem termo de dia da semana, de modo que os RR das duas versões não são comparáveis em valor. Células com menos de 15 dias expostos no ajuste, ou com menos de 30 dias sem exposição, não são estimadas. As 104 células são ajustadas de forma independente, são aninhadas por construção (um dia com mais horas também entra nas definições com menos horas) e não passam por correção para comparações múltiplas; o mapa é descritivo. As colunas são calculadas sob demanda, uma por limiar, e ficam guardadas no servidor para os pedidos seguintes."))
+  else ""
+
   pop_frase <- if (demanda) "A população selecionada corresponde a" else "A população desta versão corresponde a"
 
   trocas <- if (demanda)
@@ -101,6 +107,7 @@ texto_metodos <- function(M, n_sem_idade, resumo = NULL, dados = NULL) {
     pg(rr_frase),
     retirar_p,
     curvas_p,
+    mapa_p,
     "### Esperado sem calor\n\n",
     pg("O esperado de cada dia é o preditor linear do modelo com a cross-basis substituída pela cross-basis de exposição zero em todas as defasagens, isto é, o número de óbitos que o modelo prevê na ausência de calor (contrafactual). O esperado semanal é a soma dos sete esperados diários da semana (semanas epidemiológicas completas, de domingo a sábado). A faixa de 95% usa uma aproximação normal, com variância igual à soma das variâncias diárias (μ + μ²/θ) multiplicada por uma dispersão semanal φ (no mínimo 1). Dias vizinhos têm resíduos correlacionados, por epidemias e outros eventos que o modelo não descreve, e a soma de variâncias independentes subestima a variância da semana. O fator φ é a razão entre o erro quadrático semanal e essa soma, medida nos resíduos do modelo ajustado e fora do período da COVID-19. ",
         phi_frase, " Semanas com algum dia fora do ajuste ficam sem esperado."),

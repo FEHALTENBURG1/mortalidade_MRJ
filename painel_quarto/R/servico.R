@@ -62,11 +62,16 @@ cbi_de <- function(P, expo) {
   P$cbi[[expo]]
 }
 
+# Medida de calor válida: uma das EXPOSICOES (modelo de referência) ou "mapa<K>" (coluna do mapa de horas por limiar, K em LIMIARES).
+expo_valida <- function(expo) is.character(expo) && length(expo) == 1 && !is.na(expo) && (expo %in% names(EXPOSICOES) || !is.na(limiar_do_id(expo)))
+
 # Ajusta um recorte (chave "local|faixa" ou "local|Todas as idades|raça") para uma medida de calor, uma causa e um conjunto de retiradas;
-# devolve o payload da figura.
+# devolve o payload da figura (ou, para "mapa<K>", o payload da coluna K do mapa).
 ajustar_recorte <- function(P, key, expo, causa = "naturais", cod = "000") {
   y <- y_causa(P, causa)[[key]]
-  stopifnot(!is.null(y), expo %in% names(EXPOSICOES), codigo_valido(cod))
+  stopifnot(!is.null(y), expo_valida(expo), codigo_valido(cod))
+  K <- limiar_do_id(expo)
+  if (!is.na(K)) return(ajustar_mapa_limiar(y, P$b, P$cx$clima[[paste0("num_hr_", K)]], fora_ajuste(P$cx, opc_de_codigo(cod)), P$kt, K))
   r <- ajustar_segmento(y, P$b, cbi_de(P, expo), fora_ajuste(P$cx, opc_de_codigo(cod)), P$kt)
   payload_segmento(r, y, P$sem, P$cov_w, curvas = TRUE)
 }
@@ -134,7 +139,7 @@ executar_ajuste <- function(pasta, pop, chave, key, expo, causa = "naturais", co
   if (!is.null(x)) return(list(payload = x, do_cache = TRUE, segundos = 0))
   P <- obter_P(pasta, pop, chave)
   if (is.null(P)) stop("dados_mudaram: o cache de dados mudou de versão; recarregue a página", call. = FALSE)
-  y <- if (expo %in% names(EXPOSICOES)) y_causa(P, causa)[[key]] else NULL
+  y <- if (expo_valida(expo)) y_causa(P, causa)[[key]] else NULL
   if (is.null(y)) stop("recorte_invalido: recorte ou medida de calor não reconhecidos", call. = FALSE)
   if (sum(y[!fora_ajuste(P$cx, opc_de_codigo(cod))]) < MIN_OBITOS) stop("recorte_invalido: óbitos insuficientes no ajuste", call. = FALSE)
   t0 <- Sys.time()

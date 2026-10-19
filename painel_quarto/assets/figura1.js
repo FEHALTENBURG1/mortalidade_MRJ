@@ -49,7 +49,7 @@ const OUV = {seg:[], erro:[], base:[]};                                         
 const ELEGC = new Map();
 const eleg = (c=modo().causa, o=codOpc()) => { const id=c+"|"+o; if(!ELEGC.has(id)) ELEGC.set(id,new Set((((M.elegiveis||{})[c])||{})[o]||[])); return ELEGC.get(id) };
 const ix = new Map();
-const zerar = () => { D.k=[]; D.o=[]; D.m={}; D.S={}; D.So={}; D.cv={}; ELEGC.clear(); Object.keys(M.exposicoes).forEach(e=>{ D.m[e]={f:[],d:[],rr:[],e:[]}; D.S[e]={} }); ix.clear() };
+const zerar = () => { D.k=[]; D.o=[]; D.m={}; D.S={}; D.So={}; D.cv={}; D.mp={}; ELEGC.clear(); Object.keys(M.exposicoes).forEach(e=>{ D.m[e]={f:[],d:[],rr:[],e:[]}; D.S[e]={} }); ix.clear() };
 if(SH) zerar(); else D.k.forEach((k,i)=>ix.set(k,i));
 const cd = {hi_max:cl.hi_max, hi_med:{o:cl.hi_med}, t_med:{o:cl.t_med}, nc:cl.nc};
 const diaIx = new Map(dias.map((d,i)=>[d,i]));
@@ -166,6 +166,7 @@ function registrarShiny(){
     PEND.delete(idPedido(msg.pop,msg.key,msg.ex,msg.causa,msg.opc));
     if(msg.pop!==POP || msg.chave!==CHAVE) return;                                // resposta de outra população ou de uma versão antiga dos dados
     const kd=msg.causa+"~"+msg.opc+"~"+msg.key;
+    if(/^mapa\d+$/.test(msg.ex)){ const q=JSON.parse(msg.json); (D.mp[kd]||(D.mp[kd]={}))[q.limiar]=q; OUV.seg.forEach(f=>f(kd,msg.ex)); return }     // coluna do mapa de horas por limiar (Figura 4)
     mesclar(kd,msg.ex,JSON.parse(msg.json));
     if(kd===keyD() && msg.ex===$("s-exp").value) desenhar();
     OUV.seg.forEach(f=>f(kd,msg.ex));
@@ -363,7 +364,7 @@ function desenharDia(k){
 
 /* Interface das outras abas (assets/aba_*.js): cada uma se registra em window.PainelAbas e recebe este objeto. */
 const P = {$, css, fn, fr, fp, dBR, fillSel, nm, mkCor, M, D, SH, EXP, KEXP, ix, modo, cod:codOpc, eleg, enviar, ouvir:OUV, abas:window.__abas,
-  kd:(c,o,k)=>c+"~"+o+"~"+k, cv:(kd,ex)=>(D.cv&&D.cv[ex]&&D.cv[ex][kd])||null, pop:()=>POP,
+  kd:(c,o,k)=>c+"~"+o+"~"+k, cv:(kd,ex)=>(D.cv&&D.cv[ex]&&D.cv[ex][kd])||null, mapa:kd=>(D.mp&&D.mp[kd])||{}, pop:()=>POP,
   rrKpi:(kd,ex)=>rrDoModelo(ix.get(kd),ex), notaModelo:(kd,ex,m)=>notaModelo(ix.get(kd),ex,m), modeloTxt:(kd,ex)=>modeloTxt(ix.get(kd),ex),
   texto:{rotCov, rotNC, linhaCov, linhaNC, compExp, notaClima, notaCausa, causaPor:c=>CAUSA_POR[c], causaRot:c=>CAUSA_ROT[c]}};
 if(SH) (window.PainelAbas||[]).forEach(f=>f(P));

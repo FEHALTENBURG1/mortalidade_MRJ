@@ -48,6 +48,16 @@ ok(all(w$l <= w$e | is.na(w$e)) && all(w$e <= w$u | is.na(w$e)), "faixa semanal 
 cbh <- cross_exposicao(b, EXPOSICOES$haat)
 rh <- ajustar_segmento(y, b, cbh, cx$sem_registro, kt)
 ok(is.finite(rh$rr[1, 1]) && rh$rr[1, 1] > 1, sprintf("HAAT: RR acumulado com 5 °C·h acima de 1 (%.3f)", rh$rr[1, 1]))
+# mapa de horas por dia x limiar: com efeito verdadeiro, as células com dias suficientes têm RR acima de 1; sem efeito, o IC cobre 1
+mp <- ajustar_mapa_limiar(y, b, h, cx$sem_registro, kt, 36, horas = c(1, 2, 4, 8, 100))
+ok(identical(mp$tipo, "mapa") && mp$limiar == 36 && length(mp$rr) == 5, "mapa: a coluna traz o limiar e uma célula por nível de horas")
+ok(all(mp$nd == c(sum(h >= 1), sum(h >= 2), sum(h >= 4), sum(h >= 8), 0)), "mapa: dias expostos = dias com pelo menos H horas")
+ok(is.na(mp$rr[5]) && !anyNA(mp$rr[1:3]) && all(mp$lo[1:3] > 1), sprintf("mapa: com efeito verdadeiro, RR acima de 1 com IC acima de 1 (%.3f, %.3f, %.3f); sem dias expostos, sem estimativa", mp$rr[1], mp$rr[2], mp$rr[3]))
+mp0 <- ajustar_mapa_limiar(y0, b, h, cx$sem_registro, kt, 36, horas = c(1, 2, 4))
+ok(all(mp0$lo < 1 & mp0$hi > 1), sprintf("mapa: sem efeito verdadeiro, os IC cobrem 1 (%.3f a %.3f com H = 1)", mp0$lo[1], mp0$hi[1]))
+ok(identical(limiar_do_id("mapa36"), 36L) && is.na(limiar_do_id("mapa31")) && is.na(limiar_do_id("horas")) && is.na(limiar_do_id("mapa036")), "mapa: id do pedido -> limiar (32 a 44)")
+fora_m <- rep(FALSE, n); fora_m[which(h >= 4)] <- TRUE                    # todos os dias expostos fora do ajuste
+ok(is.na(ajustar_mapa_limiar(y, b, h, fora_m, kt, 36, horas = 4)$rr), "mapa: dias expostos fora do ajuste não contam (célula sem estimativa)")
 # fora_ajuste(): o que cada caixa de "retirar do ajuste" tira
 d3 <- seq(as.Date("2020-01-01"), by = "day", length.out = 200); n3 <- length(d3)
 cx3 <- list(dias = d3, sem_registro = rep(FALSE, n3), covid = rep(FALSE, n3), nao_consolidado = rep(FALSE, n3), clima = data.frame(dia = d3, hi_max = rep(30, n3)))

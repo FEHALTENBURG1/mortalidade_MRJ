@@ -2,11 +2,14 @@
 # Atualiza o cache de dados do painel Shiny a partir das Releases do GitHub (SIM e HAAT).
 #
 # Uso (de qualquer pasta):
-#   Rscript shiny/atualizar_cache.R [--cache pasta] [--pop res,todos] [--forcar]
+#   Rscript shiny/atualizar_cache.R [--cache pasta] [--pop res,todos] [--forcar] [--aquecer]
 #
 # --cache   pasta do cache (padrão: variável PAINEL_CACHE ou <projeto>/shiny/cache). Precisa ser gravável por quem roda este script e pelo usuário do Shiny Server.
 # --pop     populações a preparar: res (residentes que morreram no Rio) e/ou todos (todos os óbitos ocorridos no Rio)
 # --forcar  refaz o cache mesmo que a versão das Releases não tenha mudado
+# --aquecer depois de atualizar, ajusta o recorte inicial do app (todos os locais, todas as idades, causas naturais, sem retiradas) para as duas
+#           medidas de calor e as 13 colunas do mapa de horas por limiar, de modo que o primeiro usuário já encontre tudo pronto. Leva alguns minutos
+#           por população na primeira vez depois de uma atualização dos dados e segundos nas seguintes (os ajustes ficam em disco). Falha aqui não muda o código de saída.
 #
 # Para rodar todo dia às 06:00, com o usuário que executa os apps (crontab -e de `sudo -u shiny crontab -e`):
 #   0 6 * * *  /usr/bin/Rscript /opt/mortalidade_MRJ/painel_quarto/shiny/atualizar_cache.R >> /opt/mortalidade_MRJ/painel_quarto/shiny/cache/cron.log 2>&1
@@ -31,4 +34,17 @@ for (f in c("funcoes.R", "fontes_remotas.R", "servico.R")) fonte_utf8(file.path(
 r <- atualizar_cache(pasta, pops, cnes = file.path(raiz, "dados_auxiliares", "cnes_estab.csv"),
                      arquivo_regras = file.path(raiz, "R", "funcoes.R"), forcar = "--forcar" %in% args)
 ok <- r$status %in% c("atual", "atualizado", "ocupado") || (r$status == "offline" && r$tem_cache)
+
+if ("--aquecer" %in% args && ok) {
+  for (f in c("modelo_joao.R", "exportar.R")) fonte_utf8(file.path(raiz, "R", f))
+  recorte <- "Todos os locais|Todas as idades"
+  for (pop in pops) tryCatch({
+    chave <- meta_cache(pasta, pop)$chave
+    if (is.null(obter_P(pasta, pop, chave))) stop("sem contexto no cache")
+    for (expo in c("horas", "haat", paste0("mapa", LIMIARES))) {
+      x <- executar_ajuste(pasta, pop, chave, recorte, expo, "naturais", "000")
+      cat(format(Sys.time(), "%Y-%m-%d %H:%M:%S"), pop, expo, if (x$do_cache) "no disco" else sprintf("ajustado em %.0f s", x$segundos), "\n")
+    }
+  }, error = function(e) cat(format(Sys.time(), "%Y-%m-%d %H:%M:%S"), "aquecimento de", pop, "interrompido:", conditionMessage(e), "\n"))
+}
 quit(save = "no", status = if (ok) 0L else 1L)

@@ -159,7 +159,7 @@ server <- function(input, output, session) {
     b <- if (q$pop %in% names(ROTULO_POP)) base_info(q$pop) else NULL
     if (is.null(b)) return(erro("recorte_invalido", "população não reconhecida"))
     if (!identical(b$chave, q$chave)) return(erro("dados_mudaram", "os dados foram atualizados no servidor"))
-    if (!q$causa %in% names(CAUSAS) || !codigo_valido(q$opc) || !q$ex %in% names(EXPOSICOES)) return(erro("recorte_invalido", "causa do óbito, retiradas do ajuste ou medida de calor não reconhecidas"))
+    if (!q$causa %in% names(CAUSAS) || !codigo_valido(q$opc) || !expo_valida(q$ex)) return(erro("recorte_invalido", "causa do óbito, retiradas do ajuste ou medida de calor não reconhecidas"))
     if (!q$key %in% b$elegiveis[[q$causa]][[q$opc]]) return(erro("recorte_invalido", "recorte inexistente ou com óbitos insuficientes no ajuste"))
 
     pedir_ajuste(raiz, pasta, q$pop, q$chave, q$key, q$ex, q$causa, q$opc) |>

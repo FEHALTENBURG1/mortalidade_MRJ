@@ -23,7 +23,7 @@ function limpar(){
 const kpiHtml = lista => lista.map(([v,l])=>`<div class="kpi"><div class="v">${v}</div><div class="l">${l}</div></div>`).join("");
 const picoLag = l => l.rr.reduce((b,v,i)=>v>l.rr[b]?i:b, 0);
 
-function desenhar(){
+function desenharCurvas(){
   if($("tab-exp").classList.contains("hide")) return;
   const r = $("x-raca").value !== "Todas"; if(r) $("x-faixa").value = "Todas as idades"; $("x-faixa").disabled = r;
   $("x-faixa").title = r ? "As séries por raça/cor são calculadas para todas as idades; volte a Todas em raça/cor para escolher uma faixa etária." : "";
@@ -101,8 +101,91 @@ function desenhar(){
     `As curvas descrevem associação em dados agregados, sem controle de fatores individuais.`;
 }
 
-P.ouvir.seg.push((kd,ex)=>{ const e=estado(); if(kd===e.kd && ex===e.ex) desenhar() });
+// ---------------------------------------------------------------- Figura 4: horas por dia x limiar do índice de calor
+// Cada célula é um modelo próprio (R/modelo_joao.R, ajustar_mapa_limiar). O navegador pede uma coluna (limiar K) por vez, no máximo MAX_VOO ao mesmo
+// tempo, e redesenha a tabela a cada coluna recebida. Primeiro o limiar usual de 36 °C, depois os demais.
+const LIM = [36,32,33,34,35,37,38,39,40,41,42,43,44], LIM_ORD = [...LIM].sort((a,b)=>a-b), MAX_VOO = 2, ESPERA_MAX = 180000;
+const voo = new Map(), falhou = new Map();                       // id da coluna -> instante do pedido | id da coluna -> mensagem de erro
+const idM = (kd,K) => kd+"|"+K, eMapa = ex => /^mapa\d+$/.test(ex);
+function bombear(e){
+  const agora = Date.now(); voo.forEach((t,id)=>{ if(agora-t>ESPERA_MAX) voo.delete(id) });
+  const prontos = P.mapa(e.kd);
+  for(const K of LIM){
+    if(voo.size>=MAX_VOO) break;
+    const id = idM(e.kd,K);
+    if(prontos[K] || voo.has(id) || falhou.has(id)) continue;
+    voo.set(id,agora); P.enviar(e.k,"mapa"+K,e.causa,e.cod);
+  }
+}
+const pctRR = r => (r-1)*100;
+function mapa(){
+  if($("tab-exp").classList.contains("hide")) return;
+  const e = estado(), tab = $("x-hm"), prog = $("x-hm-prog"), nota = $("x-hm-note"), it = $("x-hm-interp");
+  if(!P.eleg(e.causa,e.cod).has(e.k)){
+    tab.innerHTML = ""; prog.textContent = ""; it.innerHTML = "";
+    nota.textContent = `Menos de ${M.min_obitos} óbitos ${e.cod!=="000"?"no ajuste ":""}nesta combinação de filtros: modelo não estimado.`;
+    return;
+  }
+  const curvasProntas = !!P.cv(e.kd,e.ex);
+  if(curvasProntas) bombear(e);                                    // o mapa só começa depois das Figuras 2 e 3 do mesmo recorte, para que o servidor as atenda primeiro
+  const col = P.mapa(e.kd), feitas = LIM_ORD.filter(K=>col[K]).length, erros = LIM_ORD.filter(K=>falhou.has(idM(e.kd,K)));
+  const so = $("x-hm-sig").checked;
+  prog.innerHTML = erros.length && [...falhou.values()].includes("dados_mudaram")
+    ? 'Os dados foram atualizados no servidor. <a href="">Recarregue a página</a> para ver a versão nova.'
+    : !curvasProntas && feitas<LIM.length
+      ? "O mapa começa a ser calculado depois das Figuras 2 e 3 deste recorte."
+    : feitas<LIM.length
+      ? `Calculando as colunas do mapa: ${feitas} de ${LIM.length}${erros.length?" ("+erros.length+" sem estimativa por erro do servidor)":""}. Na primeira vez cada coluna leva cerca de 15 segundos; depois o resultado fica guardado no servidor.`
+      : "";
+  const H = (LIM_ORD.map(K=>col[K]).find(Boolean)||{h:[1,2,3,4,6,8,10,12]}).h;
+  let s = "<tr><th>H \\ K (°C)</th>"+LIM_ORD.map(K=>`<th>${K}</th>`).join("")+"</tr>";
+  H.forEach((h,i)=>{
+    s += `<tr><td class="rl" style="cursor:default">≥ ${h} h</td>`;
+    LIM_ORD.forEach(K=>{
+      const c = col[K];
+      if(!c){ const f = falhou.has(idM(e.kd,K)); s += `<td style="color:var(--mut)" title="${f?"não foi possível estimar esta coluna":"calculando"}">${f?"×":"…"}</td>`; return }
+      const rr=c.rr[i], lo=c.lo[i], hi=c.hi[i], nd=c.nd[i];
+      if(rr==null){ s += `<td style="color:var(--mut)" title="${nd<15?"menos de 15 dias expostos no ajuste":"célula não estimada (poucos dias sem exposição ou falha do ajuste)"}">–</td>`; return }
+      const sig = lo>1 || hi<1, v = pctRR(rr), al = Math.min(Math.abs(v)/25,1)*.75;
+      const cor = (so&&!sig) ? "transparent" : (v>=0 ? `rgba(181,84,28,${al})` : `rgba(22,65,145,${al})`);
+      s += `<td style="background:${cor};${sig?"font-weight:700":"color:var(--mut)"}" title="Índice de calor ≥ ${K} °C por ≥ ${h} h/dia\nRR ${fr(rr)} (IC 95%: ${fr(lo)} a ${fr(hi)})\n${fn(nd)} dias expostos">${fr(rr)}</td>`;
+    });
+    s += "</tr>";
+  });
+  tab.innerHTML = s;
+  nota.textContent = `Linhas: número mínimo de horas no dia com índice de calor ≥ K (H). Colunas: limiar K (°C). Cada célula é um modelo próprio, com o mesmo GAM do modelo de referência `+
+    `(binomial negativa, spline do tempo, ciclo anual e termo do período COVID, defasagem de 0 a ${M.lag} dias pela cross-basis do dlnm), em que a exposição é o dia ter pelo menos H horas com índice de calor ≥ K. `+
+    `O RR é o acumulado em 0 a ${M.lag} dias para a condição mantida em todos os ${M.lag+1} dias, em relação a nenhum dia com a condição, com IC 95% a partir da matriz de covariância dos coeficientes. `+
+    `Células com menos de 15 dias expostos, ou com menos de 30 dias sem exposição, no ajuste não são estimadas (–). Em negrito, RR com IC 95% que não inclui 1. `+
+    P.texto.notaClima(e.m)+P.texto.notaCausa(e.m);
+  if(feitas<LIM.length){ it.innerHTML = `<span class="t">Interpretação</span>O texto fica disponível quando as ${LIM.length} colunas estiverem calculadas.`; return }
+  const cel = [];
+  LIM_ORD.forEach(K=>{ const c=col[K]; c.h.forEach((h,i)=>{ if(c.rr[i]!=null) cel.push({K,h,rr:c.rr[i],lo:c.lo[i],hi:c.hi[i],nd:c.nd[i]}) }) });
+  if(!cel.length){ it.innerHTML = `<span class="t">Interpretação</span>Nenhuma combinação tem dias expostos suficientes neste recorte.`; return }
+  const sg = cel.filter(c=>c.lo>1), dn = cel.filter(c=>c.hi<1), mx = cel.reduce((a,b)=>b.rr>a.rr?b:a);
+  const base = cel.find(c=>c.K===36&&c.h===1), a = cel.find(c=>c.K===32&&c.h===1), b = cel.find(c=>c.K===40&&c.h===1);
+  const ic = c => `${fr(c.rr)} (IC 95%: ${fr(c.lo)} a ${fr(c.hi)}; ${fn(c.nd)} dias expostos)`;
+  it.innerHTML = `<span class="t">Interpretação</span>Das <b>${cel.length}</b> combinações estimadas, <b>${sg.length}</b> têm RR acima de 1 com IC 95% que não inclui 1 e <b>${dn.length}</b> têm RR abaixo de 1 com IC 95% que não inclui 1. `+
+    (base?`Com o limiar usual de 36 °C e pelo menos 1 hora no dia, RR = <b>${ic(base)}</b>. `:"")+
+    `O maior valor da tabela é RR = <b>${ic(mx)}</b>, com índice de calor ≥ ${mx.K} °C por ≥ ${mx.h} h. O máximo de muitas células tende a superestimar o efeito, e as células com poucos dias expostos têm intervalos largos. `+
+    (a&&b?`Ao subir o limiar de 32 para 40 °C (≥ 1 h), o RR passa de ${fr(a.rr)} para ${fr(b.rr)}${b.rr>a.rr?", no sentido de risco maior com calor mais intenso; esse gradiente favorece a associação, e os dados agregados não permitem inferir causalidade. ":", sem gradiente crescente. "}`:"")+
+    `As células são aninhadas, pois um dia com mais horas também entra nas definições com menos horas, e não passaram por correção para comparações múltiplas. O padrão geral da tabela é mais informativo do que uma célula isolada. `+
+    `O RR de cada célula descreve a associação em dados agregados, sem controle de fatores individuais.`;
+}
+
+function desenhar(){ desenharCurvas(); mapa() }                    // as Figuras 2 e 3 são pedidas primeiro: o servidor as atende antes das colunas do mapa
+
+P.ouvir.seg.push((kd,ex)=>{
+  if(eMapa(ex)){ voo.delete(idM(kd,+ex.slice(4))); mapa(); return }
+  const e=estado(); if(kd===e.kd && ex===e.ex){ desenharCurvas(); mapa() }
+});
 P.ouvir.erro.push(msg=>{
+  if(eMapa(msg.ex)){
+    if(msg.pop!==P.pop()) return;
+    const id = idM(P.kd(msg.causa,msg.opc,msg.key), +msg.ex.slice(4));
+    voo.delete(id); falhou.set(id, msg.codigo==="dados_mudaram" ? "dados_mudaram" : String(msg.mensagem||"erro"));
+    mapa(); return;
+  }
   if($("tab-exp").classList.contains("hide")) return;
   const e=estado(); if(msg.pop!==P.pop() || msg.key!==e.k || msg.ex!==e.ex || msg.causa!==e.causa || msg.opc!==e.cod) return;
   calc(false);
@@ -110,7 +193,7 @@ P.ouvir.erro.push(msg=>{
     ? 'Os dados foram atualizados no servidor. <a href="">Recarregue a página</a> para ver a versão nova.'
     : "Não foi possível ajustar o modelo deste recorte: "+String(msg.mensagem||"erro desconhecido").replace(/[<>&]/g,"");
 });
-P.ouvir.base.push(desenhar);
-["x-local","x-faixa","x-raca","x-exp","x-lag","x-causa","x-r-covid","x-r-nc","x-r-clima"].forEach(i=>{ const el=$(i); if(el) el.onchange=desenhar });
+P.ouvir.base.push(()=>{ voo.clear(); falhou.clear(); desenhar() });
+["x-local","x-faixa","x-raca","x-exp","x-lag","x-causa","x-r-covid","x-r-nc","x-r-clima","x-hm-sig"].forEach(i=>{ const el=$(i); if(el) el.onchange=desenhar });
 P.abas.exp = desenhar;
 });
