@@ -41,10 +41,11 @@ const ic = (rr,lo,hi,d=2) => `${fn(rr,d)} (IC 95%: ${fn(lo,d)} a ${fn(hi,d)})`;
 // ---------------------------------------------------------------- eixos e gráfico de floresta (Figura 3)
 // Eixo com poucos marcos de valor redondo que cobre [mn, mx].
 function eixo(mn, mx){
-  const alvo = Math.max(mx-mn,1e-3)/4, pot = Math.pow(10,Math.floor(Math.log10(alvo))), f = alvo/pot, passo = (f<1.5?1:f<3.5?2:f<7.5?5:10)*pot;
-  const a = Math.floor(mn/passo+1e-9)*passo, b = Math.ceil(mx/passo-1e-9)*passo, marcos = [];
+  const alvo = Math.max(mx-mn,1e-3)/4, pot = Math.pow(10,Math.floor(Math.log10(alvo))), f = alvo/pot, passo = Math.max((f<1.5?1:f<3.5?2:f<7.5?5:10)*pot, 0.01);   // RR com no máximo 2 casas: marcos de 0,01 em diante
+  const a = Math.floor(mn/passo+1e-9)*passo; let b = Math.ceil(mx/passo-1e-9)*passo; if(b<=a+passo/2) b = a+passo;
+  const marcos = [];
   for(let t=a; t<=b+passo/2; t+=passo) marcos.push(+t.toFixed(6));
-  return {mn:a, mx:b, marcos, dec: passo<0.01?3:2};
+  return {mn:a, mx:b, marcos, dec: 2};
 }
 const lagsAcum = () => [1,3,7,M.lag].filter((v,i,a)=>v<=M.lag && a.indexOf(v)===i);
 const rotLag = l => l===0 ? "Lag 0 (mesmo dia)" : `Lag ${l}`;
@@ -67,14 +68,14 @@ function floresta(s, dom, C){
     g += `<line x1="${X(1)}" x2="${X(1)}" y1="${y0+20}" y2="${yb}" stroke="${C.mut}"/>`;
     linhas.forEach((r,i)=>{
       const y = y0+22+i*rh+rh/2, dy = L.length>1 ? [-6.5,6.5] : [0];
-      const dica = r.v.map((z,j)=>`${r.tt||r.rot}, ${fn(L[j].ref)} ${u} por dia: RR ${ic(z.rr,z.lo,z.hi,3)}`).join("\n");
+      const dica = r.v.map((z,j)=>`${r.tt||r.rot}, ${fn(L[j].ref)} ${u} por dia: RR ${ic(z.rr,z.lo,z.hi)}`).join("\n");
       g += `<g><title>${dica}</title><text x="${XL}" y="${y+4}" text-anchor="end" style="${r.neg?"font-weight:650":""}">${r.rot}</text>`;
       r.v.forEach((z,j)=>{
         const sig = z.lo>1 || z.hi<1, yy = y+dy[j], rd = r.neg?4.6:3.6;
         g += `<line x1="${X(z.lo)}" x2="${X(z.hi)}" y1="${yy}" y2="${yy}" stroke="${cores[j]}" stroke-width="2"/>`+
              `<circle cx="${X(z.rr)}" cy="${yy}" r="${rd}" fill="${sig?cores[j]:C.card}" stroke="${cores[j]}" stroke-width="1.6"/>`+
              `<circle cx="${XV+3}" cy="${y+dy[j]-0.5}" r="2.6" fill="${cores[j]}"/>`+
-             `<text x="${XV+10}" y="${y+dy[j]+3}" style="font-size:10.5px;${sig?"font-weight:650":""}">${fn(z.rr,3)} (${fn(z.lo,3)} a ${fn(z.hi,3)})</text>`;
+             `<text x="${XV+10}" y="${y+dy[j]+3}" style="font-size:10.5px;${sig?"font-weight:650":""}">${fn(z.rr,2)} (${fn(z.lo,2)} a ${fn(z.hi,2)})</text>`;
       });
       g += `</g>`;
     });
@@ -154,7 +155,7 @@ function desenharSlot(s, dom, comp, C){
   const i3 = Math.min(3, M.lag), rrM = P.rrKpi(e.kd,e.ex);
   $(p+"-kpis").innerHTML = kpiHtml(L.flatMap((l,j)=>{
     const ref = `exposição de ${fn(l.ref)} ${u} por dia`;
-    return [[ic(l.rr[0],l.lo[0],l.hi[0],3), `RR no mesmo dia (lag 0), para ${ref}`],
+    return [[ic(l.rr[0],l.lo[0],l.hi[0]), `RR no mesmo dia (lag 0), para ${ref}`],
             [ic(l.ac[i3],l.aclo[i3],l.achi[i3]), `RR acumulado nas defasagens de 0 a ${i3} dias, para ${ref} em todos esses dias`],
             [rrM[j][0], `RR acumulado nas defasagens de 0 a ${M.lag} dias, para ${ref} em todos os ${M.lag+1} dias`]];
   }));
@@ -171,7 +172,7 @@ function desenharSlot(s, dom, comp, C){
   const partes = L.map(l=>{
     const k = ate(l), a = M.lag, sig = l.aclo[a]>1 ? "o intervalo fica acima de 1" : l.achi[a]<1 ? "o intervalo fica abaixo de 1" : "o intervalo inclui 1";
     const seq = k<0 ? "sem defasagem inicial com intervalo acima de 1" : k>=a ? "com intervalo acima de 1 em todas as defasagens" : `com intervalo acima de 1 até o lag ${k}`;
-    return `com ${fn(l.ref)} ${u} por dia, o RR no mesmo dia (lag 0) é ${ic(l.rr[0],l.lo[0],l.hi[0],3)}, ${seq}; o RR acumulado em 0 a ${i3} dias é ${ic(l.ac[i3],l.aclo[i3],l.achi[i3])} e em 0 a ${a} dias é ${ic(l.ac[a],l.aclo[a],l.achi[a])}, isto é, ${P.fp((l.ac[a]-1)*100)} no risco diário de óbito (${sig})` });
+    return `com ${fn(l.ref)} ${u} por dia, o RR no mesmo dia (lag 0) é ${ic(l.rr[0],l.lo[0],l.hi[0])}, ${seq}; o RR acumulado em 0 a ${i3} dias é ${ic(l.ac[i3],l.aclo[i3],l.achi[i3])} e em 0 a ${a} dias é ${ic(l.ac[a],l.aclo[a],l.achi[a])}, isto é, ${P.fp((l.ac[a]-1)*100)} no risco diário de óbito (${sig})` });
   const tardio = L.some(l=>l.hi.some(v=>v<1));
   $(p+"-interp").innerHTML = `<span class="t">Interpretação</span>Neste recorte, ${partes.join(". Já ")}. `+
     (tardio?`Há defasagens em que o intervalo de confiança fica inteiro abaixo de 1. Isso pode refletir antecipação de óbitos de pessoas frágeis ou variação aleatória, e o modelo não separa as duas explicações. `:"")+

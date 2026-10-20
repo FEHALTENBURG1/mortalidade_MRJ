@@ -140,6 +140,8 @@ try:
         checar("o RR acumulado em 0 a 10 dias da aba é o mesmo da Figura 1 para o mesmo recorte", [xk_ini[2].split(" | ")[0], xk_ini[5].split(" | ")[0]] == [k.split(" | ")[0] for k in k_ini[1:3]], (xk_ini, k_ini[1:3]))
         checar("a interpretação cita o RR no lag 0 e os RR acumulados", "RR no mesmo dia (lag 0)" in pg.inner_text("#x-interp") and "RR acumulado em 0 a 3 dias" in pg.inner_text("#x-interp") and "em 0 a 10 dias" in pg.inner_text("#x-interp"), pg.inner_text("#x-interp"))
         checar("a aba não usa travessão no texto das figuras 2 e 3", not re.search("[—–]", pg.inner_text("#x-interp") + pg.inner_text("#x-note2") + pg.inner_text("#x-kpis") + pg.inner_text("#x-forest")))
+        _txt_rr = pg.inner_text("#x-kpis") + " " + pg.inner_text("#x-interp") + " " + " ".join(pg.eval_on_selector_all("#x-forest svg text", "els=>els.map(e=>e.textContent)")) + " " + " ".join(pg.eval_on_selector_all("#x-forest svg title", "els=>els.map(e=>e.textContent)"))
+        checar("RR com no máximo duas casas decimais nos quadros, na floresta (rótulos e dicas) e na interpretação", not re.search(r"\d,\d{3}", _txt_rr), re.findall(r".{12}\d,\d{3}.{6}", _txt_rr)[:5])
         if capturas: pg.screenshot(path=os.path.join(capturas, "app_02c_exposicao.png"), full_page=True)
         sel("x-exp", "haat"); xpronto(); xk_haat = xk()
         checar("medida HAAT na aba: nova curva e novos quadros", xk_haat != xk_ini and xpix("x-chart") > 1500, xk_haat)
