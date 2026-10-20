@@ -12,8 +12,28 @@ const CAPS = [["A","A-B Algumas doenças infecciosas e parasitárias"],["C","C-D
   ["K","K Aparelho digestivo"],["L","L Pele"],["M","M Osteomuscular"],["N","N Geniturinário"],["O","O Gravidez, parto e puerpério"],["P","P Afecções perinatais"],
   ["Q","Q Malformações congênitas"],["R","R Sintomas e causas mal definidas"],["X","V-Y Causas externas"]];
 const capOf = c => { const l=c[0]; if(l==="B") return "A"; if(l==="D") return +c.slice(1)<50 ? "C" : "D"; if("VWXY".includes(l)) return "X"; return l };
-// lista a priori de causas sensíveis ao calor: capítulos A, B, E, F, G, I, J e N, mais R95 a R99, X30 e W65 a W74
-const aPriori = c => "ABEFGIJN".includes(c[0]) || (c[0]==="R" && +c.slice(1)>=95) || c==="X30" || (c[0]==="W" && +c.slice(1)>=65 && +c.slice(1)<=74);
+// Causas selecionadas do referencial teórico (Morais et al.): os 15 grupos de causas de 00_aux_functions.R do repositório do artigo, escritos aqui como faixas
+// de códigos de 3 caracteres [letra, primeiro número, último número]. A lista fica fixa e não depende dos resultados do painel.
+const GRUPOS_REF = [
+  ["Influenza e pneumonia", [["J",9,9],["J",12,18]]],
+  ["Doenças respiratórias crônicas inferiores", [["J",40,47]]],
+  ["Outras doenças respiratórias", [["J",0,6],["J",20,39],["J",60,70],["J",80,86],["J",90,99],["R",9,9],["U",4,4]]],
+  ["Doenças hipertensivas", [["I",10,15]]],
+  ["Doenças isquêmicas do coração", [["I",20,25]]],
+  ["Insuficiência cardíaca", [["I",50,50]]],
+  ["Doenças cerebrovasculares", [["I",60,69]]],
+  ["Outras doenças do aparelho circulatório", [["I",0,9],["I",26,49],["I",51,52],["I",70,99]]],
+  ["Neoplasias malignas", [["C",0,97]]],
+  ["Alzheimer e demência", [["G",30,31],["F",1,1],["F",3,3]]],
+  ["Diabetes", [["E",10,14]]],
+  ["Insuficiência renal", [["N",17,19]]],
+  ["Sepse", [["A",40,41]]],
+  ["Infecção do trato urinário", [["N",39,39]]],
+  ["Causas mal definidas", [["R",0,99]]]
+];
+const grupoRef = c => { const n = +c.slice(1,3); const g = GRUPOS_REF.find(([,fx])=>fx.some(([l,a,b])=>c[0]===l && n>=a && n<=b)); return g ? g[0] : null };
+const aPriori = c => grupoRef(c) !== null;
+const minus1 = t => t[0].toLowerCase()+t.slice(1);                // só a primeira letra: o °C da unidade não pode virar °c
 const NOME = c => ((M.cid_nomes||{})[c]) || "";
 const MAX_VOO = 2, ESPERA_MAX = 240000;
 
@@ -100,7 +120,7 @@ function desenhar(){
   floresta(e, alvo, completo, fam.length);
 
   // nota e interpretação
-  const nomeMedida = E.nome.toLowerCase();
+  const nomeMedida = minus1(E.nome);
   $("k-note").textContent = `RR acumulado em 0 a ${M.lag} dias com a exposição (${nomeMedida}) mantida em ${nivelTxt} em todos os ${M.lag+1} dias, em relação a nenhuma exposição, estimado em um modelo próprio de cada causa `+
     `(binomial negativa, spline do tempo, ciclo anual e termo do período COVID, defasagem pela cross-basis do dlnm). O IC 95% e o valor de p vêm da matriz de covariância dos coeficientes. `+
     `O valor q é o de Benjamini e Hochberg para a taxa de falsas descobertas, calculado entre as ${fam.length} causas do conjunto e do capítulo escolhidos; q < 0,05 define as causas destacadas. `+
@@ -115,8 +135,7 @@ function desenhar(){
       (up.length ? `As de maior RR são ${up.slice(0,4).map(item).join("; ")}. ` : "")+
       (dw.length ? `RR abaixo de 1 (por exemplo ${dw.slice(0,2).map(x=>x.c).join(", ")}) pode refletir antecipação de óbitos, mudanças de classificação ou variação aleatória, e o modelo não separa essas explicações. ` : "")+
       `As demais ${res.length-sg.length} causas não diferem de 1 após a correção${$("k-todos").checked ? " e aparecem em cinza" : " e ficam fora da figura"}. `+
-      `As neoplasias podem servir de comparação, porque não se espera efeito agudo do calor sobre elas: um RR diferente de 1 nessas causas sugere variação temporal que o modelo não capturou. `+
-      `Os RR descrevem associação em dados agregados, sem controle de fatores individuais, e cada causa tem poucos óbitos por dia, de modo que os intervalos são largos nas causas menos frequentes.`;
+            `Os RR descrevem associação em dados agregados, sem controle de fatores individuais, e cada causa tem poucos óbitos por dia, de modo que os intervalos são largos nas causas menos frequentes.`;
   }
   // série semanal da causa escolhida
   if(sel && !fam.includes(sel)) sel = null;
@@ -142,7 +161,7 @@ function floresta(e, R, completo, total){
     if(i%2===0) s += `<rect x="0" y="${y-rh/2}" width="${W}" height="${rh}" fill="${css("--faixa")}"/>`;
     if(r.c===sel) s += `<rect x="1" y="${y-rh/2+1}" width="${W-2}" height="${rh-2}" fill="none" stroke="${css("--azul")}" stroke-width="1.5" rx="3"/>`;
     s += `<text x="8" y="${y+4}"><tspan style="font-weight:650">${r.c}</tspan> <tspan class="m">${nome}</tspan></text>`;
-    s += `<g data-c="${r.c}" style="cursor:pointer"><title>${r.c} ${NOME(r.c)}\nRR ${fr(r.rr)} (IC 95%: ${fr(r.lo)} a ${fr(r.hi)})\n${completo?"q = "+fmtP(r.q)+" · ":""}p = ${fmtP(r.p)}\n${fn(r.n)} óbitos nos dias do ajuste · clique para ver a série semanal</title>`+
+    s += `<g data-c="${r.c}" style="cursor:pointer"><title>${r.c} ${NOME(r.c)}\n${grupoRef(r.c)?"Grupo do referencial: "+grupoRef(r.c)+"\n":""}RR ${fr(r.rr)} (IC 95%: ${fr(r.lo)} a ${fr(r.hi)})\n${completo?"q = "+fmtP(r.q)+" · ":""}p = ${fmtP(r.p)}\n${fn(r.n)} óbitos nos dias do ajuste · clique para ver a série semanal</title>`+
          `<rect x="${X(mn)}" y="${y-rh/2}" width="${W-L-Rm}" height="${rh}" fill="transparent"/><line x1="${X(r.lo)}" x2="${X(r.hi)}" y1="${y}" y2="${y}" stroke="${c}" stroke-width="2"/>`+
          `<circle cx="${X(r.rr)}" cy="${y}" r="4.5" fill="${c}" stroke="${css("--card")}" stroke-width="1.5"/></g>`;
     s += `<text x="${W-Rm+12}" y="${y+4}" style="${sig?"font-weight:650":""}">${fr(r.rr)} (${fr(r.lo)} a ${fr(r.hi)})</text><text class="m" x="${W-62}" y="${y+4}" text-anchor="end">${completo?fmtP(r.q):"…"}</text><text class="m" x="${W-8}" y="${y+4}" text-anchor="end">${fn(r.n)}</text>`;
@@ -195,7 +214,7 @@ function serie(e, padrao){
         afterBody:it=>{ const i=it[0].dataIndex, L=[`Início da semana: ${dBR(sm.ini[i])}`]; if(ob[i]!=null && es[i]!=null) L.push(`Observado ÷ esperado sem calor: ${fr(ob[i]/es[i])}`); if(sm.cov[i]) L.push("Semana do período COVID-19"); return L }}}}},
     plugins:[planoCov]});
   $("k-leg").innerHTML = `<span><i class="ln" style="background:${cz}"></i>Observado</span><span><i class="ln" style="background:${az};height:3px"></i>Esperado sem calor</span><span><i style="background:${mkCor(az,.17)}"></i>Faixa esperada (95%)</span><span><i class="dt" style="background:${ink}"></i>Acima da faixa</span>`;
-  $("k-note2").textContent = `Mesmo modelo da Figura 1, ajustado a esta causa (${EXP[e.medida].nome.toLowerCase()}). O esperado semanal é a soma dos esperados diários sem calor, e a faixa de 95% usa a variância do modelo corrigida pela dispersão semanal (φ = ${fr(p.S.phi)}). `+
+  $("k-note2").textContent = `Mesmo modelo da Figura 1, ajustado a esta causa (${minus1(EXP[e.medida].nome)}). O esperado semanal é a soma dos esperados diários sem calor, e a faixa de 95% usa a variância do modelo corrigida pela dispersão semanal (φ = ${fr(p.S.phi)}). `+
     `Sombreado cinza: semanas com dias sem registro no SIM. Barra cinza na base: semanas do período COVID-19.`+P.texto.notaClima(e.m)+P.texto.notaCausa(e.m);
   let so = 0, se = 0, nAcima = 0, nSem = 0;
   idx.forEach(i=>{ if(ob[i]!=null && es[i]!=null && !sm.cov[i]){ so += ob[i]; se += es[i]; nSem++; if(acima[i]!=null) nAcima++ } });

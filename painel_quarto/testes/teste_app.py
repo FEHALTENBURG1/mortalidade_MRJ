@@ -239,7 +239,7 @@ try:
         else:
             sel("k-conj", "apriori"); sel("k-cap", "I"); kpronto()
             cods = kcod()
-            checar("aba CID: lista a priori do capítulo IX (aparelho circulatório): só causas I, com figura e interpretação", len(cods) > 0 and all(c.startswith("I") for c in cods) and "causas avaliadas" in pg.inner_text("#k-interp"), (cods, pg.inner_text("#k-interp")[:200]))
+            checar("aba CID: causas selecionadas do referencial no capítulo IX (aparelho circulatório): só causas I, com figura e interpretação", len(cods) > 0 and all(c.startswith("I") for c in cods) and "causas avaliadas" in pg.inner_text("#k-interp"), (cods, pg.inner_text("#k-interp")[:200]))
             qs = [num_br(re.search(r"q = (<?[0-9,]+)", t).group(1)) for t in ktit()]
             checar("aba CID: com o filtro padrão só aparecem causas com q < 0,05", all(q < 0.05 for q in qs), qs)
             pg.check("#k-todos"); n_todas = len(kcod())
