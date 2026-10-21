@@ -136,7 +136,9 @@ ajustar_gam <- function(dd, cb_i, pen, k_time, esp = list()) {
 
 # Ajusta um segmento. y = óbitos por dia (calendário completo); fora = dias fora do ajuste (sem registro no SIM).
 # Devolve a família usada, o RR acumulado nas exposições de referência e os vetores diários (NA fora do ajuste).
-ajustar_segmento <- function(y, b, cbi, fora, k_time, esp = list(), curvas = TRUE, diag = "nao", manter_fit = FALSE) {
+# prever = dias (lógico, calendário completo) fora do ajuste cujo esperado deve ser previsto pelo modelo mesmo assim, com a resposta ausente e as demais
+# covariáveis presentes: é a base da cobertura fora da amostra (calibrar_faixa); sem ele, os dias fora do ajuste ficam sem esperado.
+ajustar_segmento <- function(y, b, cbi, fora, k_time, esp = list(), curvas = TRUE, diag = "nao", manter_fit = FALSE, prever = NULL) {
   dd <- b; dd$y <- y; dd$y[fora] <- NA
   cb_i <- cbi$m
   g <- ajustar_gam(dd, cb_i, if (is.null(cbi$pen)) NULL else list(cb_i = cbi$pen), k_time, esp)
@@ -147,6 +149,10 @@ ajustar_segmento <- function(y, b, cbi, fora, k_time, esp = list(), curvas = TRU
   beta <- coef(fit)[ib]
   efeito <- as.numeric(cb_i %*% beta) - sum(cbi$c0 * beta)             # log do efeito do calor em cada dia do calendário
   eta <- rep(NA_real_, nrow(dd)); eta[ok] <- as.numeric(predict(fit, type = "link"))
+  if (!is.null(prever) && any(prever & !ok)) {
+    pv <- prever & !ok; nd <- dd[pv, , drop = FALSE]; nd$cb_i <- cb_i[pv, , drop = FALSE]
+    eta[pv] <- as.numeric(predict(fit, newdata = nd, type = "link"))
+  }
   V <- vcov(fit)[ib, ib]
   pr <- crosspred(cbi$obj, coef = beta, vcov = V, model.link = "log", at = cbi$e$ref, cen = 0)
   disp <- if (fam == "nb") fit$family$getTheta(TRUE) else fit$scale   # theta (NB: var = mu + mu^2/theta) ou φ (var = φ mu)
@@ -357,4 +363,56 @@ semanal <- function(r, y, sem, excluir = NULL) {
   phi <- max(1, mean(((o - mu_aj)^2 / v_aj)[uso]))
   sd <- sqrt(phi * v)
   list(o = as.integer(o), e = as.numeric(mu), l = as.numeric(pmax(mu - 1.96 * sd, 0)), u = as.numeric(mu + 1.96 * sd), phi = phi)
+}
+
+# ---------------------------------------------------------------- cobertura da faixa semanal
+# Períodos em que a cobertura é apresentada (ano epidemiológico da semana, `de` a `ate`). O último não tem fim, para valer quando os dados avançarem.
+# O ajuste principal só tem esperado a partir de maio de 2007 (início do clima mais as 10 defasagens); a série do SIM começa em 2006.
+PERIODOS_COB <- list(list(rot = "2006 a 2010", de = 2006L, ate = 2010L), list(rot = "2011 a 2014", de = 2011L, ate = 2014L),
+                     list(rot = "2015 a 2019", de = 2015L, ate = 2019L), list(rot = "2020 a 2022", de = 2020L, ate = 2022L),
+                     list(rot = "2023 em diante", de = 2023L, ate = 9999L))
+periodo_cob <- function(ano) { i <- findInterval(ano, vapply(PERIODOS_COB, function(p) p$de, 1L)); i[i < 1] <- NA_integer_; i }
+
+# Desvio-padrão do esperado semanal sem calor que vem da incerteza dos coeficientes (método delta): a variância do preditor linear do contrafactual
+# (cross-basis de exposição zero em todas as defasagens) é propagada para a soma de sete esperados diários. É o que a faixa semanal não inclui, e é
+# calculado apenas para dizer o quanto ela acrescentaria. r = ajustar_segmento(manter_fit = TRUE); fora = dias fora do ajuste.
+sd_esperado_semanal <- function(r, cbi, fora, sem) {
+  Xp <- predict(r$fit, type = "lpmatrix")
+  Xp[, r$ib] <- matrix(cbi$c0, nrow = nrow(Xp), ncol = length(cbi$c0), byrow = TRUE)
+  mu0 <- r$mu_sem_calor[!fora]
+  g <- factor(as.character(sem$ini)[!fora], levels = as.character(sem$ini_ok))
+  em <- !is.na(g)                                           # dias de semanas incompletas (início e fim da série) não entram em semana alguma
+  G <- rowsum((Xp * mu0)[em, , drop = FALSE], g[em], reorder = FALSE)
+  V <- vcov(r$fit)
+  v <- rep(NA_real_, length(sem$ini_ok)); v[match(rownames(G), as.character(sem$ini_ok))] <- rowSums((G %*% V) * G)
+  completa <- tapply(!fora, factor(as.character(sem$ini), levels = as.character(sem$ini_ok)), all)
+  as.numeric(sqrt(ifelse(as.logical(completa), v, NA_real_)))
+}
+
+# Cobertura fora da amostra: cada período de PERIODOS_COB é retirado do ajuste (o modelo é refeito só com os demais anos) e o esperado sem calor e a faixa
+# das semanas retiradas vêm dessa previsão; a dispersão semanal φ de cada refeito é estimada só nas semanas que ficaram no ajuste. Os períodos de
+# interior são interpolados pela tendência dos vizinhos; o primeiro e o último são extrapolados (`extrapola` nos refeitos). Devolve os vetores semanais (NA onde não há previsão), os refeitos e
+# a razão entre a largura da faixa com e sem a incerteza dos coeficientes no ajuste principal. Não é validação independente do modelo.
+calibrar_faixa <- function(y, b, cbi, fora, k_time, sem, cov_w) {
+  g <- factor(as.character(sem$ini), levels = as.character(sem$ini_ok))
+  per_sem <- periodo_cob(sem$ano); per_dia <- per_sem[as.integer(g)]
+  nS <- length(sem$ini_ok); e <- l <- u <- rep(NA_real_, nS)
+  refeitos <- lapply(seq_along(PERIODOS_COB), function(j) {
+    sj <- which(per_sem == j); dj <- !is.na(per_dia) & per_dia == j; prev <- dj & !fora
+    if (!any(prev)) return(list(rot = PERIODOS_COB[[j]]$rot, n_sem = 0L, nd = 0L, phi = NA_real_, fam = NA_character_, erro = "sem dias no ajuste", extrapola = NA))
+    r <- tryCatch(ajustar_segmento(y, b, cbi, fora | dj, k_time, curvas = FALSE, prever = prev), error = function(err) err)
+    trein <- !fora & !dj & !is.na(per_dia)                                                                      # dias de semanas completas de outros períodos que ficaram no ajuste
+    extrapola <- !(any(trein & b$dia < min(b$dia[prev])) && any(trein & b$dia > max(b$dia[prev])))               # sem treino de um dos lados
+    if (inherits(r, "error")) return(list(rot = PERIODOS_COB[[j]]$rot, n_sem = 0L, nd = sum(prev), phi = NA_real_, fam = NA_character_, erro = conditionMessage(r), extrapola = extrapola))
+    w <- semanal(r, y, sem, cov_w | per_sem == j)
+    e[sj] <<- w$e[sj]; l[sj] <<- w$l[sj]; u[sj] <<- w$u[sj]
+    list(rot = PERIODOS_COB[[j]]$rot, n_sem = sum(!is.na(w$e[sj])), nd = sum(prev), phi = w$phi, fam = r$fam, erro = NA_character_, extrapola = extrapola)
+  })
+  r0 <- ajustar_segmento(y, b, cbi, fora, k_time, curvas = FALSE, manter_fit = TRUE)
+  w0 <- semanal(r0, y, sem, cov_w)
+  v0 <- w0$phi * as.numeric(tapply(var_dia(r0$mu_sem_calor, r0$fam, r0$disp), g, sum))
+  razao <- sqrt((v0 + sd_esperado_semanal(r0, cbi, fora, sem)^2) / v0)
+  razao <- razao[!is.na(razao) & !is.na(w0$e) & !cov_w]
+  list(e = e, l = l, u = u, refeitos = refeitos, phi = w0$phi,
+       inc = list(n = length(razao), mediana = unname(stats::median(razao)), p90 = unname(stats::quantile(razao, 0.9)), maxima = max(razao)))
 }

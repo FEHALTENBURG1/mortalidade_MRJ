@@ -35,6 +35,7 @@ base_figura1 <- function(cx, k_time, versao = "1.0") {
                 dias_sem_clima = sum(is.na(cx$clima$hi_max)), cod_padrao = COD_PADRAO, motivos_fora = as.list(MOTIVOS_FORA),
                 reconc = cx$reconc,
                 n_obitos = nrow(cx$d), min_obitos = MIN_OBITOS, locais = I(c("Todos os locais", LOCAIS)), faixas = I(c("Todas as idades", FAIXAS)),
+                periodos_cob = unname(lapply(PERIODOS_COB, function(p) list(rot = p$rot, de = p$de, ate = p$ate))),
                 racas = I(RACAS), covid = I(as.character(COVID)),
                 exposicoes = lapply(EXPOSICOES, function(e) list(nome = e$nome, ref = I(e$ref), unidade = e$unidade, fun = e$fun, df = e$df))),
     rc = as.list(setNames(as.integer(rc), names(rc))),

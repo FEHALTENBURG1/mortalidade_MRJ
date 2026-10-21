@@ -265,6 +265,22 @@ for (m in c("horas", "haat")) {
 checar("sup: o segundo pedido sai do disco, e o suporte muda com as retiradas (ajuste sem tirar dias sem clima tem mais janelas ou o mesmo número)",
        executar_ajuste(pasta, "res", chave, KS, "sup_horas")$do_cache && { s0 <- json_de(executar_ajuste(pasta, "res", chave, KS, "sup_horas", "naturais", "000")$payload); s1 <- json_de(executar_ajuste(pasta, "res", chave, KS, "sup_horas")$payload); s0$nd > s1$nd && s0$niveis[[1]]$dias >= s1$niveis[[1]]$dias })
 
+# cobertura da faixa semanal fora da amostra: "cob_<medida>"
+checar("cob: reconhece só cob_horas e cob_haat", identical(dg_do_id("cob_horas")$tipo, "cob") && identical(dg_do_id("cob_haat")$medida, "haat") && expo_valida("cob_haat") && !any(vapply(c("cob_", "cob", "cob_cid", "cob_horas2", "Cob_horas"), function(x) expo_valida(x), TRUE)))
+t0 <- Sys.time(); cobr <- executar_ajuste(pasta, "res", chave, KS, "cob_horas"); cat(sprintf("     (cob_horas: %.0f s)\n", as.numeric(difftime(Sys.time(), t0, units = "secs"))))
+cb <- json_de(cobr$payload); sem_c <- semanas(cx$dias); fo_c <- fora_ajuste(cx, opc_de_codigo(COD_PADRAO))
+prev_ref <- vapply(seq_along(sem_c$ini_ok), function(i) { d <- which(sem_c$ini == sem_c$ini_ok[i]); length(d) == 7 && !any(fo_c[d]) && !is.na(periodo_cob(sem_c$ano[i])) }, TRUE)   # laço explícito
+checar("cob: há previsão exatamente nas semanas completas, dentro do ajuste e de um período", identical(cb$tipo, "cob") && identical(!is.na(num(cb$e)), prev_ref))
+ob_c <- vapply(seq_along(sem_c$ini_ok), function(i) sum(y_causa(P, "naturais")[[KS]][sem_c$ini == sem_c$ini_ok[i]]), 1)
+e_c <- num(cb$e); l_c <- num(cb$l); u_c <- num(cb$u); com <- !is.na(e_c)
+checar("cob: o esperado fica dentro da faixa e a faixa não é negativa", all(l_c[com] <= e_c[com] & e_c[com] <= u_c[com]) && all(l_c[com] >= 0))
+dent <- mean(ob_c[com] >= l_c[com] & ob_c[com] <= u_c[com])
+checar(sprintf("cob: a cobertura fora da amostra é plausível (%.1f%% das %d semanas dentro da faixa)", 100 * dent, sum(com)), dent > 0.6 && dent < 1)
+checar("cob: um refeito por período, com φ ≥ 1 e semanas previstas que somam as do vetor", length(cb$refeitos) == length(PERIODOS_COB) && sum(vapply(cb$refeitos, function(z) z$n_sem, 1L)) == sum(com) && all(vapply(cb$refeitos[c(1, 2, 3, 5)], function(z) is.null(z$erro) && z$phi >= 1, TRUE)))
+checar("cob: só o primeiro e o último período são previstos por extrapolação", identical(vapply(cb$refeitos, function(z) isTRUE(z$extrapola), TRUE), c(TRUE, FALSE, FALSE, FALSE, TRUE)))
+checar("cob: a incerteza dos coeficientes acrescenta pouco à largura da faixa do ajuste principal", cb$inc$mediana >= 1 && cb$inc$mediana < 1.25 && cb$inc$maxima >= cb$inc$p90 && cb$inc$n > 800)
+checar("cob: o segundo pedido sai do disco", executar_ajuste(pasta, "res", chave, KS, "cob_horas")$do_cache)
+
 # pedidos assíncronos pelo future: pedidos iguais compartilham a promessa e o resultado é o mesmo
 suppressWarnings(future::plan("multisession", workers = 1))
 p1 <- pedir_ajuste(raiz, pasta, "res", chave, "Via pública|60-69", "horas")                 # a primeira chamada sobe o trabalhador e cria o pedido

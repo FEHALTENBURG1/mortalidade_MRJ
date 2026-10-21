@@ -66,7 +66,8 @@ cbi_de <- function(P, expo, lag = LAG) {
 
 # Pedido válido: uma das EXPOSICOES (modelo de referência), "mapa<K>" (coluna do mapa de horas por limiar, K em LIMIARES), um pedido da aba de causas
 # específicas ("cidlista", "cid_<CID>_<medida>", "cidsem_<CID>_<medida>"; ver cid_do_id()), da aba de diagnósticos ("diag_<medida>" e
-# "sens_<análise>_<medida>", com a análise em SENS), da forma da curva de exposição-resposta ("flex_horas") ou do suporte dos contrastes acumulados ("sup_<medida>"; ver dg_do_id()).
+# "sens_<análise>_<medida>", com a análise em SENS), da forma da curva de exposição-resposta ("flex_horas"), do suporte dos contrastes acumulados ("sup_<medida>")
+# ou da cobertura da faixa semanal fora da amostra ("cob_<medida>"; ver dg_do_id()).
 expo_valida <- function(expo) is.character(expo) && length(expo) == 1 && !is.na(expo) &&
   (expo %in% names(EXPOSICOES) || !is.na(limiar_do_id(expo)) || !is.null(cid_do_id(expo)) || !is.null(dg_do_id(expo)))
 
@@ -204,6 +205,8 @@ dg_do_id <- function(id) {
   if (identical(id, "flex_horas")) return(list(tipo = "flex", spec = "flex", medida = "horas"))
   m <- regmatches(id, regexec("^sup_(horas|haat)$", id))[[1]]
   if (length(m) == 2) return(list(tipo = "sup", spec = "sup", medida = m[2]))
+  m <- regmatches(id, regexec("^cob_(horas|haat)$", id))[[1]]
+  if (length(m) == 2) return(list(tipo = "cob", spec = "cob", medida = m[2]))
   m <- regmatches(id, regexec("^diag_(horas|haat)$", id))[[1]]
   if (length(m) == 2) return(list(tipo = "diag", spec = "principal", medida = m[2]))
   m <- regmatches(id, regexec("^sens_([a-z0-9_]+)_(horas|haat)$", id))[[1]]
@@ -239,8 +242,22 @@ ajustar_pedido_sup <- function(P, pd, cod) {
     suporte_exposicao(P$b[[E$var]], P$cx$dias, fora_ajuste(P$cx, opc_de_codigo(cod)), E$ref))
 }
 
+# "cob_<medida>": cobertura da faixa semanal fora da amostra (calibrar_faixa): o modelo é refeito sem cada período de PERIODOS_COB e prevê as semanas dele.
+# Traz os vetores semanais (esperado e limites fora da amostra, NA onde não há previsão), os refeitos e a razão entre a largura da faixa com e sem a
+# incerteza dos coeficientes no ajuste principal. Custa de 5 a 6 ajustes do recorte; o navegador só pede quando o usuário clica.
+ajustar_pedido_cob <- function(P, pd, key, causa, cod, y) {
+  fora <- fora_ajuste(P$cx, opc_de_codigo(cod))
+  if (sum(y[!fora]) < MIN_OBITOS) stop("recorte_invalido: óbitos insuficientes no ajuste", call. = FALSE)
+  cf <- calibrar_faixa(y, P$b, cbi_de(P, pd$medida), fora, P$kt, P$sem, P$cov_w)
+  list(tipo = "cob", medida = pd$medida, nd = sum(!fora), no = sum(y[!fora]), phi = arred(cf$phi, 2),
+       e = arred(cf$e, 1), l = arred(cf$l, 1), u = arred(cf$u, 1),
+       refeitos = unname(lapply(cf$refeitos, function(z) list(rot = z$rot, n_sem = z$n_sem, nd = z$nd, phi = arred(z$phi, 2), fam = z$fam, erro = z$erro, extrapola = z$extrapola))),
+       inc = list(n = cf$inc$n, mediana = arred(cf$inc$mediana, 4), p90 = arred(cf$inc$p90, 4), maxima = arred(cf$inc$maxima, 4)))
+}
+
 ajustar_pedido_dg <- function(P, pd, key, causa, cod, y) {
   if (pd$tipo == "sup") return(ajustar_pedido_sup(P, pd, cod))
+  if (pd$tipo == "cob") return(ajustar_pedido_cob(P, pd, key, causa, cod, y))
   if (pd$tipo == "flex") return(ajustar_pedido_flex(P, pd, key, causa, cod, y))
   s <- if (pd$tipo == "diag") list(rot = "Ajuste principal", grupo = "Principal") else SENS[[pd$spec]]
   opc <- opc_de_codigo(cod)

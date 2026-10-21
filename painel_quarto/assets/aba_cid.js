@@ -4,7 +4,7 @@
    ("cidsem_<CID>_<medida>") só é pedida quando o usuário a escolhe. */
 (window.PainelAbas = window.PainelAbas || []).push(function(P){
 "use strict";
-const {$, css, fn, fr, fp, dBR, fillSel, nm, mkCor, M, D, EXP, KEXP} = P;
+const {$, css, fn, fr, fp, dBR, fillSel, nm, mkCor, M, D, EXP, KEXP, FAIXA} = P;
 if(!$("tab-cid")) return;
 const RACAS = [{v:"Todas",t:"Todas"},{v:"Branca",t:"Branca (referência)"},{v:"Preta",t:"Preta"},{v:"Parda",t:"Parda"},{v:"PPI",t:"Pretos, pardos e indígenas (PPI)"}];
 const CAPS = [["A","A-B Algumas doenças infecciosas e parasitárias"],["C","C-D48 Neoplasias"],["D","D50-D89 Sangue e imunitárias"],["E","E Endócrinas, nutricionais e metabólicas"],
@@ -202,23 +202,23 @@ function serie(e, padrao){
   if(grafico) grafico.destroy();
   grafico = new Chart($("k-chart"),{type:"line",data:{labels:idx.map(i=>`SE ${sm.se[i]}/${sm.ano[i]}`),datasets:[
     {label:"lo",data:lo,borderWidth:0,pointRadius:0,order:6},
-    {label:"Faixa esperada (95%)",data:up,borderWidth:0,pointRadius:0,fill:"-1",backgroundColor:mkCor(az,.17),order:6},
+    {label:FAIXA,data:up,borderWidth:0,pointRadius:0,fill:"-1",backgroundColor:mkCor(az,.17),order:6},
     {label:"Observado",data:ob,borderColor:cz,borderWidth:1.1,pointRadius:0,pointHoverRadius:4,order:3},
     {label:"Esperado sem calor",data:es,borderColor:az,borderWidth:2,pointRadius:0,order:2},
     {label:"Acima da faixa",data:acima,showLine:false,pointRadius:3,pointBackgroundColor:ink,pointBorderColor:card,pointBorderWidth:1,order:1}
   ]},options:{responsive:true,maintainAspectRatio:false,animation:false,interaction:{mode:"index",intersect:false},
     scales:{x:{grid:{display:false},ticks:{color:tickc,autoSkip:false,maxRotation:0,callback:function(v){ return sm.se[v]===1 ? sm.ano[v] : "" }}},
             y:{beginAtZero:true,grid:{color:gridc},ticks:{color:tickc},title:{display:true,text:"Óbitos por semana",color:tickc}}},
-    plugins:{legend:{display:false},covcid:{cov:sm.cov,inc:sm.inc},tooltip:{filter:i=>["Observado","Esperado sem calor","Faixa esperada (95%)"].includes(i.dataset.label),
-      callbacks:{label:q=>q.dataset.label==="Faixa esperada (95%)" ? `Faixa de 95%: ${lo[q.dataIndex]==null?"–":fn(lo[q.dataIndex])+" a "+fn(up[q.dataIndex])}` : `${q.dataset.label}: ${q.parsed.y==null?"–":fn(q.parsed.y,q.dataset.label==="Observado"?0:1)}`,
+    plugins:{legend:{display:false},covcid:{cov:sm.cov,inc:sm.inc},tooltip:{filter:i=>["Observado","Esperado sem calor",FAIXA].includes(i.dataset.label),
+      callbacks:{label:q=>q.dataset.label===FAIXA ? `${FAIXA}: ${lo[q.dataIndex]==null?"–":fn(lo[q.dataIndex])+" a "+fn(up[q.dataIndex])}` : `${q.dataset.label}: ${q.parsed.y==null?"–":fn(q.parsed.y,q.dataset.label==="Observado"?0:1)}`,
         afterBody:it=>{ const i=it[0].dataIndex, L=[`Início da semana: ${dBR(sm.ini[i])}`]; if(ob[i]!=null && es[i]!=null) L.push(`Observado ÷ esperado sem calor: ${fr(ob[i]/es[i])}`); if(sm.cov[i]) L.push("Semana do período COVID-19"); return L }}}}},
     plugins:[planoCov]});
-  $("k-leg").innerHTML = `<span><i class="ln" style="background:${cz}"></i>Observado</span><span><i class="ln" style="background:${az};height:3px"></i>Esperado sem calor</span><span><i style="background:${mkCor(az,.17)}"></i>Faixa esperada (95%)</span><span><i class="dt" style="background:${ink}"></i>Acima da faixa</span>`;
-  $("k-note2").textContent = `Mesmo modelo da Figura 1, ajustado a esta causa (${minus1(EXP[e.medida].nome)}). O esperado semanal é a soma dos esperados diários sem calor, e a faixa de 95% usa a variância do modelo corrigida pela dispersão semanal (φ = ${fr(p.S.phi)}). `+
+  $("k-leg").innerHTML = `<span><i class="ln" style="background:${cz}"></i>Observado</span><span><i class="ln" style="background:${az};height:3px"></i>Esperado sem calor</span><span><i style="background:${mkCor(az,.17)}"></i>${FAIXA}</span><span><i class="dt" style="background:${ink}"></i>Acima da faixa</span>`;
+  $("k-note2").textContent = `Mesmo modelo da Figura 1, ajustado a esta causa (${minus1(EXP[e.medida].nome)}). O esperado semanal é a soma dos esperados diários sem calor, e a faixa aproximada de variação de 95% usa a variância do modelo corrigida pela dispersão semanal (φ = ${fr(p.S.phi)}) e deixa de fora a incerteza dos coeficientes. `+
     `Sombreado cinza: semanas com dias sem registro no SIM. Barra cinza na base: semanas do período COVID-19.`+P.texto.notaClima(e.m)+P.texto.notaCausa(e.m);
   let so = 0, se = 0, nAcima = 0, nSem = 0;
   idx.forEach(i=>{ if(ob[i]!=null && es[i]!=null && !sm.cov[i]){ so += ob[i]; se += es[i]; nSem++; if(acima[i]!=null) nAcima++ } });
-  $("k-interp2").innerHTML = nSem ? `<span class="t">Interpretação</span>Nas ${fn(nSem)} semanas com esperado estimado e fora do período COVID-19, o observado ficou acima da faixa de 95% do esperado sem calor em <b>${fn(nAcima)}</b> (${fn(100*nAcima/nSem,1)}%). `+
+  $("k-interp2").innerHTML = nSem ? `<span class="t">Interpretação</span>Nas ${fn(nSem)} semanas com esperado estimado e fora do período COVID-19, o observado ficou acima do limite superior da faixa aproximada de variação de 95% em torno do esperado sem calor em <b>${fn(nAcima)}</b> (${fn(100*nAcima/nSem,1)}%). `+
     `O total observado é ${fr(so/se)} vezes o esperado sem calor, o que resume o excesso atribuído ao calor pelo modelo nesta causa. Semanas acima da faixa têm explicações possíveis além do calor (epidemias, mudanças de registro), e a figura mostra a coincidência com o calor apenas por associação.` : "";
 }
 

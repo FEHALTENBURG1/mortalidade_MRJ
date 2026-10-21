@@ -45,7 +45,7 @@ try:
         pg.goto(url)
         sel = lambda i, v: pg.select_option("#" + i, v)
         nota = lambda: pg.inner_text("#s-note")
-        kpis = lambda: pg.eval_on_selector_all("#s-kpis .kpi", "els=>els.map(e=>e.innerText.replace(/\\n/g,' | '))")
+        kpis = lambda: pg.eval_on_selector_all("#s-kpis .kpi", "els=>els.map(e=>[e.querySelector('.v').innerText, e.querySelector('.l').innerText].join(' | '))")
         pixels = lambda: pg.evaluate("""()=>{const c=document.getElementById('s-chart'),g=c.getContext('2d'),d=g.getImageData(0,0,c.width,c.height).data;let n=0;for(let i=3;i<d.length;i+=4) if(d[i]>0) n++;return n}""")
         pronto = lambda t=120000: pg.wait_for_function("document.querySelectorAll('#s-kpis .kpi').length>0 && !document.getElementById('s-kpis').classList.contains('calc')", timeout=t)
         def esperar_nota(texto, t=60000): pg.wait_for_function("t=>document.getElementById('s-note').innerText.includes(t)", arg=texto, timeout=t)
@@ -122,6 +122,92 @@ try:
         rr_kpi = lambda t: re.sub(r"IC 95%: ", "", t.split(" | ")[0])
         checar("tabela de sensibilidade: a linha principal reproduz os quadros da Figura 1 nos dois níveis de referência", rr_kpi(k_ini[1]) == linhas_s[0][4] and rr_kpi(k_ini[2]) == linhas_s[0][5], (linhas_s[0], k_ini[1:3]))
         checar("o título informa o período estimado", re.search(r"\d\d/\d\d/\d{4} a \d\d/\d\d/\d{4}", texto("s-h2")) is not None, texto("s-h2"))
+        # 5b2. Quadro 5: cobertura da faixa semanal por período e grupo (dentro da amostra, conferida contra o JSON de referência; fora da amostra, sob demanda)
+        visivel = lambda i: pg.evaluate("(i)=>document.getElementById(i).offsetWidth>0", i)
+        pg.wait_for_function("!document.getElementById('s-cobw').classList.contains('hide') && document.querySelectorAll('#s-cob tbody tr').length>0", timeout=60000)
+        def linhas5():
+            out = []; per = None
+            for r in pg.eval_on_selector_all("#s-cob tbody tr", "trs=>trs.map(tr=>[...tr.children].map(td=>td.innerText))"):
+                if len(r) == 10: per = r[0].replace(" †", ""); g = r[1]; v = r[2:]
+                else: g = r[0]; v = r[1:]
+                out.append((per, g, v))
+            return out
+        pct5 = lambda t: None if t in ("–", "") else float(t.replace("%", "").replace(",", "."))
+        L5 = linhas5()
+        checar("Quadro 5: períodos em linhas, dois grupos (calor e demais) por período e o total", [g for _, g, _ in L5][-2:] == ["Semanas de calor", "Demais semanas"] and L5[-1][0] == "Todos os períodos" and all(len(v) == 8 for _, _, v in L5) and len({p for p, _, _ in L5}) >= 5, [(p, g) for p, g, _ in L5])
+        checar("Quadro 5: fora da amostra ainda não calculado (colunas com –) e botão visível", all(v[4:] == ["0", "–", "–", "–"] or v[4:] == ["–", "–", "–", "–"] for _, _, v in L5) and visivel("s-cob-btn") and "ainda não calculado" in texto("s-cob-st"), (L5[-1], texto("s-cob-st")))
+        checar("Quadro 5: dentro, acima e abaixo somam 100% em cada linha com semanas", all(abs(sum(pct5(x) for x in v[1:4]) - 100) < 0.25 for _, _, v in L5 if v[0] not in ("0", "–")), L5[-2:])
+        base_ref = os.environ.get("PAINEL_TESTE_BASE")
+        if base_ref and os.path.exists(base_ref):
+            import json
+            ref = json.load(open(base_ref, encoding="utf-8")); chv = "Todos os locais|Todas as idades"; Sx = ref["S"]["horas"][chv]; Ox = ref["So"][chv]; sm = ref["sem"]
+            PER = {"2006 a 2010": (2006, 2010), "2011 a 2014": (2011, 2014), "2015 a 2019": (2015, 2019), "2020 a 2022": (2020, 2022), "2023 em diante": (2023, 9999), "Todos os períodos": (0, 9999)}
+            def cont5(calor_g, de, ate):                      # contagem independente, semana a semana, a partir do JSON de referência (laço explícito)
+                n = d = a = b_ = 0
+                for i in range(len(sm["ini"])):
+                    if not (de <= sm["ano"][i] <= ate) or (sm["nb"][i] >= 3) != calor_g: continue
+                    o, e, l, u = Ox[i], Sx["e"][i], Sx["l"][i], Sx["u"][i]
+                    if o is None or e is None or l is None or u is None or sm["cov"][i] or sm["inc"][i] or not sm["cl"][i]: continue
+                    n += 1
+                    if o > u: a += 1
+                    elif o < l: b_ += 1
+                    else: d += 1
+                return n, d, a, b_
+            dif = []
+            for per_, g, v in L5:
+                n, d, a, b_ = cont5(g == "Semanas de calor", *PER[per_])
+                esp = [str(n)] + ([f"{100*d/n:.1f}", f"{100*a/n:.1f}", f"{100*b_/n:.1f}"] if n else ["–"] * 3)
+                got = [v[0].replace(".", "")] + [("–" if x == "–" else f"{pct5(x):.1f}") for x in v[1:4]]
+                if [x for x in got] != esp and not (n and all(abs(float(x) - float(y)) < 0.051 for x, y in zip(got[1:], esp[1:])) and got[0] == esp[0]): dif.append((per_, g, got, esp))
+            checar("Quadro 5: a cobertura dentro da amostra bate com a contagem independente semana a semana (todos os períodos e grupos)", not dif and len(L5) >= 11, dif[:3])
+        else:
+            print("PULADO: Quadro 5 contra o JSON de referência (defina PAINEL_TESTE_BASE).")
+        texto5 = texto("s-cobw")
+        checar("Quadro 5: o rótulo da faixa corresponde ao cálculo e não se afirma 2,5% de excedências", "faixa aproximada de variação de 95%" in texto5.lower() and "Faixa aproximada de variação de 95%" in texto("s-leg") and "Faixa de 95%" not in texto("s-leg") and "2,5%" not in (texto5 + texto("i-serie") + texto("s-kpis") + nota()) and "bem calibrado" not in (texto("i-serie") + texto("s-kpis")), texto("s-leg")[:200])
+        checar("Quadro 5: distingue intervalo de confiança do esperado, intervalo preditivo e faixa aproximada, e diz que não é validação independente", all(t in texto("s-cob-n2") for t in ("intervalo de confiança do esperado", "intervalo preditivo", "faixa mostrada na Figura 1")) and "não é uma validação independente" in texto("s-cob-n"), texto("s-cob-n2")[:300])
+        checar("Quadro 5: sem travessão", not re.search("[—–]", texto("s-cob-n") + texto("s-cob-n2") + texto("s-cob-i") + texto("s-cob-st") + texto("s-cob-t")))
+        sel("s-crit", "no"); pg.wait_for_function("document.querySelectorAll('#s-cob tbody tr').length===6", timeout=20000)
+        checar("Quadro 5: sem critério de calor há um só grupo, Todas as semanas", {g for _, g, _ in linhas5()} == {"Todas as semanas"} and len(linhas5()) == 6, linhas5()[-1])
+        sel("s-crit", "ic")
+        sel("s-esc", "dia"); pg.wait_for_function("document.getElementById('s-cobw').classList.contains('hide')", timeout=20000)
+        checar("Quadro 5 some na escala diária e a faixa diária tem o mesmo nome e não afirma 2,5%", "2,5%" not in (texto("s-kpis") + nota()) and "Faixa aproximada de variação de 95% de um dia" in nota())
+        sel("s-esc", "sem"); pg.select_option("#s-ini", index=0); pg.wait_for_function("!document.getElementById('s-cobw').classList.contains('hide')", timeout=20000)       # a escala diária reduz o período exibido aos 3 últimos anos
+        pg.click("#s-cob-btn")
+        pg.wait_for_function("document.getElementById('s-cob-st').innerText.includes('Calculando') || document.getElementById('s-cob-st').innerText.includes('Fora da amostra calculado')", timeout=15000)
+        pg.wait_for_function("document.getElementById('s-cob-st').innerText.includes('Fora da amostra calculado') || document.getElementById('s-cob-st').innerText.includes('Não foi possível')", timeout=420000)
+        L5o = linhas5()
+        checar("Quadro 5 fora da amostra: calculado sem erro e o botão some", "Fora da amostra calculado" in texto("s-cob-st") and not visivel("s-cob-btn"), texto("s-cob-st"))
+        checar("Quadro 5 fora da amostra: mesmas semanas do ajuste completo em cada linha, e dentro, acima e abaixo somam 100%",
+               all(v[4] == v[0] for _, _, v in L5o) and all(abs(sum(pct5(x) for x in v[5:8]) - 100) < 0.25 for _, _, v in L5o if v[4] not in ("0", "–")), L5o[-2:])
+        checar("Quadro 5 fora da amostra: os valores diferem do ajuste completo", [v[5:8] for _, _, v in L5o] != [v[1:4] for _, _, v in L5o], L5o[-2:])
+        pers = [r[0].replace(" †", "") for r in pg.eval_on_selector_all("#s-cob tbody tr", "trs=>trs.map(tr=>[...tr.children].map(td=>td.innerText))") if len(r) == 10]
+        marcados = [r[0] for r in pg.eval_on_selector_all("#s-cob tbody tr", "trs=>trs.map(tr=>[...tr.children].map(td=>td.innerText))") if len(r) == 10 and "†" in r[0]]
+        checar("Quadro 5 fora da amostra: só o primeiro e o último período são marcados como extrapolação (†)", pers[-1] == "Todos os períodos" and marcados == [pers[0] + " †", pers[-2] + " †"], (pers, marcados))
+        ti = texto("s-cob-i").lower()
+        checar("Quadro 5 fora da amostra: a interpretação separa interpolação de extrapolação e cita a incerteza dos coeficientes", "interpolação" in ti and "extrapolação" in ti and "alargaria a faixa" in texto("s-cob-n2") and "fora da amostra" in ti, texto("s-cob-i")[:400])
+        checar("Quadro 5 fora da amostra: sem travessão e sem 2,5%", not re.search("[—–]", texto("s-cobw")) and "2,5%" not in texto("s-cobw"))
+        if capturas: pg.screenshot(path=os.path.join(capturas, "app_02b2_cobertura.png"), full_page=True)
+        sel("s-local", "Domicílio"); pronto()
+        checar("Quadro 5: outro recorte volta a pedir o fora da amostra (botão visível, colunas vazias)", visivel("s-cob-btn") and all(v[4:] in (["–"] * 4, ["0", "–", "–", "–"]) for _, _, v in linhas5()))
+        sel("s-local", "Todos os locais"); pronto()
+        checar("Quadro 5: voltar ao recorte já calculado mostra o fora da amostra sem novo pedido", not visivel("s-cob-btn") and linhas5() == L5o)
+        # 5b3. Período exibido: a seleção de anos altera só o que é mostrado; os RR vêm do modelo ajustado com a série completa
+        etiq = lambda: pg.eval_on_selector_all("#s-kpis .kpi", "els=>els.map(e=>[(e.querySelector('.tg')||{}).textContent||'', e.querySelector('.v').textContent])")
+        et0 = etiq(); L5_0 = linhas5(); h2_0 = texto("s-h2")
+        checar("Período exibido: os controles de anos e a nota usam o nome novo", "período exibido: ano inicial" in texto("tab-serie").lower() and "período exibido: ano final" in texto("tab-serie").lower() and "ano inicial" not in texto("tab-serie").lower().replace("período exibido: ano inicial", "") and texto("s-per-nota").startswith("Período exibido: ") and "(série completa)" in texto("s-per-nota"), texto("s-per-nota")[:200])
+        checar("Período exibido: os dois cartões de RR dizem 'Modelo ajustado com a série completa' e os demais 'Período exibido'", len(et0) >= 6 and [e for e, _ in et0].count("Modelo ajustado com a série completa") == 2 and all(e in ("Modelo ajustado com a série completa", "Período exibido") for e, _ in et0), et0)
+        ano_ini2 = pg.eval_on_selector_all("#s-ini option", "os=>os.map(o=>o.value)")[-4]
+        t_per = medir(lambda: (sel("s-ini", ano_ini2), pronto()))
+        et1 = etiq(); fim_a = pg.eval_on_selector_all("#s-fim option", "os=>os.map(o=>o.value)")[-1]
+        obito = lambda e: int(e[0][1].replace(".", ""))
+        checar("Período exibido: reduzir os anos muda óbitos e razões O/E, mantém os dois RR e não pede novo cálculo", t_per < 1.5 and obito(et1) < obito(et0) and [v for e, v in et1 if e.startswith("Modelo")] == [v for e, v in et0 if e.startswith("Modelo")] and [v for e, v in et1] != [v for e, v in et0], (et0, et1, t_per))
+        checar("Período exibido: título e nota informam o período mostrado e dizem que o modelo usa a série completa", f"período exibido: {ano_ini2} a {fim_a}" in texto("s-h2") and f"Período exibido: {ano_ini2} a {fim_a}." in texto("s-per-nota") and "O modelo foi ajustado com a série completa" in texto("s-per-nota") and "(série completa)" not in texto("s-per-nota"), (texto("s-h2")[-120:], texto("s-per-nota")[:200]))
+        checar("Período exibido: a cobertura do Quadro 5 não depende da seleção de anos", linhas5() == L5_0)
+        checar("Período exibido: sem travessão na nota", not re.search("[—–]", texto("s-per-nota")))
+        sel("s-esc", "dia"); pronto(); et_d = etiq()
+        checar("Período exibido na escala diária: mesmas etiquetas nos cartões", [e for e, _ in et_d].count("Modelo ajustado com a série completa") == 2 and [e for e, _ in et_d].count("Período exibido") == len(et_d) - 2, et_d)
+        sel("s-esc", "sem"); pg.select_option("#s-ini", index=0); pronto()
+        checar("Período exibido: voltar à série completa restaura os cartões", etiq() == et0 and h2_0 == texto("s-h2"))
         sel("s-causa", "externas"); pg.check("#s-r-covid"); pronto()
         checar("causas externas com o período da COVID-19 também retirado desenha", pixels() > 2000 and len(kpis()) > 0)
         sel("s-local", "Ignorado"); sel("s-faixa", "30-39")
@@ -132,7 +218,7 @@ try:
         checar("estado restaurado para o padrão", kpis() == k_ini)
 
         # 5c. aba de exposição-resposta e defasagem (filtros próprios, mesmos modelos)
-        xk = lambda: pg.eval_on_selector_all("#x-kpis .kpi", "els=>els.map(e=>e.innerText.replace(/\\n/g,' | '))")
+        xk = lambda: pg.eval_on_selector_all("#x-kpis .kpi", "els=>els.map(e=>[e.querySelector('.v').innerText, e.querySelector('.l').innerText].join(' | '))")
         xpix = lambda i: pg.evaluate("""(id)=>{const c=document.getElementById(id),g=c.getContext('2d'),d=g.getImageData(0,0,c.width,c.height).data;let n=0;for(let i=3;i<d.length;i+=4) if(d[i]>0) n++;return n}""", i)
         visivel = lambda i: pg.evaluate("(i)=>document.getElementById(i).offsetWidth>0", i)
         xpronto = lambda t=120000: pg.wait_for_function("document.querySelectorAll('#x-kpis .kpi').length>0 && !document.getElementById('x-kpis').classList.contains('calc')", timeout=t)
@@ -245,7 +331,7 @@ try:
         sel("x-local", "Todos os locais"); sel("x-faixa", "Todas as idades"); xpronto()
 
         # 5e. comparação de dois locais do óbito, lado a lado
-        yk = lambda: pg.eval_on_selector_all("#y-kpis .kpi", "els=>els.map(e=>e.innerText.replace(/\\n/g,' | '))")
+        yk = lambda: pg.eval_on_selector_all("#y-kpis .kpi", "els=>els.map(e=>[e.querySelector('.v').innerText, e.querySelector('.l').innerText].join(' | '))")
         eixo_y = lambda c: pg.evaluate("(id)=>{const s=Chart.getChart(id).scales.y;return [s.min,s.max]}", c)
         visivel = lambda i: pg.evaluate("(i)=>document.getElementById(i).offsetWidth>0", i)
         checar("sem comparação: só o recorte x aparece", not visivel("y-kpis") and not visivel("y-forest") and not visivel("x-comp-txt") and not pg.evaluate("()=>document.getElementById('x-cmp').classList.contains('dois')"))
@@ -428,7 +514,7 @@ try:
 
         # 10. segunda sessão (outra pessoa): os recortes já calculados vêm do disco, sem refazer o modelo
         pg2 = ctx.new_page(); pg2.goto(url)
-        k2 = lambda: pg2.eval_on_selector_all("#s-kpis .kpi", "els=>els.map(e=>e.innerText.replace(/\\n/g,' | '))")
+        k2 = lambda: pg2.eval_on_selector_all("#s-kpis .kpi", "els=>els.map(e=>[e.querySelector('.v').innerText, e.querySelector('.l').innerText].join(' | '))")
         pronto2 = lambda t=60000: pg2.wait_for_function("document.querySelectorAll('#s-kpis .kpi').length>0 && !document.getElementById('s-kpis').classList.contains('calc')", timeout=t)
         t_2 = medir(pronto2)
         checar("outra sessão abre o recorte inicial a partir do disco", t_2 < 8 and k2() == k_ini, f"{t_2:.1f} s")

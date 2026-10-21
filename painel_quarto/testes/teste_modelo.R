@@ -168,4 +168,38 @@ nc <- contagem_calor(list(clima = data.frame(num_hr_36 = c(0, 5, 6, 0, 4, NA, 7,
 ok(nc$dias == 5 && nc$eventos == 3, "dias de calor (>= 4 h) e eventos (sequências) dentro do ajuste")
 ok(all(vapply(SENS, function(z) is.character(z$rot) && is.character(z$grupo), TRUE)) && length(SENS) == 12, "lista de sensibilidades com rótulo e grupo")
 
+# ---------------------------------------------------------------- cobertura da faixa semanal
+# períodos: classificação pelo ano epidemiológico, sem sobreposição e sem lacuna
+ok(identical(periodo_cob(c(2005L, 2006L, 2010L, 2011L, 2014L, 2015L, 2019L, 2020L, 2022L, 2023L, 2030L)), c(NA, 1L, 1L, 2L, 2L, 3L, 3L, 4L, 4L, 5L, 5L)), "períodos da cobertura: limites dos anos")
+# incerteza dos coeficientes no esperado semanal: o método delta confere com a simulação dos coeficientes (posterior normal aproximada)
+set.seed(11)
+rm <- ajustar_segmento(y0, b, cbi, cx$sem_registro, kt, curvas = FALSE, manter_fit = TRUE)
+Xp <- predict(rm$fit, type = "lpmatrix"); Xp[, rm$ib] <- matrix(cbi$c0, nrow = nrow(Xp), ncol = length(cbi$c0), byrow = TRUE)
+ok(max(abs(exp(as.numeric(Xp %*% coef(rm$fit))) - rm$mu_sem_calor)) < 1e-8, "matriz do contrafactual (cross-basis zerada) reproduz o esperado sem calor")
+sdd <- sd_esperado_semanal(rm, cbi, cx$sem_registro, sem)
+bet <- MASS::mvrnorm(4000, coef(rm$fit), vcov(rm$fit)); gs <- factor(as.character(sem$ini), levels = as.character(sem$ini_ok))
+Ew <- apply(bet, 1, function(be) as.numeric(tapply(exp(as.numeric(Xp %*% be)), gs, sum)))
+sds <- apply(Ew, 1, sd)
+ok(all(is.finite(sdd)) && max(abs(sdd / sds - 1)) < 0.08 && abs(median(sdd / sds) - 1) < 0.02, sprintf("desvio-padrão do esperado semanal: método delta ≈ simulação (razão mediana %.3f, extremos %.3f e %.3f)", median(sdd / sds), min(sdd / sds), max(sdd / sds)))
+fora_s <- rep(FALSE, n); fora_s[200:230] <- TRUE
+rms <- ajustar_segmento(y0, b, cbi, fora_s, kt, curvas = FALSE, manter_fit = TRUE)
+sd_s <- sd_esperado_semanal(rms, cbi, fora_s, sem)
+ok(identical(unname(is.na(sd_s)), unname(as.logical(tapply(fora_s, gs, any)))), "esperado semanal: a incerteza dos coeficientes só existe nas semanas completas dentro do ajuste")
+# validação fora da amostra com dados simulados do próprio modelo (sem efeito do calor): cobertura perto de 95% nas semanas retiradas
+cov_w0 <- rep(FALSE, length(sem$ini_ok))
+cf <- calibrar_faixa(y0, b, cbi, cx$sem_registro, kt, sem, cov_w0)
+per_s <- periodo_cob(sem$ano)
+ok(identical(unname(!is.na(cf$e)), unname(!is.na(per_s) & per_s %in% c(2L, 3L))), "fora da amostra: há previsão exatamente nas semanas dos períodos retirados (2011 a 2014 e 2015 a 2019 na série simulada)")
+o_sem <- as.numeric(tapply(y0, gs, sum)); dentro <- !is.na(cf$e) & o_sem >= cf$l & o_sem <= cf$u
+cob_f <- mean(dentro[!is.na(cf$e)])
+ok(cob_f > 0.88 && cob_f < 0.995, sprintf("fora da amostra, com dados do próprio modelo, a faixa semanal cobre perto de 95%% (%.1f%%)", 100 * cob_f))
+ok(all(vapply(cf$refeitos[2:3], function(z) is.na(z$erro) && z$n_sem > 100 && z$phi >= 1, TRUE)) && all(is.na(cf$refeitos[[1]]$erro) == FALSE) && cf$refeitos[[4]]$n_sem == 0, "fora da amostra: um refeito por período com dias no ajuste e φ estimado só nas semanas que ficaram no ajuste")
+ok(isTRUE(cf$refeitos[[2]]$extrapola) && isTRUE(cf$refeitos[[3]]$extrapola), "fora da amostra: na série simulada os dois períodos ficam numa ponta e são previstos por extrapolação")
+# o período retirado não influencia a previsão dele: trocar os óbitos desse período por lixo não muda o esperado, a faixa nem o φ
+y_lixo <- y0; y_lixo[!is.na(per_s[as.integer(gs)]) & per_s[as.integer(gs)] == 3] <- 0L
+cf2 <- calibrar_faixa(y_lixo, b, cbi, cx$sem_registro, kt, sem, cov_w0)
+j3 <- which(per_s == 3)
+ok(max(abs(cf2$e[j3] - cf$e[j3])) < 1e-6 && max(abs(cf2$u[j3] - cf$u[j3])) < 1e-6 && abs(cf2$refeitos[[3]]$phi - cf$refeitos[[3]]$phi) < 1e-9, "fora da amostra: os óbitos do período retirado não entram na previsão dele")
+ok(cf$inc$n > 200 && cf$inc$mediana >= 1 && cf$inc$mediana < 1.1 && cf$inc$maxima >= cf$inc$p90, sprintf("incerteza dos coeficientes: acrescenta pouco à largura da faixa (mediana ×%.3f, máxima ×%.3f)", cf$inc$mediana, cf$inc$maxima))
+
 cat("\nTodos os testes do modelo passaram.\n")

@@ -18,8 +18,8 @@
       <option value="ic">Calor intenso: ≥ 3 dias com índice de calor máximo ≥ 36 °C</option>
       <option value="nc">Protocolo: ≥ 1 dia em NC2 a NC5 (≥ 4 h com índice de calor ≥ 36 °C)</option>
       <option value="no">Sem sombreamento</option></select></label>
-    <label>Ano inicial<select id="s-ini"></select></label>
-    <label>Ano final<select id="s-fim"></select></label>
+    <label title="A seleção de anos altera só o que é mostrado. O modelo é ajustado com a série completa.">Período exibido: ano inicial<select id="s-ini"></select></label>
+    <label title="A seleção de anos altera só o que é mostrado. O modelo é ajustado com a série completa.">Período exibido: ano final<select id="s-fim"></select></label>
     <label>Colunas ao fundo (valores diários)<select id="s-bar">
       <option value="hi_med">Índice de calor médio do dia</option>
       <option value="hi_max">Índice de calor máximo do dia</option>
@@ -31,7 +31,8 @@
     <label id="s-limw" class="hide">Limiar (°C)<input id="s-lim" type="number" value="32" step="0.5" min="10" max="55" style="width:84px"></label>
     <button class="btn" id="s-csv">Baixar CSV da série</button>
   </div>
-  <p class="note" id="s-raca-nota" style="margin:12px 2px 14px"></p>
+  <p class="note" id="s-raca-nota" style="margin:12px 2px 6px"></p>
+  <p class="note" id="s-per-nota" style="margin:0 2px 14px"></p>
   <div class="kpis" id="s-kpis"></div>
   <div class="card sens hide" id="s-sensw">
     <h3 id="s-sens-t">Ajuste principal e sensibilidade da amostra</h3>
@@ -44,6 +45,14 @@
     <div class="chartbox"><canvas id="s-chart"></canvas></div>
     <p class="note" id="s-note">Carregando a série…</p>
     <div class="interp" id="i-serie"></div>
+  </div>
+  <div class="card hide" id="s-cobw">
+    <div class="fn">Quadro 5</div><h3 id="s-cob-t" style="font-size:15px;margin:0 0 6px">Cobertura da faixa aproximada de variação de 95%, por período e grupo de semanas</h3>
+    <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin:8px 0 10px"><button class="btn" id="s-cob-btn" type="button">Calcular fora da amostra</button><span class="note" id="s-cob-st" style="margin:0"></span></div>
+    <div class="tabw"><table class="tb w" id="s-cob"></table></div>
+    <p class="note" id="s-cob-n"></p>
+    <p class="note" id="s-cob-n2"></p>
+    <div class="interp" id="s-cob-i"></div>
   </div>
 </section>
 <!--ABAS_SECOES-->

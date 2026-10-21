@@ -122,7 +122,7 @@ O teste do modelo simula uma série com efeito do calor conhecido e confere que 
 ## Limitações
 
 - Estudo ecológico, descritivo e exploratório; um modelo por recorte, sem correção para comparações múltiplas.
-- A faixa de 95% do esperado não inclui a incerteza dos coeficientes.
+- A faixa aproximada de variação de 95% do esperado não inclui a incerteza dos coeficientes e não tem cobertura garantida (ver o Quadro 5 da Figura 1 para a cobertura por período).
 - Não há termo de dia da semana, como no modelo de referência.
 - O período de COVID entra no ajuste com um termo suave próprio, então o esperado nesse período não serve de comparação. No app, a caixa de retirada remove o período do ajuste e deixa o esperado sem traçado nele.
 - Os óbitos são contados e não há taxa por população: o modelo não usa a população como offset, e o spline de tempo absorve a mudança lenta dela ao longo dos anos. O RR não depende disso, mas comparar níveis entre populações ou entre anos pede uma taxa.
