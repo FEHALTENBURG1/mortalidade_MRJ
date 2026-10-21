@@ -53,6 +53,7 @@ payload_segmento <- function(r, y, sem, cov_w, curvas = FALSE, aj = NULL) {
             o = as.integer(y), So = as.integer(tapply(y, g, sum)),
             S = list(e = arred(w$e, 1), l = arred(w$l, 1), u = arred(w$u, 1), phi = arred(w$phi, 2)))
   if (curvas) p$cv <- curvas_payload(r$curvas)
+  if (!is.null(r$cb)) p$cb <- r$cb                   # colunas da cross-basis e graus de liberdade efetivos
   if (!is.null(aj)) p$aj <- aj                       # dias e óbitos no ajuste e fora dele, por motivo (resumo_ajuste)
   p
 }

@@ -72,7 +72,7 @@ header#title-block-header{display:none}
 .cmp.dois>.cmpb{grid-column:1/-1}
 .cmp.dois>.x{grid-column:1}.cmp.dois>.y{grid-column:2}
 .cmp.dois>[data-sec=sub]{grid-row:1}.cmp.dois>[data-sec=k]{grid-row:2}.cmp.dois>[data-sec=f2]{grid-row:3}.cmp.dois>[data-sec=f3]{grid-row:4}
-.cmp.dois>[data-sec=i]{grid-row:5}.cmp.dois>.cmpb{grid-row:6}.cmp.dois>[data-sec=hm]{grid-row:7}
+.cmp.dois>[data-sec=fx]{grid-row:5}.cmp.dois>[data-sec=i]{grid-row:6}.cmp.dois>.cmpb{grid-row:7}.cmp.dois>[data-sec=hm]{grid-row:8}
 .cmp.dois .kpi{padding:8px 10px}.cmp.dois .kpi .v{font-size:16px}.cmp.dois .kpi .l{font-size:11px}
 .cmp.dois table.hm{font-size:11px}.cmp.dois table.hm th{padding:3px 1px}.cmp.dois table.hm td{padding:5px 1px}
 .cmp>.cmpb{margin-top:0}
@@ -96,4 +96,5 @@ table.tb .n{text-align:right;white-space:nowrap}
 table.tb .dl{font-size:11px;color:var(--mut)}
 table.tb tr.gr td{background:var(--sel);font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.4px;color:var(--mut);padding:5px 10px}
 table.tb tr.rel td:first-child{font-weight:600}
+table.tb.w{min-width:900px}table.tb.w th.n{white-space:normal}table.tb.w th,table.tb.w td{padding:6px 7px}table.tb.w td:first-child,table.tb.w th:first-child{min-width:200px}
 #d-sens{min-width:980px}#d-sens td:first-child,#d-sens th:first-child{min-width:230px}#d-sens th.n{white-space:normal}#d-sens th,#d-sens td{padding:6px 7px}

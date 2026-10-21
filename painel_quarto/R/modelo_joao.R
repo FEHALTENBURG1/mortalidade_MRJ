@@ -20,6 +20,13 @@ EXPOSICOES <- list(
   horas = list(nome = "Horas por dia com índice de calor ≥ 36 °C", var = "num_hr_36", fun = "ns", df = 1,  ref = c(4, 8),  unidade = "h"),
   haat  = list(nome = "HAAT: graus-hora acima de 36 °C no dia",    var = "auc36",     fun = "ps", df = 15, ref = c(5, 20), unidade = "°C·h"))
 
+# Alternativa flexível pré-definida para as horas por dia: spline natural com 3 gl (nós interiores em 3 e 6 h, que dividem em três partes os dias com calor;
+# nós de borda no menor e no maior valor observado). O modelo de referência tem 1 gl na exposição, de modo que o log-RR é uma reta nas horas e
+# RR(8 h) = RR(4 h)^2 por construção; esta alternativa não impõe essa forma e serve para verificar se os dados sustentam a reta (ver comparar_flex).
+HORAS_NOS <- c(3, 6)
+EXPOSICAO_FLEX <- modifyList(EXPOSICOES$horas, list(fun = "ns", df = length(HORAS_NOS) + 1L, knots = HORAS_NOS,
+                                                    nome = "Horas por dia com índice de calor ≥ 36 °C, curva flexível"))
+
 # Calendário do modelo: tempo, dia do ano, índice do período COVID e as exposições (dia sem dado de clima = dia sem calor)
 base_modelo <- function(cx) {
   n <- length(cx$dias)
@@ -75,7 +82,8 @@ k_tempo <- function(n_dias) max(round(K_REF * n_dias / (ANOS_REF * 365.25)), 6)
 # Guarda também a linha da cross-basis para exposição zero em todas as defasagens (c0), usada no contrafactual.
 cross_exposicao <- function(b, e, lag = LAG) {
   x <- b[[e$var]]
-  cb <- crossbasis(c(rep(0, lag), x), lag = lag, argvar = list(fun = e$fun, df = e$df), arglag = list(fun = "ns", df = 3))
+  argvar <- if (!is.null(e$knots)) list(fun = e$fun, knots = e$knots) else list(fun = e$fun, df = e$df)
+  cb <- crossbasis(c(rep(0, lag), x), lag = lag, argvar = argvar, arglag = list(fun = "ns", df = 3))
   m <- matrix(as.numeric(cb[-seq_len(lag), , drop = FALSE]), nrow = length(x), dimnames = list(NULL, colnames(cb)))
   nz <- cumsum(x != 0); janela_com_calor <- nz - c(rep(0, lag + 1), head(nz, -(lag + 1)))
   i0 <- which(seq_along(x) > lag & janela_com_calor == 0)[1]
@@ -128,7 +136,7 @@ ajustar_gam <- function(dd, cb_i, pen, k_time, esp = list()) {
 
 # Ajusta um segmento. y = óbitos por dia (calendário completo); fora = dias fora do ajuste (sem registro no SIM).
 # Devolve a família usada, o RR acumulado nas exposições de referência e os vetores diários (NA fora do ajuste).
-ajustar_segmento <- function(y, b, cbi, fora, k_time, esp = list(), curvas = TRUE, diag = "nao") {
+ajustar_segmento <- function(y, b, cbi, fora, k_time, esp = list(), curvas = TRUE, diag = "nao", manter_fit = FALSE) {
   dd <- b; dd$y <- y; dd$y[fora] <- NA
   cb_i <- cbi$m
   g <- ajustar_gam(dd, cb_i, if (is.null(cbi$pen)) NULL else list(cb_i = cbi$pen), k_time, esp)
@@ -146,7 +154,9 @@ ajustar_segmento <- function(y, b, cbi, fora, k_time, esp = list(), curvas = TRU
        rr = rbind(rr = pr$allRRfit, lo = pr$allRRlow, hi = pr$allRRhigh), se = as.numeric(pr$allse),     # se = erro-padrão do log do RR em cada nível de referência
        curvas = if (curvas) curvas_modelo(cbi, beta, V, ceiling(quantile(b[[cbi$e$var]][b[[cbi$e$var]] > 0], 0.99))),
        mu_ajustado = exp(eta), mu_sem_calor = exp(eta - efeito), efeito = efeito,
-       dev_expl = summary(fit)$dev.expl)
+       dev_expl = summary(fit)$dev.expl,
+       cb = list(k = length(ib), edf = round(sum(fit$edf[ib]), 2)))       # colunas da cross-basis e graus de liberdade efetivos que o ajuste lhe deu
+  if (manter_fit) { out$fit <- fit; out$ib <- ib; out$beta <- beta; out$V <- V }
   if (diag != "nao") out$diag <- diagnosticar_fit(fit, ok, ib, completo = identical(diag, "completo"))
   out
 }
@@ -190,6 +200,37 @@ diagnosticar_fit <- function(fit, ok, ib, completo = FALSE) {
                                                                         p_termo = if (!is.null(st) && nm %in% rownames(st)) unname(st[nm, ncol(st)]) else NA_real_))
   }
   d
+}
+
+# ---------------------------------------------------------------- forma da relação exposição-resposta (horas por dia)
+# RR de `b` contra `a` (acumulado em 0 a LAG dias, exposição mantida em todos os dias) e IC 95%, a partir dos coeficientes da cross-basis.
+rr_contra <- function(cbi, beta, V, a, b) {
+  pr <- crosspred(cbi$obj, coef = beta, vcov = V, model.link = "log", at = c(a, b), cen = a)
+  i <- which(abs(pr$predvar - b) < 1e-8)
+  c(rr = unname(pr$allRRfit[i]), lo = unname(pr$allRRlow[i]), hi = unname(pr$allRRhigh[i]))
+}
+
+# Compara o ajuste de referência (reta imposta, 1 gl) com a curva flexível pré-definida (EXPOSICAO_FLEX) no mesmo recorte, causa e retiradas.
+# Devolve, para cada um, o RR nos níveis de referência, o RR de 8 h contra 4 h, a curva com IC 95% e os graus de liberdade; e a comparação dos dois:
+# razão de desvios aproximada (anova.gam; a reta está contida na curva flexível), diferença de AIC e a razão log RR(8 h) / log RR(4 h) (2 na reta).
+comparar_flex <- function(y, b, cbl, cbf, fora, k_time) {
+  rnd <- function(x, d) { x <- round(as.numeric(x), d); x }
+  rl <- ajustar_segmento(y, b, cbl, fora, k_time, curvas = TRUE, manter_fit = TRUE)
+  rf <- ajustar_segmento(y, b, cbf, fora, k_time, curvas = TRUE, manter_fit = TRUE)
+  ref <- cbl$e$ref
+  um <- function(r, cbi) {
+    cv <- r$curvas
+    list(rr = rnd(r$rr["rr", ], 4), lo = rnd(r$rr["lo", ], 4), hi = rnd(r$rr["hi", ], 4),
+         r84 = rnd(rr_contra(cbi, r$beta, r$V, ref[1], ref[2]), 4),
+         k = r$cb$k, edf = r$cb$edf, aic = round(AIC(r$fit), 1), f = r$fam,
+         cv = list(x = rnd(cv$x, 3), rr = rnd(cv$rr, 4), lo = rnd(cv$lo, 4), hi = rnd(cv$hi, 4)))
+  }
+  an <- tryCatch(suppressWarnings(stats::anova(rl$fit, rf$fit, test = "Chisq")), error = function(e) NULL)
+  comp <- list(d_aic = round(AIC(rf$fit) - AIC(rl$fit), 1), razao = rnd(log(rf$rr["rr", 2]) / log(rf$rr["rr", 1]), 3))
+  if (!is.null(an) && nrow(an) == 2 && "Pr(>Chi)" %in% colnames(an)) {
+    comp$gl <- round(an$Df[2], 2); comp$desvio <- round(an$Deviance[2], 2); comp$p <- unname(an[2, "Pr(>Chi)"])
+  }
+  list(lin = um(rl, cbl), flex = um(rf, cbf), comp = comp)
 }
 
 # ---------------------------------------------------------------- análises de sensibilidade (aba Diagnósticos e sensibilidades)

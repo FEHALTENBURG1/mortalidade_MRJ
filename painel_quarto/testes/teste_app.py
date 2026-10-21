@@ -134,6 +134,7 @@ try:
         # 5c. aba de exposição-resposta e defasagem (filtros próprios, mesmos modelos)
         xk = lambda: pg.eval_on_selector_all("#x-kpis .kpi", "els=>els.map(e=>e.innerText.replace(/\\n/g,' | '))")
         xpix = lambda i: pg.evaluate("""(id)=>{const c=document.getElementById(id),g=c.getContext('2d'),d=g.getImageData(0,0,c.width,c.height).data;let n=0;for(let i=3;i<d.length;i+=4) if(d[i]>0) n++;return n}""", i)
+        visivel = lambda i: pg.evaluate("(i)=>document.getElementById(i).offsetWidth>0", i)
         xpronto = lambda t=120000: pg.wait_for_function("document.querySelectorAll('#x-kpis .kpi').length>0 && !document.getElementById('x-kpis').classList.contains('calc')", timeout=t)
         pg.click("nav button[data-tab=exp]")
         pg.wait_for_function("!document.getElementById('tab-exp').classList.contains('hide') && document.getElementById('tab-serie').classList.contains('hide')", timeout=5000)
@@ -152,12 +153,33 @@ try:
         checar("a aba não usa travessão no texto das figuras 2 e 3", not re.search("[—–]", pg.inner_text("#x-interp") + pg.inner_text("#x-note2") + pg.inner_text("#x-kpis") + pg.inner_text("#x-forest")))
         _txt_rr = pg.inner_text("#x-kpis") + " " + pg.inner_text("#x-interp") + " " + " ".join(pg.eval_on_selector_all("#x-forest svg text", "els=>els.map(e=>e.textContent)")) + " " + " ".join(pg.eval_on_selector_all("#x-forest svg title", "els=>els.map(e=>e.textContent)"))
         checar("RR com no máximo duas casas decimais nos quadros, na floresta (rótulos e dicas) e na interpretação", not re.search(r"\d,\d{3}", _txt_rr), re.findall(r".{12}\d,\d{3}.{6}", _txt_rr)[:5])
+        # forma da curva: a reta imposta (1 gl) e a curva flexível pré-definida (pedido flex_horas), com o suporte de dias por hora
+        fpronto = lambda t=300000: pg.wait_for_function("document.querySelectorAll('#x-fx tbody tr').length===2", timeout=t)
+        fpronto(); fx_ini = pg.inner_text("#x-fx")
+        linhas_fx = pg.eval_on_selector_all("#x-fx tbody tr", "trs=>trs.map(tr=>[...tr.children].map(td=>td.innerText))")
+        checar("Quadro 3: reta imposta e curva flexível com RR de 4 e 8 h, RR de 8 h contra 4 h, razão dos log RR e AIC",
+               len(linhas_fx) == 2 and linhas_fx[0][0].startswith("Reta imposta") and linhas_fx[1][0].startswith("Curva flexível") and linhas_fx[0][1] == "1 (3)" and linhas_fx[1][1] == "3 (9)"
+               and linhas_fx[0][5].startswith("2,00") and "imposta" in linhas_fx[0][5] and all(re.fullmatch(r"\d,\d\d \(\d,\d\d a \d,\d\d\)", linhas_fx[i][j]) for i in (0, 1) for j in (2, 3, 4)), linhas_fx)
+        checar("Quadro 3: o RR da reta é o da Figura 1 (4 h e 8 h do mesmo modelo de referência)",
+               linhas_fx[0][2].split(" ")[0] == xk_ini[2].split(" | ")[0].split(" ")[0] and linhas_fx[0][3].split(" ")[0] == xk_ini[5].split(" | ")[0].split(" ")[0], (linhas_fx[0], xk_ini[2], xk_ini[5]))
+        checar("Quadro 3: nota diz que RR(8 h) = RR(4 h)² e que não são dois achados; interpretação compara reta e curva flexível",
+               "RR(8 h) = RR(4 h)²" in pg.inner_text("#x-fx-note") and "um só achado" in pg.inner_text("#x-fx-note") and "curva flexível" in pg.inner_text("#x-fx-interp") and "Nas extremidades o suporte é pequeno" in pg.inner_text("#x-fx-interp"), pg.inner_text("#x-fx-interp")[:300])
+        checar("Figura 2: legenda distingue a reta imposta da curva flexível e há barras de suporte de dias por hora",
+               "Reta imposta" in pg.inner_text("#x-leg") and "Curva flexível" in pg.inner_text("#x-leg") and xpix("x-sup") > 300 and "dias no ajuste" in pg.inner_text("#x-supnote") and visivel("x-sup"))
+        checar("Figura 2: a nota explica que a linha azul é uma reta imposta", "reta imposta" in pg.inner_text("#x-note"))
+        checar("os cartões de RR de 8 h dizem que, na reta, o RR é o de 4 h ao quadrado", "elevado ao quadrado" in xk_ini[5] and "elevado ao quadrado" in k_ini[2], (xk_ini[5], k_ini[2]))
+        checar("Quadro 3: RR com no máximo duas casas e sem travessão", not re.search(r"\d,\d{3}", pg.inner_text("#x-fx") + pg.inner_text("#x-fx-interp")) and not re.search("[—–]", pg.inner_text("#x-fx") + pg.inner_text("#x-fx-note") + pg.inner_text("#x-fx-interp") + pg.inner_text("#x-supnote")))
         if capturas: pg.screenshot(path=os.path.join(capturas, "app_02c_exposicao.png"), full_page=True)
         sel("x-exp", "haat"); xpronto(); xk_haat = xk()
+        pg.wait_for_function("document.querySelectorAll('#x-fx tbody tr').length===1", timeout=5000)
+        checar("HAAT: o Quadro 3 informa a dimensão da base (k' = 45) e os gl efetivos; sem barras de suporte nem curva flexível",
+               "45" in pg.inner_text("#x-fx") and re.search(r"\d+,\d", pg.inner_text("#x-fx tbody")) and "Spline penalizado" in pg.inner_text("#x-fx") and not visivel("x-supbox") and "Curva flexível" not in pg.inner_text("#x-leg") and "estimada e não imposta" in pg.inner_text("#x-fx-note"), pg.inner_text("#x-fx"))
         checar("medida HAAT na aba: nova curva e novos quadros", xk_haat != xk_ini and xpix("x-chart") > 1500, xk_haat)
         checar("medida HAAT na aba: a floresta é redesenhada com os níveis do HAAT", pg.inner_text("#x-leg2") != leg_ini and n_circ("x") == 60, (leg_ini, pg.inner_text("#x-leg2")))
-        sel("x-exp", "horas"); xpronto()
-        sel("x-causa", "externas"); xpronto(); xk_ext = xk()
+        sel("x-exp", "horas"); xpronto(); fpronto()
+        checar("voltar às horas: o Quadro 3 reaparece sem novo cálculo", pg.inner_text("#x-fx") == fx_ini)
+        sel("x-causa", "externas"); xpronto(); xk_ext = xk(); fpronto()
+        checar("causas externas: a comparação de reta e curva flexível é refeita para a causa", pg.inner_text("#x-fx") != fx_ini)
         checar("causas externas na aba: novo modelo", xk_ext != xk_ini and "causas externas" in pg.inner_text("#x-sub"), xk_ext)
         pg.check("#x-r-covid"); xpronto()
         checar("retirar o período COVID na aba: a nota informa que o modelo não tem termo para ele", "não tem termo para ele" in pg.inner_text("#x-note2"), pg.inner_text("#x-note2")[:300])

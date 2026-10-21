@@ -22,7 +22,14 @@ if($("x-r-covid-t") && M.covid) $("x-r-covid-t").textContent = `Período COVID (
   c.classList.replace("x","y"); el.after(c);
 });
 
-const c1 = {x:null, y:null};
+const c1 = {x:null, y:null}, c2 = {x:null, y:null};                // Figura 2 e gráfico de suporte (dias por hora)
+const flexVoo = new Map(), flexFalhou = new Map();                    // kd -> instante do pedido | kd -> mensagem de erro (comparação com a curva flexível)
+const flexDe = s => s.e.ex==="horas" ? (P.dg(s.e.kd)["flex_horas"]||null) : null;
+function pedirFlex(e){
+  const agora = Date.now(); flexVoo.forEach((t,id)=>{ if(agora-t>180000) flexVoo.delete(id) });
+  if(flexVoo.has(e.kd) || flexFalhou.has(e.kd)) return;
+  flexVoo.set(e.kd,agora); P.enviar(e.k,"flex_horas",e.causa,e.cod);
+}
 const SLOTS = ["x","y"];
 const local = p => p==="y" ? $("x-local2").value : $("x-local").value;
 const chave = p => local(p)+"|"+$("x-faixa").value+($("x-raca").value!=="Todas"?"|"+$("x-raca").value:"");
@@ -33,6 +40,8 @@ const calc = (p,on) => { $(p+"-kpis").classList.toggle("calc",on); document.quer
 function limpar(p){
   [p+"-kpis",p+"-leg",p+"-leg2",p+"-forest",p+"-interp"].forEach(i=>$(i).innerHTML="");
   if(c1[p]){ c1[p].destroy(); c1[p]=null }
+  if(c2[p]){ c2[p].destroy(); c2[p]=null }
+  $(p+"-fx").innerHTML = ""; $(p+"-fx-interp").innerHTML = ""; $(p+"-fx-note").textContent = ""; $(p+"-fx-prog").textContent = ""; $(p+"-supnote").textContent = ""; $(p+"-supbox").style.display = "none";
   $(p+"-note").textContent = ""; $(p+"-note2").textContent = "";
 }
 const kpiHtml = lista => lista.map(([v,l])=>`<div class="kpi"><div class="v">${v}</div><div class="l">${l}</div></div>`).join("");
@@ -113,10 +122,82 @@ function desenharCurvas(){
   // mesma escala nos dois recortes, para que a comparação seja visual
   const dom = prontos.length ? {
     xmax: Math.max(...prontos.map(s=>s.cv.x[s.cv.x.length-1])),
-    ymin: Math.floor(Math.min(1,...prontos.map(s=>Math.min(...s.cv.lo)))*100)/100, ymax: Math.ceil(Math.max(...prontos.map(s=>Math.max(...s.cv.hi)))*100)/100,
+    ymin: Math.floor(Math.min(1,...prontos.map(s=>Math.min(...s.cv.lo, ...(flexDe(s)?flexDe(s).flex.cv.lo:[]))))*100)/100,
+    ymax: Math.ceil(Math.max(...prontos.map(s=>Math.max(...s.cv.hi, ...(flexDe(s)?flexDe(s).flex.cv.hi:[]))))*100)/100,
     f3: dominioForesta(prontos)} : null;
   prontos.forEach(s=>desenharSlot(s, dom, comp, C));
   comparacao(S);
+}
+
+// ---------------------------------------------------------------- suporte de dados e comparação com a curva flexível
+// Dias no ajuste por hora de exposição (mesma escala horizontal da Figura 2): mostra onde há dados para estimar a curva. Só para as horas por dia.
+function apoio(p, fx, xmax, C, eixoX, cv, E){
+  const box = $(p+"-supbox"), nota = $(p+"-supnote");
+  if(c2[p]){ c2[p].destroy(); c2[p]=null }
+  if(E.fun!=="ns"){ box.style.display = "none"; nota.textContent = ""; return }
+  if(!fx){
+    box.style.display = "none";
+    nota.textContent = flexFalhou.has(P.kd(P.modo("x").causa,P.cod("x"),chave(p))) ? "Não foi possível calcular a comparação com a curva flexível: "+String(flexFalhou.get(P.kd(P.modo("x").causa,P.cod("x"),chave(p)))).replace(/[<>&]/g,"")
+      : "Calculando a curva flexível e o suporte de dados (cerca de 10 segundos na primeira vez; depois o resultado fica guardado no servidor)…";
+    return;
+  }
+  box.style.display = "";
+  const h = fx.sup.h, n = fx.sup.n, pts = h.map((x,i)=>({x, y:n[i]})).filter(q=>q.x>=1 && q.x<=xmax);
+  c2[p] = new Chart($(p+"-sup"),{type:"bar",data:{datasets:[{label:"Dias no ajuste",data:pts,backgroundColor:mkCor(C.cz,.75),borderWidth:0,barPercentage:.9,categoryPercentage:1}]},
+    options:{responsive:true,maintainAspectRatio:false,animation:false,parsing:false,
+      scales:{x:{...eixoX,title:{display:true,text:"Horas por dia com índice de calor ≥ 36 °C (barras: dias no ajuste)",color:C.mut}},
+              y:{beginAtZero:true,grid:{color:C.grid},ticks:{color:C.mut,maxTicksLimit:4,callback:v=>fn(v)},title:{display:true,text:"Dias",color:C.mut},afterFit:sc=>{ sc.width = 64 }}},
+      plugins:{legend:{display:false},tooltip:{callbacks:{title:it=>`${fn(it[0].parsed.x)} h por dia`,label:c=>`${fn(c.parsed.y)} dias no ajuste`}}}}});
+  const tot = n.reduce((a,b)=>a+b,0), exp1 = tot-n[0], ge = k => h.reduce((a,x,i)=>a+(x>=k?n[i]:0),0);
+  nota.textContent = `Barras: dias no ajuste (${fn(fx.nd)} dias) por número de horas com índice de calor ≥ 36 °C; o dia sem nenhuma hora (${fn(n[0])} dias) não aparece. `+
+    `São ${fn(exp1)} dias com pelo menos 1 h, ${fn(ge(8))} com pelo menos 8 h e ${fn(ge(10))} com pelo menos 10 h. O eixo termina em ${fn(xmax)} h, o percentil 99 dos dias com exposição, e há ${fn(ge(xmax+1))} dias acima desse valor. `+
+    `A curva e as barras valem para todo o período do ajuste, e não para o recorte escolhido: o suporte de dias é o mesmo em qualquer recorte, e só o número de óbitos muda.`;
+}
+
+const icr = (v,d=2) => `${fn(v[0],d)} (IC 95%: ${fn(v[1],d)} a ${fn(v[2],d)})`;
+const icc = v => `${fn(v[0],2)} (${fn(v[1],2)} a ${fn(v[2],2)})`;            // célula de tabela: o cabeçalho já diz IC 95%
+function flexQuadro(s, fx){
+  const p = s.p, e = s.e, E = s.E, u = E.unidade, tab = $(p+"-fx"), nota = $(p+"-fx-note"), it = $(p+"-fx-interp"), prog = $(p+"-fx-prog");
+  if(E.fun!=="ns"){
+    // HAAT: a curva já é flexível (spline penalizado); mostra a dimensão da base e os graus de liberdade efetivos
+    const cb = (P.cb && P.cb(e.kd,e.ex)) || null;
+    $(p+"-fx-h").textContent = "Flexibilidade da curva do HAAT";
+    prog.textContent = "";
+    if(!cb){ tab.innerHTML = ""; nota.textContent = ""; it.innerHTML = ""; return }
+    tab.innerHTML = `<thead><tr><th>Especificação</th><th class="n">gl na exposição</th><th class="n">gl na defasagem</th><th class="n">Dimensão da base cruzada (k')</th><th class="n">gl efetivos da base cruzada</th></tr></thead><tbody>`+
+      `<tr><td>Spline penalizado (modelo de referência)</td><td class="n">${E.df}</td><td class="n">3</td><td class="n">${fn(cb.k)}</td><td class="n">${fn(cb.edf,1)}</td></tr></tbody>`;
+    nota.textContent = `O HAAT é estimado por um spline penalizado com ${E.df} graus de liberdade na exposição, combinado com 3 graus de liberdade na defasagem, o que dá uma base cruzada de k' = ${fn(cb.k)} colunas. A penalização encolhe os coeficientes: os graus de liberdade efetivos (${fn(cb.edf,1)}) medem a flexibilidade que os dados sustentaram, e não o número de colunas. `+
+      `Nesta medida a curva é estimada e não imposta, mas as extremidades têm poucos dias de exposição alta e intervalos largos.`;
+    it.innerHTML = `<span class="t">Interpretação</span>A curva do HAAT usa ${fn(cb.edf,1)} dos ${fn(cb.k)} graus de liberdade possíveis, de modo que a penalização mantém a curva mais suave do que a base permitiria. Leia as extremidades da Figura 2 com cautela, porque há poucos dias com HAAT alto.`;
+    return;
+  }
+  $(p+"-fx-h").textContent = "Reta imposta e curva flexível (horas por dia)";
+  if(!fx){ tab.innerHTML = ""; it.innerHTML = ""; nota.textContent = ""; prog.textContent = flexFalhou.has(e.kd) ? "" : "Calculando a comparação com a curva flexível…"; return }
+  prog.textContent = "";
+  const a = fx.lin, b = fx.flex, c = fx.comp, rf = fx.ref;
+  const gl = (o,gx) => `${gx} (${o.k})`;
+  tab.innerHTML = `<thead><tr><th>Especificação</th><th class="n">gl na exposição (colunas da base cruzada)</th><th class="n">RR com ${fn(rf[0])} h por dia (IC 95%)</th><th class="n">RR com ${fn(rf[1])} h por dia (IC 95%)</th>`+
+    `<th class="n">RR de ${fn(rf[1])} h contra ${fn(rf[0])} h (IC 95%)</th><th class="n">log RR(${fn(rf[1])} h) ÷ log RR(${fn(rf[0])} h)</th><th class="n">AIC</th></tr></thead><tbody>`+
+    `<tr><td>Reta imposta (modelo de referência)</td><td class="n">${gl(a,1)}</td><td class="n">${icc([a.rr[0],a.lo[0],a.hi[0]])}</td><td class="n">${icc([a.rr[1],a.lo[1],a.hi[1]])}</td><td class="n">${icc(a.r84)}</td><td class="n">${fn(2,2)} (imposta)</td><td class="n">${fn(a.aic,1)}</td></tr>`+
+    `<tr><td>Curva flexível (spline natural, nós em ${fx.nos.join(" e ")} h)</td><td class="n">${gl(b,3)}</td><td class="n">${icc([b.rr[0],b.lo[0],b.hi[0]])}</td><td class="n">${icc([b.rr[1],b.lo[1],b.hi[1]])}</td><td class="n">${icc(b.r84)}</td><td class="n">${fn(c.razao,2)}</td><td class="n">${fn(b.aic,1)}</td></tr></tbody>`;
+  const pt = c.p==null ? null : (c.p<0.001 ? "p < 0,001" : "p = "+fn(c.p,3));
+  nota.textContent = `Reta imposta: com 1 grau de liberdade na exposição, o log-RR é proporcional às horas, de modo que RR(${fn(rf[1])} h) = RR(${fn(rf[0])} h)² e o RR de ${fn(rf[1])} h contra ${fn(rf[0])} h é igual ao RR de ${fn(rf[0])} h contra nenhuma exposição. Os dois RR do modelo de referência formam um só achado, e não duas estimativas independentes. `+
+    `Curva flexível: spline natural com 3 graus de liberdade na exposição, com nós interiores em ${fx.nos.join(" e ")} h, definidos antes da análise e sem otimização, e os mesmos termos de tempo, de dia do ano, de COVID-19, a mesma defasagem e as mesmas retiradas do ajuste. `+
+    (pt?`Comparação aproximada (razão de desvios do anova.gam do mgcv, com a reta contida na curva flexível): diferença de desvio ${fn(c.desvio,1)} com ${fn(c.gl,1)} gl, ${pt}; AIC da curva flexível menos AIC da reta = ${fn(c.d_aic,1).replace("-","−")}. `:`AIC da curva flexível menos AIC da reta = ${fn(c.d_aic,1).replace("-","−")}. `)+
+    `Os resíduos do modelo têm autocorrelação (aba Diagnósticos e sensibilidades), por isso o valor de p é só indicativo. Os dois ajustes usam ${fn(fx.nd)} dias e ${fn(fx.no)} óbitos.`;
+  // interpretação
+  const dentro = (r,v) => v>=r[1] && v<=r[2], j = [0,1];
+  const dir = j.map(i=>`${fn(rf[i])} h: ${fr(b.rr[i])} na curva flexível contra ${fr(a.rr[i])} na reta`).join("; ");
+  const fora = j.filter(i=>!dentro([b.rr[i],b.lo[i],b.hi[i]], a.rr[i])).map(i=>fn(rf[i])+" h");
+  const ult = b.cv.x.length-1, xm = b.cv.x[ult], ge10 = fx.sup.h.reduce((q,h,i)=>q+(h>=10?fx.sup.n[i]:0),0), exp1 = fx.sup.n.reduce((q,v)=>q+v,0)-fx.sup.n[0];
+  const prefere = c.p!=null && c.p<0.05 && c.d_aic<0;
+  it.innerHTML = `<span class="t">Interpretação</span>Os RR acumulados estimados são: ${dir}. `+
+    (fora.length?`O RR da reta fica fora do IC 95% da curva flexível em ${fora.join(" e ")}. `:`O RR da reta fica dentro do IC 95% da curva flexível nos dois níveis. `)+
+    `A razão log RR(${fn(rf[1])} h) ÷ log RR(${fn(rf[0])} h) é ${fn(c.razao,2)} na curva flexível, contra 2,00 imposto pela reta. `+
+    (prefere?`O teste aproximado e o AIC preferem a curva flexível, o que indica que a reta é uma simplificação e que o RR de ${fn(rf[1])} h obtido da reta não deve ser lido como uma estimativa independente do de ${fn(rf[0])} h. `
+            :`Neste recorte, a curva flexível não melhora o ajuste de modo claro (teste aproximado e AIC), e a reta é uma aproximação razoável dentro do que os dados mostram. `)+
+    `Nas extremidades o suporte é pequeno: só ${fn(ge10)} dos ${fn(exp1)} dias com pelo menos 1 h chegam a 10 h ou mais. Em ${fn(xm)} h (limite da figura), o RR é ${fr(b.cv.rr[ult])} (IC 95%: ${fr(b.cv.lo[ult])} a ${fr(b.cv.hi[ult])}) na curva flexível e ${fr(a.cv.rr[ult])} (IC 95%: ${fr(a.cv.lo[ult])} a ${fr(a.cv.hi[ult])}) na reta. `+
+    `O IC da curva flexível alarga ao se afastar da região com mais dias, e o IC estreito da reta nessa região vem da forma imposta, e não de mais dados.`;
 }
 
 function desenharSlot(s, dom, comp, C){
@@ -130,21 +211,35 @@ function desenharSlot(s, dom, comp, C){
   const pts = a => cv.x.map((x,i)=>({x, y:a[i]}));
   const eixoY = comp ? {min:dom.ymin, max:dom.ymax} : {};
 
-  // Figura 2: RR acumulado em 0 a 10 dias em função da exposição mantida nos 11 dias
+  // Figura 2: RR acumulado em 0 a 10 dias em função da exposição mantida nos 11 dias. Para as horas por dia, a linha azul é a reta imposta pelo modelo
+  // de referência (1 gl) e a curva tracejada é a alternativa flexível pré-definida (pedido "flex_horas"), com o suporte de dados logo abaixo.
+  const fx = flexDe(s), horas = e.ex==="horas";
+  if(horas && !fx) pedirFlex(e);
   if(c1[p]) c1[p].destroy();
+  const ptsF = a => fx.flex.cv.x.map((x,i)=>({x, y:a[i]}));
+  const rotP = horas ? "Reta imposta (log-RR linear, 1 gl)" : "Curva estimada (spline penalizado)";
+  const off = horas ? 0.5 : 0;
+  const eixoX = {type:"linear",min:-off,max:xmax+off,grid:{display:false},ticks:{color:C.mut,callback:v=>fn(v)},
+    afterBuildTicks: horas ? sc=>{ sc.ticks = Array.from({length:Math.floor(xmax)+1},(_,i)=>({value:i})) } : undefined};     // horas inteiras de 0 a xmax; o meio ponto de folga nas bordas só dá espaço às barras
   c1[p] = new Chart($(p+"-chart"),{type:"line",data:{datasets:[
     {label:"_lo",data:pts(cv.lo),borderWidth:0,pointRadius:0,order:5},
     {label:"IC 95%",data:pts(cv.hi),borderWidth:0,pointRadius:0,fill:"-1",backgroundColor:mkCor(C.az,.17),order:5},
-    {label:"RR acumulado",data:pts(cv.rr),borderColor:C.az,borderWidth:2,pointRadius:0,pointHoverRadius:0,order:2},
-    {label:"RR = 1",data:[{x:0,y:1},{x:xmax,y:1}],borderColor:mkCor(C.cz,.9),borderDash:[5,4],borderWidth:1,pointRadius:0,order:4},
+    ...(fx?[{label:"_lof",data:ptsF(fx.flex.cv.lo),borderWidth:0,pointRadius:0,order:6},
+            {label:"IC 95% da curva flexível",data:ptsF(fx.flex.cv.hi),borderWidth:0,pointRadius:0,fill:"-1",backgroundColor:mkCor(C.ink,.10),order:6}]:[]),
+    {label:rotP,tip:"ref",data:pts(cv.rr),borderColor:C.az,borderWidth:2,pointRadius:0,pointHoverRadius:0,order:2},
+    ...(fx?[{label:"Curva flexível",tip:"flex",data:ptsF(fx.flex.cv.rr),borderColor:C.ink,borderDash:[7,4],borderWidth:2,pointRadius:0,pointHoverRadius:0,order:3}]:[]),
+    {label:"RR = 1",data:[{x:-off,y:1},{x:xmax+off,y:1}],borderColor:mkCor(C.cz,.9),borderDash:[5,4],borderWidth:1,pointRadius:0,order:4},
     {label:"Níveis de referência",data:L.map(l=>({x:l.ref,y:l.ac[l.ac.length-1]})),showLine:false,pointRadius:6,pointBackgroundColor:cor,pointBorderColor:C.card,pointBorderWidth:2,order:1}
   ]},options:{responsive:true,maintainAspectRatio:false,animation:false,parsing:false,interaction:{mode:"nearest",axis:"x",intersect:false},
-    scales:{x:{type:"linear",min:0,max:xmax,grid:{display:false},ticks:{color:C.mut},title:{display:true,text:`${E.nome}, mantida em todos os ${M.lag+1} dias (${u})`,color:C.mut}},
-            y:{...eixoY,grid:{color:C.grid},ticks:{color:C.mut,callback:v=>fr(v)},title:{display:true,text:`RR acumulado em 0 a ${M.lag} dias`,color:C.mut}}},
-    plugins:{legend:{display:false},tooltip:{filter:i=>i.dataset.label==="RR acumulado",
-      callbacks:{title:it=>`${fn(it[0].parsed.x,1)} ${u} por dia`, label:c=>{ const i=c.dataIndex; return `RR ${fr(cv.rr[i])} (IC 95%: ${fr(cv.lo[i])} a ${fr(cv.hi[i])})` }}}}}});
-  $(p+"-leg").innerHTML = `<span><i class="ln" style="background:${C.az};height:3px"></i>RR acumulado</span><span><i style="background:${mkCor(C.az,.17)}"></i>IC 95%</span>`+
-    L.map((l,j)=>`<span><i class="dt" style="background:${cor[j]}"></i>${fn(l.ref)} ${u} por dia</span>`).join("");
+    scales:{x:{...eixoX,title:{display:true,text:`${E.nome}, mantida em todos os ${M.lag+1} dias (${u})`,color:C.mut}},
+            y:{...eixoY,grid:{color:C.grid},ticks:{color:C.mut,callback:v=>fr(v)},title:{display:true,text:`RR acumulado em 0 a ${M.lag} dias`,color:C.mut},afterFit:sc=>{ sc.width = 64 }}},
+    plugins:{legend:{display:false},tooltip:{filter:i=>!!i.dataset.tip,
+      callbacks:{title:it=>`${fn(it[0].parsed.x,1)} ${u} por dia`, label:c=>{ const i=c.dataIndex, f=c.dataset.tip==="flex"?fx.flex.cv:cv; return `${c.dataset.tip==="flex"?"Curva flexível":rotP}: RR ${fr(f.rr[i])} (IC 95%: ${fr(f.lo[i])} a ${fr(f.hi[i])})` }}}}}});
+  const traco = cl => `<i style="background:repeating-linear-gradient(90deg,${cl} 0 6px,transparent 6px 10px);height:3px;vertical-align:3px"></i>`;
+  $(p+"-leg").innerHTML = `<span><i class="ln" style="background:${C.az};height:3px"></i>${rotP}</span><span><i style="background:${mkCor(C.az,.17)}"></i>IC 95%${horas?" da reta":""}</span>`+
+    (fx?`<span>${traco(C.ink)}Curva flexível pré-definida (spline natural, 3 gl, nós em ${fx.nos.join(" e ")} h)</span><span><i style="background:${mkCor(C.ink,.10)}"></i>IC 95% da curva flexível</span>`:"")+
+    L.map((l,j)=>`<span><i class="dt" style="background:${cor[j]}"></i>${fn(l.ref)} ${u} por dia (nível de referência na ${horas?"reta":"curva"})</span>`).join("");
+  apoio(p, fx, xmax, C, eixoX, cv, E);
 
   // Figura 3: floresta com o RR de cada defasagem e com o RR acumulado, nos dois níveis de referência
   $(p+"-forest").innerHTML = floresta(s, dom.f3, C);
@@ -157,11 +252,11 @@ function desenharSlot(s, dom, comp, C){
     const ref = `exposição de ${fn(l.ref)} ${u} por dia`;
     return [[ic(l.rr[0],l.lo[0],l.hi[0]), `RR no mesmo dia (lag 0), para ${ref}`],
             [ic(l.ac[i3],l.aclo[i3],l.achi[i3]), `RR acumulado nas defasagens de 0 a ${i3} dias, para ${ref} em todos esses dias`],
-            [rrM[j][0], `RR acumulado nas defasagens de 0 a ${M.lag} dias, para ${ref} em todos os ${M.lag+1} dias`]];
+            [rrM[j][0], `RR acumulado nas defasagens de 0 a ${M.lag} dias, para ${ref} em todos os ${M.lag+1} dias`+(e.ex==="horas"&&j===1?". Na reta imposta (1 grau de liberdade), é o RR de 4 h elevado ao quadrado, e não uma estimativa independente":"")]];
   }));
   const curvaTxt = e.ex==="horas"
-    ? "Com 1 grau de liberdade na exposição (spline natural), o logaritmo do RR cresce em linha reta com a exposição por construção, de modo que a curva não detecta limiar."
-    : "O HAAT usa spline penalizado com 15 graus de liberdade, o que permite curvatura, mas as extremidades têm poucos dias e intervalos largos.";
+    ? "A linha azul é uma reta imposta: com 1 grau de liberdade na exposição (spline natural), o logaritmo do RR cresce em linha reta com as horas por construção, de modo que ela não detecta limiar nem curvatura. A curva tracejada, de 3 graus de liberdade, é a alternativa flexível pré-definida (Quadro 3)."
+    : "A curva do HAAT é estimada por spline penalizado com 15 graus de liberdade na exposição, o que permite curvatura (Quadro 3 traz os graus de liberdade efetivos), mas as extremidades têm poucos dias e intervalos largos.";
   $(p+"-note").textContent = `RR acumulado em 0 a ${M.lag} dias para uma exposição constante, mantida em todos os ${M.lag+1} dias, em relação a nenhuma exposição. A faixa é o intervalo de confiança de 95% a partir dos coeficientes da cross-basis e da sua matriz de covariância. A grade vai até ${fn(xmax)} ${u} por dia, o percentil 99 dos dias com exposição; acima disso há poucos dias. ${curvaTxt}`;
   $(p+"-note2").textContent = `Parte superior: RR da exposição ocorrida l dias antes do óbito, para cada defasagem l de 0 a ${M.lag}. Parte inferior: RR acumulado das defasagens de 0 até l, que é o produto dos RR por defasagem de 0 a l e corresponde a manter a exposição em todos esses dias. `+
     `Os dois níveis de exposição de referência são mantidos nos ${M.lag+1} dias. As duas partes têm escalas horizontais diferentes, e as barras são intervalos de confiança de 95% a partir da matriz de covariância dos coeficientes. Marcador cheio: intervalo que não inclui 1 (valores em negrito). A resposta à defasagem é um spline natural com 3 graus de liberdade. `+
@@ -177,6 +272,7 @@ function desenharSlot(s, dom, comp, C){
   $(p+"-interp").innerHTML = `<span class="t">Interpretação</span>Neste recorte, ${partes.join(". Já ")}. `+
     (tardio?`Há defasagens em que o intervalo de confiança fica inteiro abaixo de 1. Isso pode refletir antecipação de óbitos de pessoas frágeis ou variação aleatória, e o modelo não separa as duas explicações. `:"")+
     `As estimativas descrevem associação em dados agregados, sem controle de fatores individuais.`;
+  flexQuadro(s, fx);
 }
 
 // Texto que põe lado a lado o RR acumulado dos dois locais (só com dois recortes prontos)
@@ -273,10 +369,18 @@ function mapa(){
 function desenhar(){ desenharCurvas(); mapa() }                    // as Figuras 2 e 3 são pedidas primeiro: o servidor as atende antes das colunas do mapa
 
 P.ouvir.seg.push((kd,ex)=>{
+  if(ex==="flex_horas"){ flexVoo.delete(kd); if($("tab-exp").classList.contains("hide")) return; if(ativos().some(p=>estado(p).kd===kd)) desenharCurvas(); return }
   if(eMapa(ex)){ voo.delete(idM(kd,+ex.slice(4))); mapa(); return }
   if(ativos().some(p=>{ const e=estado(p); return kd===e.kd && ex===e.ex })){ desenharCurvas(); mapa() }
 });
 P.ouvir.erro.push(msg=>{
+  if(msg.ex==="flex_horas"){
+    if(msg.pop!==P.pop()) return;
+    const kd = P.kd(msg.causa,msg.opc,msg.key); flexVoo.delete(kd);
+    flexFalhou.set(kd, msg.codigo==="dados_mudaram" ? "os dados foram atualizados no servidor; recarregue a página" : String(msg.mensagem||"erro"));
+    if(!$("tab-exp").classList.contains("hide")) desenharCurvas();
+    return;
+  }
   if(eMapa(msg.ex)){
     if(msg.pop!==P.pop()) return;
     const id = idM(P.kd(msg.causa,msg.opc,msg.key), +msg.ex.slice(4));
@@ -292,7 +396,7 @@ P.ouvir.erro.push(msg=>{
       : "Não foi possível ajustar o modelo deste recorte: "+String(msg.mensagem||"erro desconhecido").replace(/[<>&]/g,"");
   });
 });
-P.ouvir.base.push(()=>{ voo.clear(); falhou.clear(); desenhar() });
+P.ouvir.base.push(()=>{ voo.clear(); falhou.clear(); flexVoo.clear(); flexFalhou.clear(); desenhar() });
 ["x-local","x-local2","x-faixa","x-raca","x-exp","x-causa","x-r-covid","x-r-nc","x-r-clima","x-hm-sig"].forEach(i=>{ const el=$(i); if(el) el.onchange=desenhar });
 P.abas.exp = desenhar;
 });

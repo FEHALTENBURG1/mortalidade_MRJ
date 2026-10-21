@@ -15,7 +15,7 @@
 
 .servico <- new.env()                       # estado do processo: modelo preparado de cada população
 
-VERSAO_AJUSTE <- 3L                         # muda quando o conteúdo do payload muda (ajustes gravados com outra versão são refeitos)
+VERSAO_AJUSTE <- 4L                         # muda quando o conteúdo do payload muda (ajustes gravados com outra versão são refeitos)
 
 CODIGOS_OPC <- c("000", "001", "010", "011", "100", "101", "110", "111")
 codigo_valido <- function(cod) is.character(cod) && length(cod) == 1 && !is.na(cod) && cod %in% CODIGOS_OPC
@@ -65,8 +65,8 @@ cbi_de <- function(P, expo, lag = LAG) {
 }
 
 # Pedido válido: uma das EXPOSICOES (modelo de referência), "mapa<K>" (coluna do mapa de horas por limiar, K em LIMIARES), um pedido da aba de causas
-# específicas ("cidlista", "cid_<CID>_<medida>", "cidsem_<CID>_<medida>"; ver cid_do_id()) ou da aba de diagnósticos ("diag_<medida>" e
-# "sens_<análise>_<medida>", com a análise em SENS; ver dg_do_id()).
+# específicas ("cidlista", "cid_<CID>_<medida>", "cidsem_<CID>_<medida>"; ver cid_do_id()), da aba de diagnósticos ("diag_<medida>" e
+# "sens_<análise>_<medida>", com a análise em SENS) ou da forma da curva de exposição-resposta ("flex_horas"; ver dg_do_id()).
 expo_valida <- function(expo) is.character(expo) && length(expo) == 1 && !is.na(expo) &&
   (expo %in% names(EXPOSICOES) || !is.na(limiar_do_id(expo)) || !is.null(cid_do_id(expo)) || !is.null(dg_do_id(expo)))
 
@@ -201,6 +201,7 @@ ajustar_pedido_cid <- function(P, pc, key, causa, cod, y, fora) {
 # "sens_<análise>_<medida>": o mesmo recorte com uma só mudança (SENS em R/modelo_joao.R), com o resumo do diagnóstico residual.
 dg_do_id <- function(id) {
   if (!is.character(id) || length(id) != 1 || is.na(id)) return(NULL)
+  if (identical(id, "flex_horas")) return(list(tipo = "flex", spec = "flex", medida = "horas"))
   m <- regmatches(id, regexec("^diag_(horas|haat)$", id))[[1]]
   if (length(m) == 2) return(list(tipo = "diag", spec = "principal", medida = m[2]))
   m <- regmatches(id, regexec("^sens_([a-z0-9_]+)_(horas|haat)$", id))[[1]]
@@ -215,7 +216,21 @@ covid_movel <- function(P, key) {
   log1p(m)
 }
 
+# "flex_horas": a reta imposta do modelo de referência e a curva flexível pré-definida (EXPOSICAO_FLEX) ajustadas ao mesmo recorte, causa e retiradas,
+# mais o suporte de dados (dias no ajuste por hora de exposição).
+ajustar_pedido_flex <- function(P, pd, key, causa, cod, y) {
+  fora <- fora_ajuste(P$cx, opc_de_codigo(cod))
+  if (sum(y[!fora]) < MIN_OBITOS) stop("recorte_invalido: óbitos insuficientes no ajuste", call. = FALSE)
+  if (is.null(P$cbi[["horas_flex"]])) assign("horas_flex", cross_exposicao(P$b, EXPOSICAO_FLEX), envir = P$cbi)
+  r <- comparar_flex(y, P$b, cbi_de(P, "horas"), P$cbi[["horas_flex"]], fora, P$kt)
+  x <- P$b$num_hr_36[!fora]
+  c(list(tipo = "flex", medida = "horas", ref = I(EXPOSICOES$horas$ref), nos = I(HORAS_NOS), k_tempo = P$kt,
+         nd = sum(!fora), no = sum(y[!fora]), p99 = ceiling(quantile(P$b$num_hr_36[P$b$num_hr_36 > 0], 0.99)),
+         sup = list(h = I(0:max(P$b$num_hr_36)), n = I(tabulate(as.integer(floor(x)) + 1L, nbins = max(P$b$num_hr_36) + 1L)))), r)
+}
+
 ajustar_pedido_dg <- function(P, pd, key, causa, cod, y) {
+  if (pd$tipo == "flex") return(ajustar_pedido_flex(P, pd, key, causa, cod, y))
   s <- if (pd$tipo == "diag") list(rot = "Ajuste principal", grupo = "Principal") else SENS[[pd$spec]]
   opc <- opc_de_codigo(cod)
   for (n in names(s$opc)) opc[[n]] <- s$opc[[n]]

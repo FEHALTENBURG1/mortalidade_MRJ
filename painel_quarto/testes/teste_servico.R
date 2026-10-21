@@ -228,6 +228,23 @@ checar("dg: análise inexistente, medida errada ou recorte com poucos óbitos d�
        all(vapply(c("sens_xyz_horas", "sens_dow_mapa36", "diag_cid"), function(x) identical(cod(executar_ajuste(pasta, "res", chave, K, x)), "recorte_invalido"), TRUE)) && identical(cod(executar_ajuste(pasta, "res", chave, "Ignorado|30-39", "diag_horas")), "recorte_invalido"))
 checar("base: traz a lista de análises de sensibilidade com rótulo e grupo", { bs <- base_sob_demanda(P)$meta$sens; length(bs) == length(SENS) && all(vapply(bs, function(z) all(c("id", "rot", "grupo") %in% names(z)), TRUE)) && setequal(vapply(bs, `[[`, "", "id"), names(SENS)) })
 
+# forma da curva de exposição-resposta: "flex_horas" = reta imposta e curva flexível pré-definida no mesmo recorte
+checar("flex: reconhece só flex_horas", identical(dg_do_id("flex_horas")$tipo, "flex") && expo_valida("flex_horas") && !any(vapply(c("flex_haat", "flex_", "flex", "flex_horas2", "Flex_horas"), function(x) expo_valida(x), TRUE)))
+fxr <- executar_ajuste(pasta, "res", chave, K, "flex_horas"); fx <- json_de(fxr$payload)
+checar("flex: a reta é o ajuste principal das horas (mesmo RR e IC da Figura 1) e RR(8 h) = RR(4 h)^2",
+       identical(fx$tipo, "flex") && !fxr$do_cache && abs(fx$lin$rr[[1]] - rrj[[1]]) < 1e-9 && abs(fx$lin$lo[[1]] - rrj[[2]]) < 1e-9 && abs(fx$lin$hi[[2]] - rrj[[6]]) < 1e-9 &&
+         abs(fx$lin$rr[[2]] - fx$lin$rr[[1]]^2) < 5e-4 && abs(fx$lin$r84[[1]] - fx$lin$rr[[1]]) < 5e-4)
+checar("flex: curva flexível com 9 colunas, nós em 3 e 6 h, e a mesma grade de exposição da reta e da Figura 2",
+       fx$flex$k == 9 && fx$flex$edf == 9 && fx$lin$k == 3 && all(unlist(fx$nos) == c(3, 6)) && length(fx$nos) == 2 && length(fx$flex$cv$x) == 41 && identical(unlist(fx$flex$cv$x), unlist(fx$lin$cv$x)) &&
+         identical(unlist(fx$lin$cv$x), unlist(json_de(r_nat)$cv$x)) && all(unlist(fx$flex$cv$lo) <= unlist(fx$flex$cv$rr)) && all(unlist(fx$flex$cv$rr) <= unlist(fx$flex$cv$hi)))
+checar("flex: comparação traz razão de desvios aproximada, ΔAIC e a razão dos log RR", { cc <- fx$comp; !is.null(cc$p) && cc$p >= 0 && cc$p <= 1 && cc$gl > 5 && cc$gl < 7 && is.finite(cc$d_aic) && is.finite(cc$razao) && abs(cc$d_aic - (fx$flex$aic - fx$lin$aic)) < 0.15 })
+checar("flex: suporte de dados = dias no ajuste por hora, e soma o número de dias do ajuste", { a <- json_de(r_nat)$aj; sum(unlist(fx$sup$n)) == fx$nd && fx$nd == a$nd && fx$no == a$no && length(fx$sup$h) == length(fx$sup$n) && fx$sup$h[[1]] == 0 && fx$p99 > 0 })
+checar("flex: o dia sem calor tem a maior contagem e as contagens batem com a série de horas dentro do ajuste", { f <- fora_ajuste(cx, opc_de_codigo(COD_PADRAO)); h0 <- P$b$num_hr_36[!f]; identical(as.integer(unlist(fx$sup$n)), as.integer(tabulate(floor(h0) + 1L, nbins = max(P$b$num_hr_36) + 1L))) })
+checar("flex: o segundo pedido sai do disco", executar_ajuste(pasta, "res", chave, K, "flex_horas")$do_cache)
+checar("flex: recorte com poucos óbitos dá recorte_invalido", identical(cod(executar_ajuste(pasta, "res", chave, "Ignorado|30-39", "flex_horas")), "recorte_invalido"))
+checar("principal: o payload traz as colunas da base cruzada e os graus de liberdade efetivos", { a <- json_de(r_nat); a$cb$k == 3 && a$cb$edf == 3 })
+checar("principal HAAT: base cruzada de 45 colunas com gl efetivos menores (penalização)", { ah <- json_de(executar_ajuste(pasta, "res", chave, K, "haat")$payload); ah$cb$k == 45 && ah$cb$edf > 5 && ah$cb$edf < 45 })
+
 # pedidos assíncronos pelo future: pedidos iguais compartilham a promessa e o resultado é o mesmo
 suppressWarnings(future::plan("multisession", workers = 1))
 p1 <- pedir_ajuste(raiz, pasta, "res", chave, "Via pública|60-69", "horas")                 # a primeira chamada sobe o trabalhador e cria o pedido
