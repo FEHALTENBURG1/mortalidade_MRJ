@@ -287,6 +287,52 @@ try:
             sel("k-local", "Todos os locais"); sel("k-faixa", "Todas as idades")
             checar("aba CID: os filtros da aba não mudam os da Figura 1", pg.input_value("#s-causa") == "naturais" and pg.input_value("#x-causa") == "naturais")
 
+        # 5g. aba de diagnósticos e sensibilidades: diagnósticos do modelo principal (Quadro 1) e 12 análises que mudam uma escolha por vez (Quadro 2)
+        dk = lambda: pg.eval_on_selector_all("#d-kpis .kpi", "els=>els.map(e=>e.innerText.replace(/\\n/g,' | '))")
+        dlinhas = lambda: pg.eval_on_selector_all("#d-sens tbody tr:not(.gr)", "trs=>trs.map(tr=>tr.innerText)")
+        dpronto = lambda t=420000: pg.wait_for_function("document.querySelectorAll('#d-sens tbody tr:not(.gr)').length===13 && !document.getElementById('d-sens').innerText.includes('calculando') && !document.getElementById('d-sens').innerText.includes('não foi possível')", timeout=t)
+        pg.click("nav button[data-tab=dia]")
+        pg.wait_for_function("!document.getElementById('tab-dia').classList.contains('hide')", timeout=5000)
+        checar("aba Diagnósticos: filtros de recorte, medida, causa e retiradas próprios",
+               opcoes("d-exp") == ["horas", "haat"] and opcoes("d-causa") == ["naturais", "todas_sem_covid", "todas", "externas"]
+               and all(pg.query_selector(f"#d-r-{c}") for c in ("covid", "nc", "clima")) and "local do óbito" in pg.inner_text("#tab-dia").lower())
+        pg.wait_for_function("document.querySelectorAll('#d-kpis .kpi').length>0", timeout=120000)
+        checar("aba Diagnósticos: cartões do modelo principal (família, dispersão, autocorrelação, Ljung-Box, gl efetivos, convergência)",
+               len(dk()) == 6 and any("ρ(1)" in t for t in dk()) and any("Ljung-Box" in t for t in dk()) and any("graus de liberdade efetivos" in t for t in dk()) and any("REML" in t for t in dk()), dk())
+        checar("aba Diagnósticos: figura da autocorrelação desenhada", xpix("d-acf") > 1500)
+        suaves = pg.eval_on_selector_all("#d-suave tbody tr", "trs=>trs.map(tr=>tr.children[0].innerText)")
+        checar("aba Diagnósticos: tabela de termos traz a base cruzada e os termos suaves do modelo", len(suaves) >= 4 and suaves[0].startswith("Base cruzada") and any("time_id" in t for t in suaves) and any("dia_ano" in t for t in suaves), suaves)
+        checar("aba Diagnósticos: interpretação do Quadro 1 cita a dependência dos resíduos e o spline cíclico da pandemia",
+               "dependência" in pg.inner_text("#d-interp") and "cíclico" in pg.inner_text("#d-interp") and "estreitos demais" in pg.inner_text("#d-interp"), pg.inner_text("#d-interp")[:300])
+        dpronto()
+        L = dlinhas()
+        checar("aba Diagnósticos: Quadro 2 tem o ajuste principal e as 12 análises", len(L) == 13 and L[0].startswith("Ajuste principal"), len(L))
+        for r in ("Dia da semana", "metade dos nós", "dobro dos nós", "Defasagem máxima de 7", "Defasagem máxima de 14", "retirado do ajuste", "sem termo próprio", "não cíclico", "óbitos diários de COVID-19",
+                  "Meses de registro não consolidado mantidos", "Dias sem dado de clima contados como dias sem calor", "Especificação anterior do painel"):
+            checar(f"aba Diagnósticos: linha '{r}'", any(r in t for t in L[1:]))
+        checar("aba Diagnósticos: cada linha traz RR e IC nos dois níveis, dias de calor, eventos e diagnóstico residual", all(len(re.findall(r"[0-9],[0-9]{2} \([0-9],[0-9]{2} a [0-9],[0-9]{2}\)", t)) == 2 and re.search(r"[0-9.]+ \([0-9.]+\)", t) for t in L), L[:2])
+        checar("aba Diagnósticos: o COVID retirado do ajuste tem menos dias que o principal", int(L[[i for i, t in enumerate(L) if "retirado do ajuste" in t][0]].split("\t")[1].replace(".", "")) < int(L[0].split("\t")[1].replace(".", "")), L[0])
+        checar("aba Diagnósticos: a interpretação do Quadro 2 compara valores estimados e não o IC", "RR acumulado das 12 análises" in pg.inner_text("#d-sinterp") and "não" in pg.inner_text("#d-sinterp"))
+        checar("aba Diagnósticos: textos sem travessão", not re.search("[—–]", pg.inner_text("#d-interp") + pg.inner_text("#d-sinterp") + pg.inner_text("#d-snote") + pg.inner_text("#d-note")))
+        # a regra do marcador: ● só onde o log-RR varia 20% ou mais em relação ao principal (o texto de cada linha traz a variação em % nos dois níveis)
+        vari = lambda t: [int(x.replace("−", "-").replace("+", "")) for x in re.findall(r"variação do log-RR: ([+−-]?[0-9]+)%", t)]
+        checar("aba Diagnósticos: o marcador ● aparece só nas linhas com variação de 20% ou mais", all(("●" in t) == any(abs(v) >= 20 for v in vari(t)) for t in L[1:]), [(t[:40], vari(t), "●" in t) for t in L[1:]])
+        if capturas: pg.screenshot(path=os.path.join(capturas, "app_02g_diagnosticos.png"), full_page=True)
+        d_ini = pg.inner_text("#d-sens")
+        sel("d-exp", "haat")
+        dpronto()
+        checar("aba Diagnósticos: a medida HAAT refaz o quadro com a base cruzada de spline penalizado e outros níveis de referência",
+               pg.inner_text("#d-sens") != d_ini and "Spline penalizado" in pg.inner_text("#d-suave") and "°c·h" in pg.inner_text("#d-sens").lower(), pg.inner_text("#d-suave")[:300])
+        sel("d-exp", "horas"); dpronto()
+        sel("d-causa", "externas"); dpronto()
+        checar("aba Diagnósticos: trocar a causa refaz o quadro", pg.inner_text("#d-sens") != d_ini and "externas" in pg.inner_text("#d-sub"), pg.inner_text("#d-sub")[:200])
+        sel("d-causa", "naturais")
+        sel("d-local", "Ignorado"); sel("d-faixa", "30-39")
+        pg.wait_for_function("document.getElementById('d-note').innerText.includes('Menos de 300 óbitos')", timeout=5000)
+        checar("aba Diagnósticos: recorte com menos de 300 óbitos informa o limite e não mostra quadros", "modelo não estimado" in pg.inner_text("#d-note") and pg.inner_text("#d-kpis") == "" and dlinhas() == [])
+        sel("d-local", "Todos os locais"); sel("d-faixa", "Todas as idades"); dpronto()
+        checar("aba Diagnósticos: os filtros da aba não mudam os da Figura 1", pg.input_value("#s-causa") == "naturais" and pg.input_value("#x-causa") == "naturais" and pg.input_value("#s-local") == "Todos os locais")
+
         pg.click("nav button[data-tab=serie]"); pronto()
         checar("voltar para a Figura 1 mantém a figura", kpis() == k_ini and pixels() > 2000)
 

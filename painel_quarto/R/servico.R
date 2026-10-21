@@ -58,15 +58,17 @@ obter_P <- function(pasta, pop, chave = NULL) {
   P
 }
 
-cbi_de <- function(P, expo) {
-  if (is.null(P$cbi[[expo]])) assign(expo, cross_exposicao(P$b, EXPOSICOES[[expo]]), envir = P$cbi)
-  P$cbi[[expo]]
+cbi_de <- function(P, expo, lag = LAG) {
+  id <- if (lag == LAG) expo else paste0(expo, "_lag", lag)
+  if (is.null(P$cbi[[id]])) assign(id, cross_exposicao(P$b, EXPOSICOES[[expo]], lag), envir = P$cbi)
+  P$cbi[[id]]
 }
 
-# Pedido válido: uma das EXPOSICOES (modelo de referência), "mapa<K>" (coluna do mapa de horas por limiar, K em LIMIARES) ou um pedido da aba de causas
-# específicas ("cidlista", "cid_<CID>_<medida>", "cidsem_<CID>_<medida>"; ver cid_do_id()).
+# Pedido válido: uma das EXPOSICOES (modelo de referência), "mapa<K>" (coluna do mapa de horas por limiar, K em LIMIARES), um pedido da aba de causas
+# específicas ("cidlista", "cid_<CID>_<medida>", "cidsem_<CID>_<medida>"; ver cid_do_id()) ou da aba de diagnósticos ("diag_<medida>" e
+# "sens_<análise>_<medida>", com a análise em SENS; ver dg_do_id()).
 expo_valida <- function(expo) is.character(expo) && length(expo) == 1 && !is.na(expo) &&
-  (expo %in% names(EXPOSICOES) || !is.na(limiar_do_id(expo)) || !is.null(cid_do_id(expo)))
+  (expo %in% names(EXPOSICOES) || !is.na(limiar_do_id(expo)) || !is.null(cid_do_id(expo)) || !is.null(dg_do_id(expo)))
 
 # Ajusta um recorte (chave "local|faixa" ou "local|Todas as idades|raça") para uma medida de calor, uma causa e um conjunto de retiradas;
 # devolve o payload da figura (ou, para "mapa<K>", o payload da coluna K do mapa).
@@ -79,6 +81,8 @@ ajustar_recorte <- function(P, key, expo, causa = "naturais", cod = COD_PADRAO) 
   if (!is.na(K)) return(ajustar_mapa_limiar(y, P$b, P$cx$clima[[paste0("num_hr_", K)]], fora, P$kt, K))
   pc <- cid_do_id(expo)
   if (!is.null(pc)) return(ajustar_pedido_cid(P, pc, key, causa, cod, y, fora))
+  pd <- dg_do_id(expo)
+  if (!is.null(pd)) return(ajustar_pedido_dg(P, pd, key, causa, cod, y))
   r <- ajustar_segmento(y, P$b, cbi_de(P, expo), fora, P$kt)
   payload_segmento(r, y, P$sem, P$cov_w, curvas = TRUE, aj = resumo_ajuste(P$cx, y, opc_de_codigo(cod)))
 }
@@ -91,6 +95,7 @@ base_sob_demanda <- function(P, elig = elegibilidade(P), cid_nomes = NULL) {
   b$meta$causas <- as.list(CAUSAS)
   b$meta$sob_demanda <- TRUE
   b$meta$cid_min <- CID_MIN
+  b$meta$sens <- unname(lapply(names(SENS), function(i) list(id = i, rot = SENS[[i]]$rot, grupo = SENS[[i]]$grupo)))   # análises de sensibilidade da aba Diagnósticos
   if (!is.null(cid_nomes)) b$meta$cid_nomes <- as.list(cid_nomes)
   b$meta$dados <- list(chave = P$meta$chave, sim_atualizado = P$meta$sim_atualizado, clima_atualizado = P$meta$clima_atualizado, repo_sim = P$meta$repo_sim,
                        gerado_em = P$meta$gerado_em)
@@ -189,6 +194,47 @@ ajustar_pedido_cid <- function(P, pc, key, causa, cod, y, fora) {
   list(tipo = "cid", cid = pc$cid, medida = pc$medida, n = sum(y[!fora]), ref = I(EXPOSICOES[[pc$medida]]$ref),
        rr = arred(r$rr["rr", ], 4), lo = arred(r$rr["lo", ], 4), hi = arred(r$rr["hi", ], 4),
        p = unname(signif(2 * pnorm(-abs(log(r$rr["rr", ]) / r$se)), 4)), f = r$fam, d = arred(r$disp, 3))
+}
+
+# ---------------------------------------------------------------- diagnósticos e sensibilidades
+# "diag_<medida>": o ajuste principal do recorte com todos os diagnósticos (ACF dos resíduos, k.check, graus de liberdade efetivos, dispersão, convergência).
+# "sens_<análise>_<medida>": o mesmo recorte com uma só mudança (SENS em R/modelo_joao.R), com o resumo do diagnóstico residual.
+dg_do_id <- function(id) {
+  if (!is.character(id) || length(id) != 1 || is.na(id)) return(NULL)
+  m <- regmatches(id, regexec("^diag_(horas|haat)$", id))[[1]]
+  if (length(m) == 2) return(list(tipo = "diag", spec = "principal", medida = m[2]))
+  m <- regmatches(id, regexec("^sens_([a-z0-9_]+)_(horas|haat)$", id))[[1]]
+  if (length(m) == 3 && m[2] %in% names(SENS)) list(tipo = "sens", spec = m[2], medida = m[3]) else NULL
+}
+
+# Média móvel de 7 dias (só dias anteriores e o próprio dia) dos óbitos diários de COVID-19 do recorte, em log(1 + x): covariável da sensibilidade "covobs".
+covid_movel <- function(P, key) {
+  yt <- y_causa(P, "todas")[[key]]; ys <- y_causa(P, "todas_sem_covid")[[key]]
+  if (is.null(yt) || is.null(ys)) stop("recorte_invalido: recorte sem série de COVID-19", call. = FALSE)
+  m <- as.numeric(stats::filter(yt - ys, rep(1 / 7, 7), sides = 1)); m[is.na(m)] <- 0
+  log1p(m)
+}
+
+ajustar_pedido_dg <- function(P, pd, key, causa, cod, y) {
+  s <- if (pd$tipo == "diag") list(rot = "Ajuste principal", grupo = "Principal") else SENS[[pd$spec]]
+  opc <- opc_de_codigo(cod)
+  for (n in names(s$opc)) opc[[n]] <- s$opc[[n]]
+  lag <- if (is.null(s$lag)) LAG else s$lag
+  fora <- fora_ajuste(P$cx, opc, lag)
+  if (sum(y[!fora]) < MIN_OBITOS) stop("recorte_invalido: óbitos insuficientes no ajuste", call. = FALSE)
+  b <- P$b
+  if (identical(s$esp$covid, "obs")) b$covid_obs <- covid_movel(P, key)
+  kt <- if (is.null(s$kmult)) P$kt else max(4L, as.integer(round(P$kt * s$kmult)))
+  r <- ajustar_segmento(y, b, cbi_de(P, pd$medida, lag), fora, kt, esp = if (is.null(s$esp)) list() else s$esp, curvas = FALSE,
+                        diag = if (pd$tipo == "diag") "completo" else "resumo")
+  dentro <- !fora; cal <- contagem_calor(P$cx, fora); E <- EXPOSICOES[[pd$medida]]
+  p <- list(tipo = pd$tipo, spec = pd$spec, medida = pd$medida, rot = s$rot, grupo = s$grupo, lag = lag, k_tempo = kt, ref = I(E$ref),
+            rr = arred(r$rr["rr", ], 4), lo = arred(r$rr["lo", ], 4), hi = arred(r$rr["hi", ], 4),
+            nd = sum(dentro), no = sum(y[dentro]), dias_calor = cal$dias, eventos = cal$eventos,
+            ini = as.character(P$cx$dias[dentro][1]), fim = as.character(P$cx$dias[dentro][sum(dentro)]),
+            f = r$fam, d = arred(r$disp, 3), res = resumo_residual(r$diag))
+  if (pd$tipo == "diag") p$diag <- r$diag
+  p
 }
 
 # ---------------------------------------------------------------- cache de ajustes em disco

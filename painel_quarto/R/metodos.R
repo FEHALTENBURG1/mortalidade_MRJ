@@ -73,6 +73,13 @@ texto_metodos <- function(M, n_sem_idade, resumo = NULL, dados = NULL) {
 
   recon_p <- tabela_reconciliacao(M$reconc)
 
+  dia_p <- if (demanda) paste0(
+    "### Diagnósticos e análises de sensibilidade\n\n",
+    pg("A aba Diagnósticos e sensibilidades publica, para o recorte escolhido, os diagnósticos do modelo principal e refaz o ajuste com uma mudança por vez. O Quadro 1 traz a autocorrelação (ACF) dos resíduos de Pearson até 35 dias, que ignora os dias fora do ajuste e usa o limite aproximado de ±1,96 ÷ √n; o teste de Ljung-Box com ", 14, " defasagens, sem desconto dos graus de liberdade do modelo, de modo que o valor de p é indicativo; o `k.check` do pacote `mgcv` (índice k e valor de p, com 200 permutações e semente fixa) para cada termo suave; a dimensão da base e os graus de liberdade efetivos de cada termo e da base cruzada; a dispersão residual (χ² de Pearson dividido pelos graus de liberdade residuais, que na binomial negativa fica perto de 1 por construção); e a convergência do REML."),
+    pg("O Quadro 2 refaz o ajuste do mesmo recorte, da mesma causa e com as mesmas retiradas, mudando uma escolha por vez: dia da semana como termo do modelo; spline do tempo com metade e com o dobro dos nós; defasagem máxima de 7 e de 14 dias (a janela de retirada dos dias sem clima acompanha a defasagem); quatro alternativas para o período da COVID-19 (retirado do ajuste; mantido sem termo próprio; termo não cíclico com indicador do período; termo pelos óbitos diários de COVID-19 em média móvel de 7 dias); meses não consolidados mantidos; dias sem clima contados como dias sem calor; e a especificação anterior do painel. Cada linha traz os dias e os óbitos no ajuste, os dias de calor (pelo menos 4 h com índice de calor igual ou superior a 36 °C) e os eventos (sequências de dias seguidos de calor), o RR e o IC 95% nos dois níveis de referência e o resumo do diagnóstico residual. A variação do log-RR em relação ao ajuste principal é calculada em cada nível, e variações de 20% ou mais são marcadas. A interpretação compara os valores estimados e não depende de o intervalo de confiança cruzar o 1."),
+    pg("O termo `s(COVID)` do modelo de referência usa um spline cíclico sobre o índice de dias do período, com valor 0 fora dele. A natureza cíclica obriga o valor do último dia do período a coincidir com o do índice 0, e a aba mostra o valor do termo fora do período, no primeiro dia, no último e no pico. As alternativas listadas acima indicam quanto o RR depende dessa escolha."))
+  else ""
+
   pop_frase <- if (demanda) "A população selecionada corresponde a" else "A população desta versão corresponde a"
 
   trocas <- if (demanda)
@@ -135,6 +142,7 @@ texto_metodos <- function(M, n_sem_idade, resumo = NULL, dados = NULL) {
     curvas_p,
     mapa_p,
     cid_p,
+    dia_p,
     "### Esperado sem calor\n\n",
     pg("O esperado de cada dia é o preditor linear do modelo com a cross-basis substituída pela cross-basis de exposição zero em todas as defasagens, isto é, o número de óbitos que o modelo prevê na ausência de calor (contrafactual). O esperado semanal é a soma dos sete esperados diários da semana (semanas epidemiológicas completas, de domingo a sábado). A faixa de 95% usa uma aproximação normal, com variância igual à soma das variâncias diárias (μ + μ²/θ) multiplicada por uma dispersão semanal φ (no mínimo 1). Dias vizinhos têm resíduos correlacionados, por epidemias e outros eventos que o modelo não descreve, e a soma de variâncias independentes subestima a variância da semana. O fator φ é a razão entre o erro quadrático semanal e essa soma, medida nos resíduos do modelo ajustado e fora do período da COVID-19. ",
         phi_frase, " Semanas com algum dia fora do ajuste ficam sem esperado."),
@@ -147,6 +155,7 @@ texto_metodos <- function(M, n_sem_idade, resumo = NULL, dados = NULL) {
     "- É um estudo ecológico de séries temporais, descritivo e exploratório.\n",
     "- Cada recorte tem um modelo próprio, sem correção para comparações múltiplas. Recortes com poucos óbitos (mínimo de ", M$min_obitos, " no ajuste) produzem RR instáveis, com intervalos de confiança largos.\n",
     "- A faixa de 95% não inclui a incerteza dos coeficientes do modelo.\n",
+    if (demanda) "- Quando o Quadro 1 da aba Diagnósticos e sensibilidades mostra autocorrelação dos resíduos (é o caso do ajuste principal para todos os locais e idades), os IC 95% dos RR, calculados como se os resíduos fossem independentes, podem ser estreitos demais. A dispersão φ semanal corrige só a faixa da Figura 1, e nenhuma das análises de sensibilidade remove essa dependência.\n",
     "- O período da COVID-19 é absorvido por um termo suave; por isso, o esperado nesse período não serve de comparação, e as semanas e os dias desse período ficam fora dos indicadores.", if (demanda) " Se a caixa de retirada estiver marcada, o período fica sem esperado.", "\n",
     if (demanda) "- Os modelos analisam contagens de óbitos, sem taxas por população: a população não entra como offset, e o spline de tempo absorve a variação lenta dela ao longo dos anos. A comparação de níveis entre populações ou entre anos exigiria taxas; o RR independe dessa limitação.\n",
     "- Não há dados de clima antes de 17/04/2007, e há falhas posteriores. Esses dias e os ", M$lag, " seguintes ficam fora do ajuste principal. A exclusão não corrige dias com poucas horas de medição, nos quais a contagem de horas de calor pode estar subestimada.\n",

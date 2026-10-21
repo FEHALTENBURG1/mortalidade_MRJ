@@ -25,6 +25,8 @@ base_modelo <- function(cx) {
   n <- length(cx$dias)
   b <- data.frame(dia = cx$dias, time_id = seq_len(n), dia_ano = as.POSIXlt(cx$dias)$yday + 1L)
   b$covid_id <- 0L; b$covid_id[cx$covid] <- seq_len(sum(cx$covid))
+  b$covid_ind <- as.numeric(cx$covid)                                       # só para a sensibilidade do termo da COVID-19 (SENS)
+  b$dow <- factor(as.POSIXlt(cx$dias)$wday, levels = 0:6)                   # só para a sensibilidade com dia da semana (SENS)
   for (e in EXPOSICOES) { x <- cx$clima[[e$var]]; x[is.na(x)] <- 0; b[[e$var]] <- x }
   b
 }
@@ -40,23 +42,23 @@ opc_de_codigo <- function(cod) { v <- strsplit(cod, "")[[1]] == "1"; list(covid 
 MOTIVOS_FORA <- c(sem_registro = "sem registro no SIM", clima = "sem dado de clima ou nos 10 dias seguintes", nc = "mês com registro não consolidado", covid = "período da COVID-19")
 
 dias_sem_clima <- function(cx) is.na(cx$clima$hi_max)
-dias_clima_afetados <- function(cx) {            # dias sem clima e os LAG seguintes
+dias_clima_afetados <- function(cx, lag = LAG) {            # dias sem clima e os `lag` seguintes
   sem <- which(dias_sem_clima(cx)); n <- length(cx$dias)
-  out <- rep(FALSE, n); out[unique(pmin(rep(sem, each = LAG + 1) + 0:LAG, n))] <- TRUE
+  out <- rep(FALSE, n); out[unique(pmin(rep(sem, each = lag + 1) + 0:lag, n))] <- TRUE
   out
 }
 
 # Motivo de cada dia fora do ajuste (um só por dia, na ordem de MOTIVOS_FORA); NA = dia no ajuste.
-motivo_fora <- function(cx, opc = list(covid = FALSE, nc = FALSE, clima = FALSE)) {
+motivo_fora <- function(cx, opc = list(covid = FALSE, nc = FALSE, clima = FALSE), lag = LAG) {
   m <- rep(NA_character_, length(cx$dias))
   marca <- function(v, nome) m[is.na(m) & v] <<- nome
   marca(cx$sem_registro, "sem_registro")
-  if (isTRUE(opc$clima)) marca(dias_clima_afetados(cx), "clima")
+  if (isTRUE(opc$clima)) marca(dias_clima_afetados(cx, lag), "clima")
   if (isTRUE(opc$nc)) marca(cx$nao_consolidado, "nc")
   if (isTRUE(opc$covid)) marca(cx$covid, "covid")
   m
 }
-fora_ajuste <- function(cx, opc = list(covid = FALSE, nc = FALSE, clima = FALSE)) !is.na(motivo_fora(cx, opc))
+fora_ajuste <- function(cx, opc = list(covid = FALSE, nc = FALSE, clima = FALSE), lag = LAG) !is.na(motivo_fora(cx, opc, lag))
 
 # O que o ajuste usa e o que deixa de fora, para mostrar junto do resultado: dias e óbitos no ajuste, primeiro e último dia, e dias e óbitos
 # fora do ajuste por motivo (na ordem de MOTIVOS_FORA). y = óbitos por dia do recorte.
@@ -71,14 +73,14 @@ k_tempo <- function(n_dias) max(round(K_REF * n_dias / (ANOS_REF * 365.25)), 6)
 
 # Cross-basis de uma exposição. Os 10 dias anteriores ao início entram como dia sem calor, para a cross-basis valer desde o primeiro dia.
 # Guarda também a linha da cross-basis para exposição zero em todas as defasagens (c0), usada no contrafactual.
-cross_exposicao <- function(b, e) {
+cross_exposicao <- function(b, e, lag = LAG) {
   x <- b[[e$var]]
-  cb <- crossbasis(c(rep(0, LAG), x), lag = LAG, argvar = list(fun = e$fun, df = e$df), arglag = list(fun = "ns", df = 3))
-  m <- matrix(as.numeric(cb[-seq_len(LAG), , drop = FALSE]), nrow = length(x), dimnames = list(NULL, colnames(cb)))
-  nz <- cumsum(x != 0); janela_com_calor <- nz - c(rep(0, LAG + 1), head(nz, -(LAG + 1)))
-  i0 <- which(seq_along(x) > LAG & janela_com_calor == 0)[1]
+  cb <- crossbasis(c(rep(0, lag), x), lag = lag, argvar = list(fun = e$fun, df = e$df), arglag = list(fun = "ns", df = 3))
+  m <- matrix(as.numeric(cb[-seq_len(lag), , drop = FALSE]), nrow = length(x), dimnames = list(NULL, colnames(cb)))
+  nz <- cumsum(x != 0); janela_com_calor <- nz - c(rep(0, lag + 1), head(nz, -(lag + 1)))
+  i0 <- which(seq_along(x) > lag & janela_com_calor == 0)[1]
   stopifnot(!is.na(i0))
-  list(obj = cb, m = m, c0 = m[i0, ], pen = if (e$fun == "ps") cbPen(cb) else NULL, e = e)
+  list(obj = cb, m = m, c0 = m[i0, ], pen = if (e$fun == "ps") cbPen(cb) else NULL, e = e, lag = lag)
 }
 
 # Curvas do modelo para a aba de exposição-resposta, a partir dos coeficientes da cross-basis (beta) e da sua matriz de covariância (V):
@@ -101,11 +103,21 @@ curvas_modelo <- function(cbi, beta, V, x_max) {
 # Ajuste do modelo de referência (gam do mgcv, REML) para uma cross-basis `cb_i` (matriz do calendário) e os dados `dd` (colunas y, time_id, dia_ano, covid_id).
 # Usa a negativa binomial e, se ela não convergir (séries muito esparsas), a quase-Poisson (a dispersão entra no lugar de theta).
 # `pen` = list(cb_i = matriz de penalização) para o spline penalizado do HAAT, ou NULL. Devolve list(fit, fam) com fam "nb" ou "qp".
-ajustar_gam <- function(dd, cb_i, pen, k_time) {
-  fm <- if (any(dd$covid_id[!is.na(dd$y)] > 0))
-    y ~ cb_i + s(time_id, k = k_time, bs = "tp") + s(dia_ano, k = 6, bs = "cc") + s(covid_id, k = 8, bs = "cc")
-  else                                                               # série sem dias de COVID no ajuste (só em dados de teste): sem o termo
-    y ~ cb_i + s(time_id, k = k_time, bs = "tp") + s(dia_ano, k = 6, bs = "cc")
+# `esp` = especificação alternativa, só para as análises de sensibilidade (ver SENS); vazia = modelo de referência:
+#   esp$dow = TRUE        acrescenta o dia da semana (fator de 7 níveis);
+#   esp$covid = "cc"      (padrão) s(covid_id, k = 8, bs = "cc"): spline cíclico no índice do período; fora do período o índice é 0 e o spline cíclico
+#                         obriga o valor do último dia a voltar ao do índice 0;
+#                         "cr"  spline cúbico não cíclico no índice, só dentro do período, mais o indicador do período;
+#                         "obs" spline no log da média móvel de 7 dias dos óbitos diários de COVID-19 do recorte (coluna covid_obs);
+#                         "sem" nenhum termo para a pandemia (o período fica no ajuste).
+ajustar_gam <- function(dd, cb_i, pen, k_time, esp = list()) {
+  covid_modo <- if (is.null(esp$covid)) "cc" else esp$covid
+  termos <- c("cb_i", sprintf("s(time_id, k = %d, bs = \"tp\")", as.integer(k_time)), "s(dia_ano, k = 6, bs = \"cc\")")
+  if (covid_modo == "obs") termos <- c(termos, "s(covid_obs, k = 5, bs = \"cr\")")
+  else if (covid_modo != "sem" && any(dd$covid_id[!is.na(dd$y)] > 0))        # sem dias de COVID no ajuste (retirados, ou dados de teste): sem o termo
+    termos <- c(termos, if (covid_modo == "cr") c("covid_ind", "s(covid_id, k = 8, bs = \"cr\", by = covid_ind)") else "s(covid_id, k = 8, bs = \"cc\")")
+  if (isTRUE(esp$dow)) termos <- c(termos, "dow")
+  fm <- stats::as.formula(paste("y ~", paste(termos, collapse = " + ")), env = environment())
   fam <- "nb"
   fit <- tryCatch(suppressWarnings(gam(fm, data = dd, family = nb(), paraPen = pen, method = "REML")), error = function(e) NULL)
   if (is.null(fit) || !isTRUE(fit$converged)) {
@@ -116,10 +128,10 @@ ajustar_gam <- function(dd, cb_i, pen, k_time) {
 
 # Ajusta um segmento. y = óbitos por dia (calendário completo); fora = dias fora do ajuste (sem registro no SIM).
 # Devolve a família usada, o RR acumulado nas exposições de referência e os vetores diários (NA fora do ajuste).
-ajustar_segmento <- function(y, b, cbi, fora, k_time) {
+ajustar_segmento <- function(y, b, cbi, fora, k_time, esp = list(), curvas = TRUE, diag = "nao") {
   dd <- b; dd$y <- y; dd$y[fora] <- NA
   cb_i <- cbi$m
-  g <- ajustar_gam(dd, cb_i, if (is.null(cbi$pen)) NULL else list(cb_i = cbi$pen), k_time)
+  g <- ajustar_gam(dd, cb_i, if (is.null(cbi$pen)) NULL else list(cb_i = cbi$pen), k_time, esp)
   fit <- g$fit; fam <- g$fam
   ok <- !is.na(dd$y)
   stopifnot(length(fit$y) == sum(ok))
@@ -130,12 +142,85 @@ ajustar_segmento <- function(y, b, cbi, fora, k_time) {
   V <- vcov(fit)[ib, ib]
   pr <- crosspred(cbi$obj, coef = beta, vcov = V, model.link = "log", at = cbi$e$ref, cen = 0)
   disp <- if (fam == "nb") fit$family$getTheta(TRUE) else fit$scale   # theta (NB: var = mu + mu^2/theta) ou φ (var = φ mu)
-  list(fam = fam, disp = disp, n = sum(dd$y[ok]),
+  out <- list(fam = fam, disp = disp, n = sum(dd$y[ok]),
        rr = rbind(rr = pr$allRRfit, lo = pr$allRRlow, hi = pr$allRRhigh), se = as.numeric(pr$allse),     # se = erro-padrão do log do RR em cada nível de referência
-       curvas = curvas_modelo(cbi, beta, V, ceiling(quantile(b[[cbi$e$var]][b[[cbi$e$var]] > 0], 0.99))),
+       curvas = if (curvas) curvas_modelo(cbi, beta, V, ceiling(quantile(b[[cbi$e$var]][b[[cbi$e$var]] > 0], 0.99))),
        mu_ajustado = exp(eta), mu_sem_calor = exp(eta - efeito), efeito = efeito,
        dev_expl = summary(fit)$dev.expl)
+  if (diag != "nao") out$diag <- diagnosticar_fit(fit, ok, ib, completo = identical(diag, "completo"))
+  out
 }
+
+# ---------------------------------------------------------------- diagnósticos do modelo ajustado
+ACF_MAX <- 35                  # defasagens da ACF dos resíduos de Pearson (dias)
+LB_LAGS <- 14                  # defasagens do teste de Ljung-Box (duas semanas)
+# fit = gam ajustado; ok = dias do calendário usados no ajuste; ib = posição dos coeficientes da cross-basis.
+# Resíduos de Pearson na escala diária; a ACF ignora os dias fora do ajuste (pares com dia ausente não entram) e o limite aproximado de 95% é 1,96/raiz(n).
+# Ljung-Box com LB_LAGS defasagens, sem desconto dos graus de liberdade do modelo (por isso o valor de p é um indicador, não um teste exato).
+# completo = TRUE acrescenta k.check do mgcv (índice k, dimensão da base e graus de liberdade efetivos de cada termo suave), com semente fixa.
+diagnosticar_fit <- function(fit, ok, ib, completo = FALSE) {
+  res <- as.numeric(residuals(fit, type = "pearson")); nobs <- sum(ok)
+  r <- rep(NA_real_, length(ok)); r[ok] <- res
+  rho <- as.numeric(stats::acf(r, lag.max = ACF_MAX, na.action = stats::na.pass, plot = FALSE)$acf)[-1]
+  lim <- 1.96 / sqrt(nobs); k <- seq_len(LB_LAGS)
+  Q <- nobs * (nobs + 2) * sum(rho[k]^2 / (nobs - k))
+  gl_res <- nobs - sum(fit$edf)
+  oi <- fit$outer.info
+  d <- list(n = nobs, acf = round(rho, 4), lim = round(lim, 4), n_acf = sum(abs(rho) > lim), rho1 = round(rho[1], 3), rho7 = round(rho[7], 3),
+            lb = list(q = round(Q, 2), gl = LB_LAGS, p = stats::pchisq(Q, LB_LAGS, lower.tail = FALSE)),
+            chi2_gl = round(sum(res^2) / gl_res, 3), gl_res = round(gl_res, 1), dev_expl = round(summary(fit)$dev.expl, 4),
+            cb = list(k = length(ib), edf = round(sum(fit$edf[ib]), 2)), gl_total = round(sum(fit$edf), 1),
+            conv = list(ok = isTRUE(fit$converged), msg = if (is.list(oi) && !is.null(oi$conv)) as.character(oi$conv)[1] else NA_character_,
+                        iter = if (is.list(oi) && !is.null(oi$iter)) as.integer(oi$iter) else NA_integer_,
+                        grad = if (is.list(oi) && !is.null(oi$grad)) signif(max(abs(oi$grad)), 3) else NA_real_, pirls = as.integer(fit$iter)))
+  if (completo) {
+    antes <- if (exists(".Random.seed", envir = globalenv(), inherits = FALSE)) get(".Random.seed", envir = globalenv()) else NULL
+    set.seed(20260101)
+    kc <- tryCatch(suppressWarnings(mgcv::k.check(fit, n.rep = 200)), error = function(e) NULL)
+    if (!is.null(antes)) assign(".Random.seed", antes, envir = globalenv())
+    cc <- tryCatch({                       # implementação do spline cíclico da pandemia: valor do termo fora do período, no último dia e no pico
+      tt <- predict(fit, type = "terms"); col <- "s(covid_id)"; ci <- fit$model$covid_id
+      if (col %in% colnames(tt) && any(ci > 0)) list(fora = round(mean(tt[ci == 0, col]), 4), ultimo = round(mean(tt[ci == max(ci), col]), 4),
+                                                     primeiro = round(mean(tt[ci == 1, col]), 4), pico = round(tt[which.max(abs(tt[, col])), col], 4)) else NULL
+    }, error = function(e) NULL)
+    if (!is.null(cc)) d$covid_cc <- cc
+    st <- tryCatch(summary(fit)$s.table, error = function(e) NULL)
+    if (!is.null(kc)) d$suaves <- lapply(rownames(kc), function(nm) list(termo = nm, k = unname(kc[nm, "k'"]), edf = round(unname(kc[nm, "edf"]), 2),
+                                                                        kindex = round(unname(kc[nm, "k-index"]), 3), p = unname(kc[nm, "p-value"]),
+                                                                        p_termo = if (!is.null(st) && nm %in% rownames(st)) unname(st[nm, ncol(st)]) else NA_real_))
+  }
+  d
+}
+
+# ---------------------------------------------------------------- análises de sensibilidade (aba Diagnósticos e sensibilidades)
+# Cada uma refaz o ajuste do recorte com uma só mudança em relação ao ajuste principal pedido (causa, retiradas e medida de calor iguais).
+#   esp   especificação alternativa do GAM (ver ajustar_gam);  kmult  fator sobre o número de nós do spline do tempo;  lag  defasagem máxima (dias);
+#   opc   o que muda nas retiradas do ajuste (ver fora_ajuste): FALSE/TRUE sobre o código pedido.
+SENS <- list(
+  dow       = list(rot = "Dia da semana como termo do modelo", grupo = "Termo temporal", esp = list(dow = TRUE)),
+  k_meta    = list(rot = "Spline do tempo com metade dos nós", grupo = "Termo temporal", kmult = 0.5),
+  k_dobro   = list(rot = "Spline do tempo com o dobro dos nós", grupo = "Termo temporal", kmult = 2),
+  lag7      = list(rot = "Defasagem máxima de 7 dias", grupo = "Defasagem", lag = 7),
+  lag14     = list(rot = "Defasagem máxima de 14 dias", grupo = "Defasagem", lag = 14),
+  covret    = list(rot = "Período da COVID-19 retirado do ajuste", grupo = "Período da COVID-19", opc = list(covid = TRUE)),
+  covsem    = list(rot = "Período da COVID-19 mantido, sem termo próprio", grupo = "Período da COVID-19", esp = list(covid = "sem")),
+  covcr     = list(rot = "Termo da COVID-19 não cíclico (spline cúbico, k = 8) com indicador do período", grupo = "Período da COVID-19", esp = list(covid = "cr")),
+  covobs    = list(rot = "Termo da COVID-19 pelos óbitos diários de COVID-19 (média móvel de 7 dias, k = 5)", grupo = "Período da COVID-19", esp = list(covid = "obs")),
+  ncmant    = list(rot = "Meses de registro não consolidado mantidos no ajuste", grupo = "Amostra", opc = list(nc = FALSE)),
+  climazero = list(rot = "Dias sem dado de clima contados como dias sem calor", grupo = "Amostra", opc = list(clima = FALSE)),
+  anterior  = list(rot = "Especificação anterior do painel: meses não consolidados mantidos e dias sem clima contados como dias sem calor", grupo = "Amostra", opc = list(nc = FALSE, clima = FALSE)))
+
+# Dias de calor (pelo menos LIM_DIA_CALOR h com índice de calor >= 36 °C, como no protocolo) dentro do ajuste e eventos (sequências de dias seguidos de calor).
+LIM_DIA_CALOR <- 4
+contagem_calor <- function(cx, fora) {
+  x <- cx$clima$num_hr_36; x[is.na(x)] <- 0
+  d <- x >= LIM_DIA_CALOR & !fora; r <- rle(d)
+  list(dias = sum(d), eventos = sum(r$values))
+}
+
+# Resumo do diagnóstico residual de um ajuste, para a coluna de cada análise de sensibilidade.
+resumo_residual <- function(d) list(lb_p = d$lb$p, n_acf = d$n_acf, rho1 = d$rho1, chi2_gl = d$chi2_gl, edf_cb = d$cb$edf)
+
 
 # ---------------------------------------------------------------- mapa de horas por dia x limiar do índice de calor (Figura 4)
 # Cada célula é um modelo próprio, com o mesmo GAM e a mesma defasagem (0 a LAG dias) do modelo de referência, mas com a exposição binária

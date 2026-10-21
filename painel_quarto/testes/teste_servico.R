@@ -204,6 +204,30 @@ checar("cid: versão de dados antiga: erro dados_mudaram", identical(cod(executa
 checar("cid: expo_valida reconhece os pedidos de causa e só eles", all(vapply(c("cidlista", "cid_I21_haat", "cidsem_J18_horas"), expo_valida, TRUE)) && !any(vapply(c("cid_I21", "cidsem_I21_haat_x", "cid"), expo_valida, TRUE)))
 checar("cid: a base traz os nomes das causas e o mínimo de óbitos", { bb <- base_sob_demanda(P, cid_nomes = ler_cid_nomes(raiz)); length(bb$meta$cid_nomes) > 100 && identical(bb$meta$cid_min, CID_MIN) && all(unlist(pl$cid) %in% names(bb$meta$cid_nomes)) })
 
+# diagnósticos e sensibilidades (aba Diagnósticos e sensibilidades): "diag_<medida>" e "sens_<análise>_<medida>"
+checar("dg: reconhece o ajuste principal e cada análise de sensibilidade, e só eles",
+       identical(dg_do_id("diag_horas")$tipo, "diag") && identical(dg_do_id("diag_haat")$medida, "haat") && all(vapply(names(SENS), function(i) identical(dg_do_id(paste0("sens_", i, "_haat"))$spec, i), TRUE)) &&
+         !any(vapply(c("diag", "diag_x", "diag_horas_", "sens_horas", "sens_xyz_horas", "sens_dow", "sens__haat", "Diag_horas", "diag_horas2"), function(x) !is.null(dg_do_id(x)), TRUE)) && is.null(dg_do_id(NA_character_)) && expo_valida("sens_k_meta_horas"))
+dgp <- executar_ajuste(pasta, "res", chave, K, "diag_horas")
+pdg <- json_de(dgp$payload); rrj <- json_de(r_nat)$rr
+checar("diag: o RR é o do ajuste principal (mesmo modelo da Figura 1) e traz diagnóstico completo",
+       identical(pdg$tipo, "diag") && !dgp$do_cache && abs(pdg$rr[[1]] - rrj[[1]]) < 1e-9 && abs(pdg$lo[[1]] - rrj[[2]]) < 1e-9 && abs(pdg$hi[[1]] - rrj[[3]]) < 1e-9 && abs(pdg$rr[[2]] - rrj[[4]]) < 1e-9 &&
+         length(pdg$diag$acf) == ACF_MAX && length(pdg$diag$suaves) == 3 && !is.null(pdg$diag$covid_cc) && pdg$diag$conv$ok && is.null(pdg$cv))
+checar("diag: dias, óbitos e eventos de calor batem com o resumo do ajuste", { a <- json_de(r_nat)$aj; pdg$nd == a$nd && pdg$no == a$no && pdg$dias_calor >= pdg$eventos && pdg$eventos > 0 && pdg$ini == a$ini && pdg$fim == a$fim })
+checar("diag: o segundo pedido sai do disco", executar_ajuste(pasta, "res", chave, K, "diag_horas")$do_cache)
+sn <- json_de(executar_ajuste(pasta, "res", chave, K, "sens_ncmant_horas")$payload); r001 <- json_de(executar_ajuste(pasta, "res", chave, K, "horas", "naturais", "001")$payload)$rr
+checar("sens: 'meses mantidos' é o ajuste com código 001, com mais dias e óbitos que o principal",
+       identical(sn$tipo, "sens") && abs(sn$rr[[1]] - r001[[1]]) < 1e-9 && abs(sn$hi[[2]] - r001[[6]]) < 1e-9 && sn$nd > pdg$nd && sn$no > pdg$no && !is.null(sn$res$lb_p) && is.null(sn$diag))
+checar("sens: 'período da COVID-19 retirado' é o ajuste com código 111 e tem menos dias", { sc <- json_de(executar_ajuste(pasta, "res", chave, K, "sens_covret_horas")$payload); r111 <- json_de(executar_ajuste(pasta, "res", chave, K, "horas", "naturais", "111")$payload)$rr
+  abs(sc$rr[[1]] - r111[[1]]) < 1e-9 && sc$nd < pdg$nd })
+checar("sens: a especificação anterior é o ajuste com código 000", { sa <- json_de(executar_ajuste(pasta, "res", chave, K, "sens_anterior_horas")$payload); r000 <- json_de(r_000$payload)$rr; abs(sa$rr[[1]] - r000[[1]]) < 1e-9 && sa$nd == length(cx$dias) - sum(cx$sem_registro) })
+checar("sens: cada análise tem o rótulo, o grupo, a defasagem e o número de nós do spline do tempo", { sl <- json_de(executar_ajuste(pasta, "res", chave, K, "sens_lag14_horas")$payload); sk <- json_de(executar_ajuste(pasta, "res", chave, K, "sens_k_dobro_horas")$payload)
+  sl$lag == 14 && sl$grupo == "Defasagem" && sl$nd < pdg$nd && sk$k_tempo == 2 * P$kt && nzchar(sk$rot) })
+checar("sens: especificação alternativa com HAAT (spline penalizado): RR nos dois níveis e gl efetivos da base cruzada", { sh <- json_de(executar_ajuste(pasta, "res", chave, K, "sens_dow_haat")$payload); length(sh$rr) == 2 && all(num(sh$lo) < num(sh$rr)) && sh$res$edf_cb > 5 && sh$res$edf_cb < 45 })
+checar("dg: análise inexistente, medida errada ou recorte com poucos óbitos dão erro recorte_invalido",
+       all(vapply(c("sens_xyz_horas", "sens_dow_mapa36", "diag_cid"), function(x) identical(cod(executar_ajuste(pasta, "res", chave, K, x)), "recorte_invalido"), TRUE)) && identical(cod(executar_ajuste(pasta, "res", chave, "Ignorado|30-39", "diag_horas")), "recorte_invalido"))
+checar("base: traz a lista de análises de sensibilidade com rótulo e grupo", { bs <- base_sob_demanda(P)$meta$sens; length(bs) == length(SENS) && all(vapply(bs, function(z) all(c("id", "rot", "grupo") %in% names(z)), TRUE)) && setequal(vapply(bs, `[[`, "", "id"), names(SENS)) })
+
 # pedidos assíncronos pelo future: pedidos iguais compartilham a promessa e o resultado é o mesmo
 suppressWarnings(future::plan("multisession", workers = 1))
 p1 <- pedir_ajuste(raiz, pasta, "res", chave, "Via pública|60-69", "horas")                 # a primeira chamada sobe o trabalhador e cria o pedido

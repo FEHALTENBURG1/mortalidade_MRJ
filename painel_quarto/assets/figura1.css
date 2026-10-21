@@ -92,3 +92,8 @@ table.tb{border-collapse:collapse;width:100%;font-size:13px}
 table.tb th,table.tb td{border-bottom:1px solid var(--line);padding:6px 10px;text-align:left;vertical-align:top}
 table.tb th{font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:var(--mut);font-weight:600}
 table.tb .n{text-align:right;white-space:nowrap}
+/* aba Diagnósticos e sensibilidades */
+table.tb .dl{font-size:11px;color:var(--mut)}
+table.tb tr.gr td{background:var(--sel);font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.4px;color:var(--mut);padding:5px 10px}
+table.tb tr.rel td:first-child{font-weight:600}
+#d-sens{min-width:980px}#d-sens td:first-child,#d-sens th:first-child{min-width:230px}#d-sens th.n{white-space:normal}#d-sens th,#d-sens td{padding:6px 7px}

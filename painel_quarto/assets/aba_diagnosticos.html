@@ -1,0 +1,29 @@
+<section id="tab-dia" class="hide">
+  <div class="ctl">
+    <label>Local do óbito<select id="d-local"></select></label>
+    <label>Faixa etária (anos)<select id="d-faixa"></select></label>
+    <label>Raça/cor<select id="d-raca"></select></label>
+    <label>Medida de calor do modelo<select id="d-exp"></select></label>
+    <!--FILTROS-->
+  </div>
+  <p class="note" id="d-sub" style="margin:12px 2px 14px"></p>
+  <div class="card">
+    <div class="fn">Quadro 1</div><h2 id="d-h1">Diagnósticos do modelo principal</h2>
+    <p class="note" id="d-prog" style="margin:0 0 8px"></p>
+    <div class="kpis" id="d-kpis"></div>
+    <div class="fn" style="margin-top:6px">Figura 6</div><h3 style="margin:2px 0 6px;font-size:14px">Autocorrelação dos resíduos de Pearson (defasagens de 1 a 35 dias)</h3>
+    <div class="chartbox" style="height:240px"><canvas id="d-acf"></canvas></div>
+    <p class="note" id="d-note2"></p>
+    <h3 style="margin:14px 0 6px;font-size:14px">Termos suaves e base cruzada: dimensão da base e graus de liberdade efetivos</h3>
+    <div class="tabw"><table class="tb" id="d-suave"></table></div>
+    <p class="note" id="d-note"></p>
+    <div class="interp" id="d-interp"></div>
+  </div>
+  <div class="card" style="margin-top:16px">
+    <div class="fn">Quadro 2</div><h2 id="d-h2">Análises de sensibilidade</h2>
+    <p class="note" id="d-sprog" style="margin:0 0 8px"></p>
+    <div class="tabw"><table class="tb" id="d-sens"></table></div>
+    <p class="note" id="d-snote"></p>
+    <div class="interp" id="d-sinterp"></div>
+  </div>
+</section>

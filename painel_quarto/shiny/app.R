@@ -56,7 +56,8 @@ corpo_html <- paste(readLines(file.path(raiz, "assets", "figura1_corpo.html"), e
 # Abas além da Figura 1: cada uma tem o seu HTML (assets/aba_*.html), o seu script (assets/aba_*.js) e um prefixo para os ids dos seus filtros.
 ABAS <- list(
   list(id = "exp", rotulo = "Exposição-resposta e defasagem", arquivo = "aba_exposicao", prefixo = "x"),
-  list(id = "cid", rotulo = "Causas específicas (CID-10)", arquivo = "aba_cid", prefixo = "k"))
+  list(id = "cid", rotulo = "Causas específicas (CID-10)", arquivo = "aba_cid", prefixo = "k"),
+  list(id = "dia", rotulo = "Diagnósticos e sensibilidades", arquivo = "aba_diagnosticos", prefixo = "d"))
 ler_texto <- function(f) paste(readLines(f, encoding = "UTF-8", warn = FALSE), collapse = "\n")
 for (i in seq_along(ABAS)) ABAS[[i]]$html <- ler_texto(file.path(raiz, "assets", paste0(ABAS[[i]]$arquivo, ".html")))
 

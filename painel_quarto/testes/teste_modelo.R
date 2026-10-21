@@ -80,4 +80,44 @@ ra <- resumo_ajuste(cx3, y3, list(covid = TRUE, nc = TRUE, clima = TRUE))
 ok(identical(as.integer(ra$xd), c(1L, 18L, 11L, 21L)) && identical(as.integer(ra$xo), c(2L, 36L, 22L, 42L)) && ra$ini == "2020-01-01" && ra$fim == as.character(d3[194]), "resumo do ajuste: contagens por motivo e primeiro e último dia no ajuste")
 ok(ra$nd == n3 - 1L - 18L - 11L - 21L && ra$no == 2L * ra$nd, "resumo do ajuste: dias e óbitos no ajuste")
 ok(identical(strsplit(COD_PADRAO, "")[[1]], c("0", "1", "1")), "ajuste principal: retira meses não consolidados e dias sem clima, mantém o período da COVID-19 (código covid-nc-clima = 011)")
+# janela de defasagem parametrizável: a retirada dos dias sem clima e a cross-basis usam a mesma janela
+cx3$clima$hi_max <- 30; cx3$clima$hi_max[c(100, 101, 195)] <- NA
+ok(identical(which(fora_ajuste(cx3, list(clima = TRUE), lag = 3) & !cx3$sem_registro), c(100:104, 195:198)), "retirada de dias sem clima com defasagem de 3 dias: o dia e os 3 seguintes")
+cbi7 <- cross_exposicao(b, EXPOSICOES$horas, lag = 7)
+ok(nrow(cbi7$m) == n && ncol(cbi7$m) == 3 && cbi7$lag == 7 && all(cbi7$c0 == 0), "cross-basis com defasagem de 7 dias: mesma dimensão, contrafactual zero")
+r7 <- ajustar_segmento(y, b, cbi7, cx$sem_registro, kt, curvas = FALSE)
+ok(is.null(r7$curvas) && r7$rr["lo", 1] < exp(0.012 * 4 * 4) && exp(0.012 * 4 * 4) < r7$rr["hi", 1], "defasagem de 7 dias, sem as curvas: RR verdadeiro dentro do IC")
+
+# diagnósticos: ACF dos resíduos, Ljung-Box, k.check, gl efetivos, dispersão e convergência
+rd <- ajustar_segmento(y0, b, cbi, cx$sem_registro, kt, diag = "completo")
+d <- rd$diag
+ok(length(d$acf) == ACF_MAX && d$n == n && abs(d$lim - 1.96 / sqrt(n)) < 1e-3 && d$n_acf <= 6 && d$lb$gl == LB_LAGS, sprintf("diagnóstico: ACF de %d defasagens; com resíduos independentes, %d fora do limite", ACF_MAX, d$n_acf))
+ok(abs(d$chi2_gl - 1) < 0.1 && d$conv$ok && is.finite(d$cb$edf) && d$cb$k == 3 && abs(d$cb$edf - 3) < 1e-6, "diagnóstico: dispersão residual perto de 1, convergência e base cruzada com 3 colunas e 3 gl efetivos")
+ok(length(d$suaves) == 2 && all(vapply(d$suaves, function(z) is.finite(z$kindex) && z$k > 0 && z$edf > 0, TRUE)) && is.null(d$covid_cc), "diagnóstico completo: k.check dos dois termos suaves (sem o termo da COVID-19, que não há no ajuste)")
+ok(is.null(ajustar_segmento(y0, b, cbi, cx$sem_registro, kt, diag = "resumo")$diag$suaves) && !is.null(ajustar_segmento(y0, b, cbi, cx$sem_registro, kt, diag = "resumo")$diag$lb), "diagnóstico resumido: sem k.check")
+y_ar <- rnbinom(n, mu = exp(log_mu0 + as.numeric(arima.sim(list(ar = 0.9), n, sd = 0.06))), size = 80)
+da <- ajustar_segmento(y_ar, b, cbi, cx$sem_registro, kt, diag = "resumo")$diag
+ok(da$rho1 > 0.3 && da$lb$p < 1e-6 && da$n_acf > 15, sprintf("diagnóstico: variação autocorrelada que o modelo não descreve aparece na ACF (lag 1 = %.2f, %d lags fora) e no Ljung-Box", da$rho1, da$n_acf))
+ok(all(c("lb_p", "n_acf", "rho1", "chi2_gl", "edf_cb") %in% names(resumo_residual(da))), "resumo do diagnóstico residual para o quadro de sensibilidades")
+
+# análises de sensibilidade: especificações alternativas do GAM
+rdw <- ajustar_segmento(y0, b, cbi, cx$sem_registro, kt, esp = list(dow = TRUE), curvas = FALSE)
+ok(abs(log(rdw$rr["rr", 1]) - log(r0$rr["rr", 1])) < 0.02, "sensibilidade com dia da semana: sem efeito de dia da semana nos dados, o RR quase não muda")
+rs <- ajustar_segmento(y0, b, cbi, cx$sem_registro, kt, esp = list(covid = "sem"), curvas = FALSE)
+ok(isTRUE(all.equal(rs$rr, r0$rr)), "termo da COVID-19 'sem': sem período de COVID-19 no ajuste, igual ao modelo de referência")
+cxc <- cx; cxc$covid[(n - 900):(n - 300)] <- TRUE
+bc <- base_modelo(cxc); m_c <- sum(cxc$covid)
+yc <- rnbinom(n, mu = mu_verd * exp(ifelse(cxc$covid, 0.35 * sin(pi * cumsum(cxc$covid) / m_c), 0)), size = 80)
+dc <- ajustar_segmento(yc, bc, cbi, cxc$sem_registro, kt, diag = "completo", curvas = FALSE)$diag
+ok(length(dc$suaves) == 3 && !is.null(dc$covid_cc) && abs(dc$covid_cc$ultimo - dc$covid_cc$fora) < 0.01 && abs(dc$covid_cc$pico) > 0.1,
+   sprintf("spline cíclico da pandemia: o valor no último dia (%.3f) volta ao de fora do período (%.3f), com pico de %.2f", dc$covid_cc$ultimo, dc$covid_cc$fora, dc$covid_cc$pico))
+ncc <- ajustar_segmento(yc, bc, cbi, cxc$sem_registro, kt, esp = list(covid = "cr"), curvas = FALSE)
+ok(ncc$rr["lo", 1] < exp(0.012 * 4 * 4) && exp(0.012 * 4 * 4) < ncc$rr["hi", 1], "termo da COVID-19 não cíclico com indicador do período: RR verdadeiro dentro do IC")
+bc$covid_obs <- log1p(as.numeric(stats::filter(ifelse(cxc$covid, 20 * sin(pi * cumsum(cxc$covid) / m_c), 0), rep(1 / 7, 7), sides = 1)) |> (\(v) { v[is.na(v)] <- 0; v })())
+nob <- ajustar_segmento(yc, bc, cbi, cxc$sem_registro, kt, esp = list(covid = "obs"), curvas = FALSE)
+ok(nob$rr["lo", 1] < exp(0.012 * 4 * 4) && exp(0.012 * 4 * 4) < nob$rr["hi", 1], "termo da COVID-19 pelos óbitos diários de COVID-19: RR verdadeiro dentro do IC")
+nc <- contagem_calor(list(clima = data.frame(num_hr_36 = c(0, 5, 6, 0, 4, NA, 7, 7, 7, 1))), c(rep(FALSE, 8), TRUE, FALSE))
+ok(nc$dias == 5 && nc$eventos == 3, "dias de calor (>= 4 h) e eventos (sequências) dentro do ajuste")
+ok(all(vapply(SENS, function(z) is.character(z$rot) && is.character(z$grupo), TRUE)) && length(SENS) == 12, "lista de sensibilidades com rótulo e grupo")
+
 cat("\nTodos os testes do modelo passaram.\n")
