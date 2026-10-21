@@ -123,7 +123,7 @@ function desenharCurvas(){
   });
   S.forEach(s=>{
     const p = s.p;
-    if(s.fase==="pouco"){ limpar(p); calc(p,false); $(p+"-sub").textContent = ""; $(p+"-note").textContent = `Menos de ${M.min_obitos} óbitos ${s.e.cod!=="000"?"no ajuste ":""}${comp?`no local “${nm(local(p))}”`:"nesta combinação de filtros"}: modelo não estimado.` }
+    if(s.fase==="pouco"){ limpar(p); calc(p,false); P.texto.ficha(p+"-sub", null); $(p+"-note").textContent = `Menos de ${M.min_obitos} óbitos ${s.e.cod!=="000"?"no ajuste ":""}${comp?`no local “${nm(local(p))}”`:"nesta combinação de filtros"}: modelo não estimado.` }
     else if(s.fase==="calc"){ calc(p,true); $(p+"-note").textContent = "Calculando o modelo deste recorte (de 3 a 15 segundos na primeira vez; depois o resultado fica guardado no servidor)…" }
     else calc(p,false);
   });
@@ -155,11 +155,11 @@ function apoio(p, fx, xmax, C, eixoX, cv, E){
   const h = fx.sup.h, n = fx.sup.n, pts = h.map((x,i)=>({x, y:n[i]})).filter(q=>q.x>=1 && q.x<=xmax);
   c2[p] = new Chart($(p+"-sup"),{type:"bar",data:{datasets:[{label:"Dias no ajuste",data:pts,backgroundColor:mkCor(C.cz,.75),borderWidth:0,barPercentage:.9,categoryPercentage:1}]},
     options:{responsive:true,maintainAspectRatio:false,animation:false,parsing:false,
-      scales:{x:{...eixoX,title:{display:true,text:"Horas por dia com índice de calor ≥ 36 °C (barras: dias no ajuste)",color:C.mut}},
+      scales:{x:{...eixoX,title:{display:true,text:"Horas por dia com IC ≥ 36 °C (barras: dias no ajuste)",color:C.mut}},
               y:{beginAtZero:true,grid:{color:C.grid},ticks:{color:C.mut,maxTicksLimit:4,callback:v=>fn(v)},title:{display:true,text:"Dias",color:C.mut},afterFit:sc=>{ sc.width = 64 }}},
       plugins:{legend:{display:false},tooltip:{callbacks:{title:it=>`${fn(it[0].parsed.x)} h por dia`,label:c=>`${fn(c.parsed.y)} dias no ajuste`}}}}});
   const tot = n.reduce((a,b)=>a+b,0), exp1 = tot-n[0], ge = k => h.reduce((a,x,i)=>a+(x>=k?n[i]:0),0);
-  nota.textContent = `Barras: dias no ajuste (${fn(fx.nd)} dias) por número de horas com índice de calor ≥ 36 °C; o dia sem nenhuma hora (${fn(n[0])} dias) não aparece. `+
+  nota.textContent = `Barras: dias no ajuste (${fn(fx.nd)} dias) por número de horas com IC ≥ 36 °C; o dia sem nenhuma hora (${fn(n[0])} dias) não aparece. `+
     `São ${fn(exp1)} dias com pelo menos 1 h, ${fn(ge(8))} com pelo menos 8 h e ${fn(ge(10))} com pelo menos 10 h. O eixo termina em ${fn(xmax)} h, o percentil 99 dos dias com exposição, e há ${fn(ge(xmax+1))} dias acima desse valor. `+
     `A curva e as barras valem para todo o período do ajuste, e não para o recorte escolhido: o suporte de dias é o mesmo em qualquer recorte, e só o número de óbitos muda.`;
 }
@@ -231,20 +231,20 @@ function sqQuadro(s, sp){
     h += `<tr class="${ex?"ext":""}"><td>${rot}</td><td class="n">${fn(d)}${d===M.lag+1?" (cenário dos cartões de RR)":""}</td><td class="n">0 a ${fn(a)}</td><td class="n">${a<l.ac.length?`${fn(l.ac[a],2)} (${fn(l.aclo[a],2)} a ${fn(l.achi[a],2)})`:"–"}</td><td class="n">${fn(q.janelas[i])}</td><td class="n">${fn(q.eventos[i])}</td><td>${leituraSq(q.eventos[i])}</td></tr>`;
   }));
   $(p+"-sq").innerHTML = h+"</tbody>";
-  $(p+"-sq-note").textContent = `Dia exposto: exposição de pelo menos o nível de referência (${ref.map(r=>fn(r)+" "+u).join(" ou ")}; dia sem dado de clima conta como não exposto). Janela: dia do óbito no ajuste (${fn(sp.nd)} dias) em que os d dias terminados nele são todos expostos; a janela de ${M.lag+1} dias é o cenário do cartão de RR. `+
-    `Evento independente: conjunto de dias expostos separado de outros por pelo menos ${M.lag} dias sem exposição, de modo que as janelas de defasagem de eventos diferentes não se tocam; o quadro conta os eventos que têm pelo menos uma janela de d dias. `+
+  $(p+"-sq-note").textContent = `Dia com exposição: dia em que a própria exposição, e não a janela de t a t−3 da Figura 1, atinge pelo menos o nível de referência (${ref.map(r=>fn(r)+" "+u).join(" ou ")}; dia sem dado de clima conta como sem exposição). Janela: dia do óbito no ajuste (${fn(sp.nd)} dias) em que os d dias terminados nele são todos dias com exposição; a janela de ${M.lag+1} dias é o cenário do cartão de RR. `+
+    `Evento independente: conjunto de dias com exposição separado de outros por pelo menos ${M.lag} dias sem exposição, de modo que as janelas de defasagem de eventos diferentes não se tocam; o quadro conta os eventos que têm pelo menos uma janela de d dias. `+
     `O RR de cada linha é o acumulado nas defasagens de 0 a d-1 do recorte escolhido (exposição mantida nos d últimos dias e ausente antes), e o suporte (janelas e eventos) vale para qualquer recorte porque só depende da exposição e dos dias do ajuste. `+
     `Leitura: menos de 5 eventos independentes = extrapolação; 5 a 29 = poucos eventos; 30 ou mais = frequente. Esses limiares são uma convenção do painel para leitura rápida, e não um critério estatístico.`;
   // duração observada e distribuição por ano
   let hd = `<thead><tr><th>Exposição de referência</th>${sp.niveis[0].duracao.classe.map(c=>`<th class="n">${c}</th>`).join("")}<th class="n">Sequências</th></tr></thead><tbody>`;
   nv.forEach((q,j)=>{ const t = q.duracao.n.reduce((a,b)=>a+b,0); hd += `<tr><td>${fn(ref[j])} ${u} por dia ou mais</td>${q.duracao.n.map(v=>`<td class="n">${fn(v)}</td>`).join("")}<td class="n">${fn(t)}</td></tr>` });
   $(p+"-sq-dur").innerHTML = hd+"</tbody>";
-  const anos = nv[0].anual.ano; let ha = `<thead><tr><th rowspan="2">Ano</th>${nv.map((q,j)=>`<th class="n gr2" colspan="3">${fn(ref[j])} ${u} por dia ou mais</th>`).join("")}</tr><tr>${nv.map(()=>`<th class="n gr2">Dias expostos</th><th class="n">Sequências de 4 dias ou mais</th><th class="n">Janelas de ${M.lag+1} dias</th>`).join("")}</tr></thead><tbody>`;
+  const anos = nv[0].anual.ano; let ha = `<thead><tr><th rowspan="2">Ano</th>${nv.map((q,j)=>`<th class="n gr2" colspan="3">${fn(ref[j])} ${u} por dia ou mais</th>`).join("")}</tr><tr>${nv.map(()=>`<th class="n gr2">Dias com exposição</th><th class="n">Sequências de 4 dias ou mais</th><th class="n">Janelas de ${M.lag+1} dias</th>`).join("")}</tr></thead><tbody>`;
   anos.forEach((a,i)=>{ ha += `<tr><td>${a}</td>${nv.map(q=>`<td class="n gr2">${fn(q.anual.dias[i])}</td><td class="n">${fn(q.anual.seq4[i])}</td><td class="n">${fn(q.anual.jan11[i])}</td>`).join("")}</tr>` });
   const som = v => v.reduce((a,b)=>a+b,0);
   ha += `<tr class="ext"><td>Total</td>${nv.map(q=>`<td class="n gr2">${fn(som(q.anual.dias))}</td><td class="n">${fn(som(q.anual.seq4))}</td><td class="n">${fn(som(q.anual.jan11))}</td>`).join("")}</tr>`;
   $(p+"-sq-an").innerHTML = ha+"</tbody>";
-  $(p+"-sq-note2").textContent = `Sequência: dias expostos seguidos, contada se tem pelo menos um dia no ajuste. Na tabela por ano, a sequência de 4 dias ou mais entra no ano em que completa o quarto dia exposto dentro do ajuste, e a janela de ${M.lag+1} dias no ano do dia do óbito. Os anos são os do ajuste: 2007 começa com o clima disponível em abril e o último ano está incompleto.`;
+  $(p+"-sq-note2").textContent = `Sequência: dias com exposição seguidos, contada se tem pelo menos um dia no ajuste. Na tabela por ano, a sequência de 4 dias ou mais entra no ano em que completa o quarto dia com exposição dentro do ajuste, e a janela de ${M.lag+1} dias no ano do dia do óbito. Os anos são os do ajuste: 2007 começa com o clima disponível em abril e o último ano está incompleto.`;
   // interpretação
   const f = j => { const q = nv[j]; return `a exposição de ${fn(ref[j])} ${u} por dia em todos os ${M.lag+1} dias ocorre em ${fn(q.janelas[d11])} ${q.janelas[d11]===1?"janela":"janelas"} (${fn(q.eventos[d11])} ${q.eventos[d11]===1?"evento independente":"eventos independentes"})` };
   const maior = j => { const q = nv[j]; let k = -1; sp.dur.forEach((d,i)=>{ if(q.eventos[i]>=5) k = i }); return k<0 ? null : sp.dur[k] };
@@ -260,12 +260,11 @@ function sqQuadro(s, sp){
 
 function desenharSlot(s, dom, comp, C){
   const p = s.p, e = s.e, E = s.E, u = E.unidade, cv = s.cv, L = cv.lag, cor = [C.az, C.la], xmax = dom.xmax;
-  const rotulo = `local do óbito: ${nm(local(p)).toLowerCase()}; faixa etária: ${$("x-faixa").value==="Todas as idades"?"todas as idades":$("x-faixa").value+" anos"}${$("x-raca").value!=="Todas"?"; raça/cor: "+(({PPI:"pretos, pardos e indígenas"})[$("x-raca").value]||$("x-raca").value.toLowerCase()):""}`;
   const suf = comp ? ` (local do óbito: ${nm(local(p))})` : "";
-  $(p+"-sub").textContent = `Óbitos ${P.texto.causaPor(e.causa)}; ${rotulo}. As curvas vêm do mesmo modelo que gera o esperado sem calor da Figura 1 para este recorte.`;
+  P.texto.ficha(p+"-sub", {recorte:P.texto.recorte(local(p),$("x-faixa").value,$("x-raca").value), kd:e.kd, ex:e.ex, m:e.m, filtrado:comp||P.texto.filtrado(local(p),$("x-faixa").value,$("x-raca").value), linhas:[["Origem das curvas","mesmo modelo que gera o esperado sem calor da Figura 1 para este recorte"]]});
   $(p+"-h2").textContent = "Resposta à exposição ao calor"+suf;
   $(p+"-h3").textContent = "RR por defasagem e RR acumulado"+suf;
-  $(p+"-hm-h2").textContent = "RR de óbito segundo as horas do dia com índice de calor ≥ K °C"+suf;
+  $(p+"-hm-h2").textContent = "RR da contagem diária de óbitos segundo as horas do dia com IC ≥ K °C"+suf;
   const pts = a => cv.x.map((x,i)=>({x, y:a[i]}));
   const eixoY = comp ? {min:dom.ymin, max:dom.ymax} : {};
 
@@ -325,7 +324,7 @@ function desenharSlot(s, dom, comp, C){
   const partes = L.map(l=>{
     const k = ate(l), a = M.lag, sig = l.aclo[a]>1 ? "o intervalo fica acima de 1" : l.achi[a]<1 ? "o intervalo fica abaixo de 1" : "o intervalo inclui 1";
     const seq = k<0 ? "sem defasagem inicial com intervalo acima de 1" : k>=a ? "com intervalo acima de 1 em todas as defasagens" : `com intervalo acima de 1 até o lag ${k}`;
-    return `com ${fn(l.ref)} ${u} por dia, o RR no mesmo dia (lag 0) é ${ic(l.rr[0],l.lo[0],l.hi[0])}, ${seq}; o RR acumulado em 0 a ${i3} dias é ${ic(l.ac[i3],l.aclo[i3],l.achi[i3])} e em 0 a ${a} dias é ${ic(l.ac[a],l.aclo[a],l.achi[a])}, isto é, ${P.fp((l.ac[a]-1)*100)} no risco diário de óbito (${sig})` });
+    return `com ${fn(l.ref)} ${u} por dia, o RR no mesmo dia (lag 0) é ${ic(l.rr[0],l.lo[0],l.hi[0])}, ${seq}; o RR acumulado em 0 a ${i3} dias é ${ic(l.ac[i3],l.aclo[i3],l.achi[i3])} e em 0 a ${a} dias é ${ic(l.ac[a],l.aclo[a],l.achi[a])}, isto é, ${P.fp((l.ac[a]-1)*100)} na contagem diária de óbitos (${sig})` });
   const tardio = L.some(l=>l.hi.some(v=>v<1));
   $(p+"-interp").innerHTML = `<span class="t">Interpretação</span>Neste recorte, ${partes.join(". Já ")}. `+
     (tardio?`Há defasagens em que o intervalo de confiança fica inteiro abaixo de 1. Isso pode refletir antecipação de óbitos de pessoas frágeis ou variação aleatória, e o modelo não separa as duas explicações. `:"")+
@@ -340,17 +339,17 @@ function comparacao(S){
   if(S.length<2 || S.some(s=>s.fase!=="ok")){ el.innerHTML = ""; return }
   const [a,b] = S, u = a.E.unidade, i = M.lag;
   const frases = a.cv.lag.map((la,j)=>{
-    const lb = b.cv.lag[j], sobrepoe = !(la.aclo[i]>lb.achi[i] || lb.aclo[i]>la.achi[i]);
-    return `Com ${fn(la.ref)} ${u} por dia, o RR acumulado em 0 a ${i} dias é ${ic(la.ac[i],la.aclo[i],la.achi[i])} no local “${nm(local("x"))}” e ${ic(lb.ac[i],lb.aclo[i],lb.achi[i])} no local “${nm(local("y"))}”, e os intervalos ${sobrepoe?"se sobrepõem":"não se sobrepõem"}`;
+    const lb = b.cv.lag[j];
+    return `Com ${fn(la.ref)} ${u} por dia, o RR acumulado em 0 a ${i} dias é ${ic(la.ac[i],la.aclo[i],la.achi[i])} no local “${nm(local("x"))}” e ${ic(lb.ac[i],lb.aclo[i],lb.achi[i])} no local “${nm(local("y"))}”`;
   });
   const aninhado = [local("x"),local("y")].includes("Todos os locais");
   el.innerHTML = `<span class="t">Comparação entre os locais do óbito</span>${frases.join(". ")}. `+
-    `A sobreposição dos intervalos é uma comparação informal e não substitui um teste da diferença entre os recortes. `+
+    `${P.texto.grupos} `+
     (aninhado?`Como “Todos os locais” inclui os óbitos do outro recorte, as duas estimativas não são independentes. `:"")+
     `Os dois recortes usam a mesma escala vertical na Figura 2 e a mesma escala horizontal na Figura 3.`;
 }
 
-// ---------------------------------------------------------------- Figura 4: horas por dia x limiar do índice de calor
+// ---------------------------------------------------------------- Figura 4: horas por dia x limiar do IC
 // Cada célula é um modelo próprio (R/modelo_joao.R, ajustar_mapa_limiar). O navegador pede uma coluna (limiar K) por vez, no máximo MAX_VOO ao mesmo
 // tempo, e redesenha a tabela a cada coluna recebida. Primeiro o limiar usual de 36 °C, depois os demais. Com dois recortes, o primeiro é calculado antes.
 const LIM = [36,32,33,34,35,37,38,39,40,41,42,43,44], LIM_ORD = [...LIM].sort((a,b)=>a-b), MAX_VOO = 2, ESPERA_MAX = 180000;
@@ -394,35 +393,35 @@ function mapaSlot(p){
       if(!c){ const f = falhou.has(idM(e.kd,K)); s += `<td style="color:var(--mut)" title="${f?"não foi possível estimar esta coluna":"calculando"}">${f?"×":"…"}</td>`; return }
       const rr=c.rr[i], lo=c.lo[i], hi=c.hi[i], nd=c.nd[i], ev=c.ev?c.ev[i]:null;
       const sub = mostraN ? `<span class="sub">${fn(nd)} d · ${ev==null?"–":fn(ev)} ev.</span>` : "";
-      const suporte = `${fn(nd)} dias expostos em ${ev==null?"número não disponível de":fn(ev)} evento(s) independente(s)`;
-      const refc = K===36 && h===4 ? "outline:2px solid var(--azul);outline-offset:-2px;" : "";                 // definição de dia de calor do protocolo (≥ 4 h com IC ≥ 36 °C)
-      if(rr==null){ s += `<td style="${refc}color:var(--mut)" title="${nd<15?"menos de 15 dias expostos no ajuste":"célula não estimada (poucos dias sem exposição ou falha do ajuste)"}\n${suporte}">–${sub}</td>`; return }
+      const suporte = `${fn(nd)} dias com exposição em ${ev==null?"número não disponível de":fn(ev)} evento(s) independente(s)`;
+      const refc = K===36 && h===4 ? "outline:2px solid var(--azul);outline-offset:-2px;" : "";                 // dia com ≥ 4 h de IC ≥ 36 °C: combinação de referência do painel
+      if(rr==null){ s += `<td style="${refc}color:var(--mut)" title="${nd<15?"menos de 15 dias com exposição no ajuste":"célula não estimada (poucos dias sem exposição ou falha do ajuste)"}\n${suporte}">–${sub}</td>`; return }
       const sig = lo>1 || hi<1, v = pctRR(rr), al = Math.min(Math.abs(v)/25,1)*.75;
       const cor = (so&&!sig) ? "transparent" : (v>=0 ? `rgba(181,84,28,${al})` : `rgba(22,65,145,${al})`);
-      s += `<td style="${refc}background:${cor};${sig?"font-weight:700":"color:var(--mut)"}" title="Índice de calor ≥ ${K} °C por ≥ ${h} h/dia\nRR ${fr(rr)} (IC 95%: ${fr(lo)} a ${fr(hi)})\n${suporte}">${fr(rr)}${sub}</td>`;
+      s += `<td style="${refc}background:${cor};${sig?"font-weight:700":"color:var(--mut)"}" title="IC ≥ ${K} °C por ≥ ${h} h/dia\nRR ${fr(rr)} (IC 95%: ${fr(lo)} a ${fr(hi)})\n${suporte}">${fr(rr)}${sub}</td>`;
     });
     s += "</tr>";
   });
   tab.innerHTML = s;
-  nota.textContent = `Linhas: número mínimo de horas no dia com índice de calor ≥ K (H). Colunas: limiar K (°C). Cada célula é um modelo próprio, com o mesmo GAM do modelo de referência `+
-    `(binomial negativa, spline do tempo, ciclo anual e termo do período COVID, defasagem de 0 a ${M.lag} dias pela cross-basis do dlnm), em que a exposição é o dia ter pelo menos H horas com índice de calor ≥ K. `+
+  nota.textContent = `Linhas: número mínimo de horas no dia com IC ≥ K (H). Colunas: limiar K (°C). Cada célula é um modelo próprio, com o mesmo GAM do modelo de referência `+
+    `(binomial negativa, spline do tempo, ciclo anual e termo do período COVID, defasagem de 0 a ${M.lag} dias pela cross-basis do dlnm), em que a exposição é o dia ter pelo menos H horas com IC ≥ K. `+
     `O RR é o acumulado em 0 a ${M.lag} dias para a condição mantida em todos os ${M.lag+1} dias, em relação a nenhum dia com a condição, com IC 95% a partir da matriz de covariância dos coeficientes. `+
-    `Células com menos de 15 dias expostos, ou com menos de 30 dias sem exposição, no ajuste não são estimadas (–). Em negrito, RR com IC 95% que não inclui 1. `+
-    `Em cada célula, d é o número de dias expostos no ajuste e ev. é o número de eventos independentes, isto é, de conjuntos de dias expostos separados por mais de ${M.lag} dias sem exposição (as janelas de defasagem de eventos diferentes não se tocam). Contorno azul: a definição de dia de calor do protocolo (pelo menos 4 h com índice de calor ≥ 36 °C). `+
+    `Células com menos de 15 dias com exposição, ou com menos de 30 dias sem exposição, no ajuste não são estimadas (–). Em negrito, RR com IC 95% que não inclui 1. `+
+    `Em cada célula, d é o número de dias com exposição no ajuste e ev. é o número de eventos independentes, isto é, de conjuntos de dias com exposição separados por mais de ${M.lag} dias sem exposição (as janelas de defasagem de eventos diferentes não se tocam). Contorno azul: dia com ≥ 4 h de IC ≥ 36 °C, combinação de referência do painel, próxima do critério do NC 2 do protocolo (que usa “acima de” 36 °C). `+
     P.texto.notaClima(e.m)+P.texto.notaCausa(e.m);
   if(feitas<LIM.length){ it.innerHTML = `<span class="t">Interpretação</span>O texto fica disponível quando as ${LIM.length} colunas estiverem calculadas.`; return }
   const cel = [];
   LIM_ORD.forEach(K=>{ const c=col[K]; c.h.forEach((h,i)=>{ if(c.rr[i]!=null) cel.push({K,h,rr:c.rr[i],lo:c.lo[i],hi:c.hi[i],nd:c.nd[i]}) }) });
-  if(!cel.length){ it.innerHTML = `<span class="t">Interpretação</span>Nenhuma combinação tem dias expostos suficientes neste recorte.`; return }
+  if(!cel.length){ it.innerHTML = `<span class="t">Interpretação</span>Nenhuma combinação tem dias com exposição suficientes neste recorte.`; return }
   const sg = cel.filter(c=>c.lo>1), dn = cel.filter(c=>c.hi<1), mx = cel.reduce((a,b)=>b.rr>a.rr?b:a), mi = cel.reduce((a,b)=>b.rr<a.rr?b:a);
   const ordem = cel.map(c=>c.rr).sort((x,y)=>x-y), med = ordem.length%2 ? ordem[(ordem.length-1)/2] : (ordem[ordem.length/2-1]+ordem[ordem.length/2])/2;
   const ref = cel.find(c=>c.K===36&&c.h===4), a = cel.find(c=>c.K===32&&c.h===1), b = cel.find(c=>c.K===40&&c.h===1);
   const evt = c => c.ev==null ? "" : ` em ${fn(c.ev)} evento(s) independente(s)`;
-  const icc = c => `${fr(c.rr)} (IC 95%: ${fr(c.lo)} a ${fr(c.hi)}; ${fn(c.nd)} dias expostos${evt(c)})`;
+  const icc = c => `${fr(c.rr)} (IC 95%: ${fr(c.lo)} a ${fr(c.hi)}; ${fn(c.nd)} dias com exposição${evt(c)})`;
   it.innerHTML = `<span class="t">Interpretação</span>Das ${cel.length} combinações estimadas, ${sg.length} têm RR acima de 1 com IC 95% que não inclui 1 e ${dn.length} têm RR abaixo de 1 com IC 95% que não inclui 1. `+
-    (ref?`Na definição de dia de calor do protocolo (pelo menos 4 h com índice de calor ≥ 36 °C), RR = <b>${icc(ref)}</b>. `:"")+
-    `Os RR das células estimadas vão de ${fr(mi.rr)} a ${fr(mx.rr)}, com mediana de ${fr(med)}. O maior valor (índice de calor ≥ ${mx.K} °C por ≥ ${mx.h} h, ${fn(mx.nd)} dias expostos${evt(mx)}) é o máximo entre ${cel.length} modelos correlacionados e tende a superestimar o efeito, de modo que não indica o melhor limiar. Células com poucos dias expostos ou poucos eventos têm intervalos largos. `+
-    (a&&b?`Ao subir o limiar de 32 para 40 °C (≥ 1 h), o RR passa de ${fr(a.rr)} para ${fr(b.rr)}${b.rr>a.rr?", no sentido de risco maior com calor mais intenso; esse gradiente favorece a associação, e os dados agregados não permitem inferir causalidade. ":", sem gradiente crescente. "}`:"")+
+    (ref?`Para o dia com ≥ 4 h de IC ≥ 36 °C (combinação de referência do painel), RR = <b>${icc(ref)}</b>. `:"")+
+    `Os RR das células estimadas vão de ${fr(mi.rr)} a ${fr(mx.rr)}, com mediana de ${fr(med)}. O maior valor (IC ≥ ${mx.K} °C por ≥ ${mx.h} h, ${fn(mx.nd)} dias com exposição${evt(mx)}) é o máximo entre ${cel.length} modelos correlacionados e tende a superestimar o efeito, de modo que não indica o melhor limiar. Células com poucos dias com exposição ou poucos eventos têm intervalos largos. `+
+    (a&&b?`Ao subir o limiar de 32 para 40 °C (≥ 1 h), o RR passa de ${fr(a.rr)} para ${fr(b.rr)}${b.rr>a.rr?", no sentido de RR maior com calor mais intenso; esse gradiente favorece a associação, e os dados agregados não permitem inferir causalidade. ":", sem gradiente crescente. "}`:"")+
     `As células são aninhadas, pois um dia com mais horas também entra nas definições com menos horas, e não passaram por correção para comparações múltiplas. O padrão geral da tabela é mais informativo do que uma célula isolada. `+
     `O RR de cada célula descreve a associação em dados agregados, sem controle de fatores individuais.`;
 }

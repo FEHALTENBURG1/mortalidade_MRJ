@@ -16,12 +16,12 @@ with sync_playwright() as p:
     pg.goto("file://" + html)
     pg.wait_for_function("document.querySelectorAll('#s-kpis .kpi').length>0", timeout=90000)
     sel = lambda i, v: pg.select_option("#" + i, v)
-    kpis = lambda: pg.eval_on_selector_all("#s-kpis .kpi", "els=>els.map(e=>e.innerText.replace(/\\n/g,' | '))")
+    kpis = lambda: pg.eval_on_selector_all("#s-kpis .kpi", "els=>els.map(e=>e.querySelector('.v').innerText+' | '+e.querySelector('.l').innerText)")
     pixels = lambda: pg.evaluate("""()=>{const c=document.getElementById('s-chart'),g=c.getContext('2d'),d=g.getImageData(0,0,c.width,c.height).data;let n=0;for(let i=3;i<d.length;i+=4) if(d[i]>0) n++;return n}""")
     opcoes = lambda i: pg.eval_on_selector_all(f"#{i} option", "os=>os.map(o=>o.value)")
-    def razao(txt):                                         # primeiro número depois de "observado ÷ esperado" nos KPIs: "1,05 | observado ÷ esperado ..."
+    def razao(txt):                                         # valor do cartão da razão O/E nos KPIs: "1,05 | Razão observado/esperado sem calor (O/E): ..."
         for t in txt:
-            m = re.match(r"([\d,]+) \| observado ÷ esperado sem calor nas \d+ semanas de calor", t)
+            m = re.match(r"([\d,]+) \| Razão observado/esperado sem calor \(O/E\).* nas \d+ semanas", t)
             if m: return float(m.group(1).replace(",", "."))
     def rr(txt):
         if len(txt) < 2: return None                         # recorte sem série (menos de 300 óbitos)
@@ -72,7 +72,7 @@ with sync_playwright() as p:
     por_local = coleta("s-local", locais); sel("s-local", "Todos os locais")
     print("por local:", por_local)
     if len(set(por_local.values())) < 6: falha("locais diferentes com o mesmo resultado")
-    if len({v[0] for v in por_local.values()}) < 4: falha("razão observado ÷ esperado quase igual entre locais")
+    if len({v[0] for v in por_local.values()}) < 4: falha("razão observado/esperado sem calor (O/E) quase igual entre locais")
     por_faixa = coleta("s-faixa", faixas)
     print("por faixa:", por_faixa)
     if len(set(por_faixa.values())) < 7: falha("faixas diferentes com o mesmo resultado")
@@ -95,6 +95,16 @@ with sync_playwright() as p:
     with pg.expect_download() as d: pg.click("#s-csv")
     txt = open(d.value.path(), encoding="utf-8-sig").read().splitlines(); print("CSV diário:", len(txt), "linhas;", txt[0][:90])
     if len(txt) < 300: falha("CSV diário curto")
+    cab = [l for l in txt if not l.startswith("# ") and l.strip()][0]
+    if not txt[0].startswith("# Dados:") or not any(l.startswith("# Período do ajuste:") for l in txt) or not any(l.startswith("# Ressalvas:") for l in txt): falha("CSV diário sem a ficha do resultado")
+    if not cab.startswith("dia;observado;esperado_sem_calor;faixa_inferior_95;faixa_superior_95;horas_ic_ge_36;dia_com_4h_ic_ge_36;dia_com_exposicao_t_a_t3"): falha("CSV diário: cabeçalho fora do vocabulário do painel: " + cab[:80])
+    # ficha do resultado na página estática (item 10 da revisão): período do ajuste vem do payload, retiradas do ajuste principal, família do modelo e ressalvas
+    sel("s-esc", "sem")
+    F = pg.evaluate("()=>Object.fromEntries([...document.querySelectorAll('#s-ficha dl>div')].map(d=>[d.querySelector('dt').textContent,d.querySelector('dd').textContent]))")
+    if not re.fullmatch(r"\d\d/\d\d/\d{4} a \d\d/\d\d/\d{4} \([\d.]+ dias e [\d.]+ óbitos\)", F.get("Período do ajuste", "")): falha(f"ficha: período do ajuste ausente ou mal formado: {F.get('Período do ajuste')}")
+    if "meses de registro não consolidado" not in F.get("Retiradas", "").split("Mantidos")[0] or "dias sem dado de clima" not in F.get("Retiradas", "").split("Mantidos")[0]: falha(f"ficha: retiradas do ajuste principal: {F.get('Retiradas')}")
+    if not re.search(r"família (binomial negativa|quase-Poisson)", F.get("Modelo", "")) or "estudo ecológico" not in F.get("Ressalvas", "") or "Dados" not in F: falha(f"ficha: modelo, ressalvas ou dados ausentes: {list(F)}")
+    if "Índice de Calor (IC)" not in pg.inner_text("#sub") or "não são alertas operacionais" not in pg.inner_text("#sub"): falha("cabeçalho sem o Índice de Calor (IC) por extenso e o aviso sobre alertas")
     # métodos
     pg.click("button[data-tab=sobre]")
     mt = pg.inner_text("#tab-sobre")

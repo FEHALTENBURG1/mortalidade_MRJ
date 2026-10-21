@@ -57,6 +57,12 @@ try:
         checar("abre e desenha o recorte inicial (Todos os locais, Todas as idades)", len(kpis()) > 0 and pixels() > 2000, kpis())
         print(f"       primeiro desenho em {t_1:.1f} s", flush=True)
         opcoes = lambda i: pg.eval_on_selector_all(f"#{i} option", "os=>os.map(o=>o.value)")
+        # ficha do resultado: {rótulo: texto} lido do DOM (os dois pontos dos rótulos vêm do CSS e não estão no texto)
+        fch = lambda i: pg.evaluate("i=>Object.fromEntries([...document.querySelectorAll('#'+i+' dl>div')].map(d=>[d.querySelector('dt').textContent, d.querySelector('dd').textContent]))", i)
+        PER_AJ = r"\d\d/\d\d/\d{4} a \d\d/\d\d/\d{4} \([\d.]+ dias e [\d.]+ óbitos\)"
+        def ficha_ok(F, obrigatorios):
+            falta = [r for r in obrigatorios if r not in F or not F[r].strip()]
+            return not falta and ("Período do ajuste" not in F or re.fullmatch(PER_AJ, F["Período do ajuste"])), (falta, F.get("Período do ajuste"))
         checar("seletor de população com res e todos", opcoes("s-pop") == ["res", "todos"], opcoes("s-pop") if pg.query_selector("#s-pop") else "sem #s-pop")
         checar("sem erros no console após abrir", not erros, erros)
         if capturas: pg.screenshot(path=os.path.join(capturas, "app_01_inicial.png"))
@@ -225,7 +231,7 @@ try:
         checar("Figura 1: os cartões de RR são 'mod' com o selo 'RR do modelo'; os de O/E e de frequência acima da faixa são 'desc' com o selo 'Descritivo, não é RR'",
                len(mod0) == 2 and all(t["chip"] == "RR do modelo" and tem_rr(t["l"]) for t in mod0) and len(desc0) == 4 and all(t["chip"] == "Descritivo, não é RR" and not tem_rr(t["l"]) for t in desc0), T0)
         checar("Figura 1: nenhum cartão de O/E é chamado de RR, e nenhum cartão de RR traz O/E", all(not ("O/E" in t["l"] or "observado/esperado" in t["l"]) or ("desc" in t["cls"] and not tem_rr(t["l"])) for t in T0) and all("O/E" not in t["l"] for t in mod0), T0)
-        checar("Figura 1: a razão de semanas de calor se chama 'razão observado/esperado sem calor (O/E)'", any("razão observado/esperado sem calor (O/E)" in t["l"] for t in desc0), [t["l"] for t in desc0])
+        checar("Figura 1: a razão de semanas de calor se chama 'razão observado/esperado sem calor (O/E)'", any("Razão observado/esperado sem calor (O/E)" in t["l"] for t in desc0), [t["l"] for t in desc0])
         sel("s-esc", "dia"); pronto(); Td = tipos()
         checar("Figura 1 diária: dois cartões de RR do modelo e três descritivos, nenhum O/E chamado de RR", len([t for t in Td if "mod" in t["cls"]]) == 2 and len([t for t in Td if "desc" in t["cls"]]) == 3 and all(not tem_rr(t["l"]) for t in Td if "desc" in t["cls"]), Td)
         sel("s-esc", "sem"); pg.select_option("#s-ini", index=0); pronto()
@@ -307,7 +313,7 @@ try:
                len(dur4) == 2 and all(sum(num(v) for v in r[1:6]) == num(r[6]) for r in dur4) and an4[-1][0] == "Total" and len(an4) >= 15
                and all(sum(num(r[c]) for r in an4[:-1]) == num(an4[-1][c]) for c in range(1, 7)) and num(an4[-1][3]) == num(L4[4][4]) and num(an4[-1][6]) == num(L4[9][4]) and num(an4[-1][1]) == num(L4[0][4]), (dur4, an4[-1]))
         checar("Quadro 4: nota define dia exposto, janela e evento independente, e diz que os limiares da leitura são uma convenção; a interpretação aponta o que é extrapolação",
-               all(t in pg.inner_text("#x-sq-note").lower() for t in ("dia exposto", "janela", "evento independente", "convenção do painel")) and "interpretação" in pg.inner_text("#x-sq-interp").lower() and ("extrapolação" in pg.inner_text("#x-sq-interp").lower() or all(num(r[5]) >= 5 for r in (L4[4], L4[9]))), (pg.inner_text("#x-sq-note")[:400], pg.inner_text("#x-sq-interp")[:300]))
+               all(t in pg.inner_text("#x-sq-note").lower() for t in ("dia com exposição", "janela", "evento independente", "convenção do painel")) and "interpretação" in pg.inner_text("#x-sq-interp").lower() and ("extrapolação" in pg.inner_text("#x-sq-interp").lower() or all(num(r[5]) >= 5 for r in (L4[4], L4[9]))), (pg.inner_text("#x-sq-note")[:400], pg.inner_text("#x-sq-interp")[:300]))
         checar("Quadro 4: sem travessão nas notas e na interpretação", not re.search("[—–]", pg.inner_text("#x-sq-note") + pg.inner_text("#x-sq-interp") + pg.inner_text("#x-sq-note2")))
         if capturas: pg.screenshot(path=os.path.join(capturas, "app_02c_exposicao.png"), full_page=True)
         sel("x-exp", "haat"); xpronto(); xk_haat = xk()
@@ -334,6 +340,12 @@ try:
         checar("aba: recorte com poucos óbitos informa o limite sem pedir ao servidor", "modelo não estimado" in pg.inner_text("#x-note"))
         sel("x-local", "Todos os locais"); sel("x-faixa", "Todas as idades"); xpronto()
         checar("voltar ao recorte inicial na aba reproduz os quadros", xk() == xk_ini)
+        # 5c2. ficha da aba de exposição-resposta (item 10 da revisão)
+        fx_ = fch("x-sub")
+        ok_, det_ = ficha_ok(fx_, ["Dados", "População", "Recorte", "Causa do óbito", "Período do ajuste", "Exposição e defasagem", "Retiradas", "Modelo", "Origem das curvas", "Ressalvas"])
+        checar("aba Exposição-resposta: a ficha traz dados, população, recorte, causa, período do ajuste, exposição, defasagem, retiradas, modelo e ressalvas", ok_, (det_, list(fx_)))
+        checar("aba Exposição-resposta: a ficha descreve o Índice de Calor (IC), a defasagem de 0 a 10 dias e a família do modelo",
+               "Índice de Calor (IC)" in fx_.get("Exposição e defasagem", "") and "defasagem de 0 a 10 dias" in fx_.get("Exposição e defasagem", "") and re.search(r"família (binomial negativa|quase-Poisson)", fx_.get("Modelo", "")), fx_)
         # 5d. Figura 4: mapa de horas por dia x limiar (um modelo por célula, uma coluna por pedido)
         hm_cols = lambda: pg.evaluate("()=>[...document.querySelectorAll('#x-hm tr:first-child th')].slice(1).map(t=>t.innerText)")
         hm_pend = lambda: pg.evaluate("()=>[...document.querySelectorAll('#x-hm td:not(.rl)')].filter(t=>t.innerText==='…').length")
@@ -346,25 +358,25 @@ try:
         celulas = pg.evaluate("()=>[...document.querySelectorAll('#x-hm td:not(.rl)')].map(t=>({t:t.childNodes[0].textContent,title:t.title,bold:t.style.fontWeight,sub:(t.querySelector('.sub')||{}).innerText||null,outline:t.style.outline}))")
         rrs = [c for c in celulas if re.match(r"^\d,\d{2}$", c["t"])]
         checar("Figura 4: 104 células, a maioria estimada, o resto com traço", len(celulas) == 104 and len(rrs) > 60 and all(c["t"] in ("–",) or re.match(r"^\d,\d{2}$", c["t"]) for c in celulas), (len(celulas), len(rrs)))
-        checar("Figura 4: o texto da célula traz limiar, horas, RR com IC 95% e dias expostos", all(("Índice de calor ≥" in c["title"] and "IC 95%" in c["title"] and "dias expostos" in c["title"]) for c in rrs))
+        checar("Figura 4: o texto da célula traz limiar, horas, RR com IC 95% e dias com exposição", all(("IC ≥" in c["title"] and "IC 95%" in c["title"] and "dias com exposição" in c["title"]) for c in rrs))
         cel_ref = pg.evaluate("()=>document.querySelector('#x-hm tr:nth-child(5) td:nth-child(6)').childNodes[0].textContent")
-        m_ref = re.search(r"definição de dia de calor do protocolo \(pelo menos 4 h com índice de calor ≥ 36 °C\), RR = (\d,\d{2})", pg.inner_text("#x-hm-interp"))
-        checar("Figura 4: o RR da célula de referência do protocolo (36 °C, 4 h) bate com o da interpretação", m_ref and m_ref.group(1) == cel_ref, pg.inner_text("#x-hm-interp")[:300])
+        m_ref = re.search(r"Para o dia com ≥ 4 h de IC ≥ 36 °C \(combinação de referência do painel\), RR = (\d,\d{2})", pg.inner_text("#x-hm-interp"))
+        checar("Figura 4: o RR da célula de referência (36 °C, 4 h) bate com o da interpretação", m_ref and m_ref.group(1) == cel_ref, pg.inner_text("#x-hm-interp")[:300])
         # dias expostos e eventos independentes em cada célula; a célula (36 °C, 4 h) é a linha de 1 dia do Quadro 4 (outro caminho de cálculo, no servidor)
         subs = [c["sub"] for c in celulas]
-        checar("Figura 4: cada célula mostra os dias expostos (d) e os eventos independentes (ev.), no texto e na dica", all(s_ and re.match(r"^[\d.]+ d · [\d.]+ ev\.$", s_) for s_ in subs) and all(re.search(r"[\d.]+ dias expostos em [\d.]+ evento\(s\) independente\(s\)", c["title"]) for c in celulas), subs[:4])
+        checar("Figura 4: cada célula mostra os dias com exposição (d) e os eventos independentes (ev.), no texto e na dica", all(s_ and re.match(r"^[\d.]+ d · [\d.]+ ev\.$", s_) for s_ in subs) and all(re.search(r"[\d.]+ dias com exposição em [\d.]+ evento\(s\) independente\(s\)", c["title"]) for c in celulas), subs[:4])
         def _dev(c):
-            m_ = re.search(r"([\d.]+) dias expostos em ([\d.]+) evento", c["title"]); return int(m_.group(1).replace(".", "")), int(m_.group(2).replace(".", ""))
+            m_ = re.search(r"([\d.]+) dias com exposição em ([\d.]+) evento", c["title"]); return int(m_.group(1).replace(".", "")), int(m_.group(2).replace(".", ""))
         def _sub(c):
             m_ = re.match(r"^([\d.]+) d · ([\d.]+) ev\.$", c["sub"]); return int(m_.group(1).replace(".", "")), int(m_.group(2).replace(".", ""))
         checar("Figura 4: o texto da célula e a dica dizem o mesmo número de dias e de eventos, e os eventos nunca superam os dias", all(_sub(c) == _dev(c) and _dev(c)[1] <= _dev(c)[0] for c in celulas))
         L4_ref = L4[0]                                                                         # 4 h por dia ou mais, duração de 1 dia: dias expostos (col. 4) e eventos independentes (col. 5)
         d36, e36 = _dev(celulas[3 * 13 + 4])                                                   # linha H = 4 h (4ª linha), coluna K = 36 °C (5ª coluna)
-        checar("Figura 4: a célula (36 °C, 4 h) tem os mesmos dias expostos e eventos independentes da linha de 1 dia do Quadro 4", (d36, e36) == (num(L4_ref[4]), num(L4_ref[5])), ((d36, e36), L4_ref))
-        checar("Figura 4: nas células aninhadas, os dias expostos não crescem com as horas (cada coluna)", all(_dev(celulas[i * 13 + j])[0] >= _dev(celulas[(i + 1) * 13 + j])[0] for i in range(7) for j in range(13)))
-        checar("Figura 4: só a célula de referência do protocolo tem contorno; o máximo não é destacado", [i for i, c in enumerate(celulas) if "2px" in c["outline"]] == [3 * 13 + 4] and "O maior valor da tabela" not in pg.inner_text("#x-hm-interp") and "não indica o melhor limiar" in pg.inner_text("#x-hm-interp") and pg.eval_on_selector_all("#x-hm-interp b", "bs=>bs.length") == 1, pg.inner_text("#x-hm-interp")[:500])
+        checar("Figura 4: a célula (36 °C, 4 h) tem os mesmos dias com exposição e eventos independentes da linha de 1 dia do Quadro 4", (d36, e36) == (num(L4_ref[4]), num(L4_ref[5])), ((d36, e36), L4_ref))
+        checar("Figura 4: nas células aninhadas, os dias com exposição não crescem com as horas (cada coluna)", all(_dev(celulas[i * 13 + j])[0] >= _dev(celulas[(i + 1) * 13 + j])[0] for i in range(7) for j in range(13)))
+        checar("Figura 4: só a célula de referência tem contorno; o máximo não é destacado", [i for i, c in enumerate(celulas) if "2px" in c["outline"]] == [3 * 13 + 4] and "O maior valor da tabela" not in pg.inner_text("#x-hm-interp") and "não indica o melhor limiar" in pg.inner_text("#x-hm-interp") and pg.eval_on_selector_all("#x-hm-interp b", "bs=>bs.length") == 1, pg.inner_text("#x-hm-interp")[:500])
         pg.uncheck("#x-hm-n")
-        checar("Figura 4: desmarcar 'mostrar dias e eventos' tira a segunda linha das células e mantém a dica", pg.evaluate("()=>document.querySelectorAll('#x-hm td .sub').length")==0 and "dias expostos" in pg.evaluate("()=>document.querySelector('#x-hm tr:nth-child(5) td:nth-child(6)').title"))
+        checar("Figura 4: desmarcar 'mostrar dias e eventos' tira a segunda linha das células e mantém a dica", pg.evaluate("()=>document.querySelectorAll('#x-hm td .sub').length")==0 and "dias com exposição" in pg.evaluate("()=>document.querySelector('#x-hm tr:nth-child(5) td:nth-child(6)').title"))
         pg.check("#x-hm-n")
         checar("Figura 4: marcar de novo devolve as 104 linhas de dias e eventos", pg.evaluate("()=>document.querySelectorAll('#x-hm td .sub').length")==104)
         checar("Figura 4: a interpretação e a nota não usam travessão", "—" not in pg.inner_text("#x-hm-interp") + pg.inner_text("#x-hm-note") and "–" not in pg.inner_text("#x-hm-interp"))
@@ -399,7 +411,14 @@ try:
         caixas = pg.evaluate("()=>['x-chart','y-chart'].map(i=>{const r=document.getElementById(i).getBoundingClientRect();return [Math.round(r.left),Math.round(r.top),Math.round(r.width)]})")
         checar("comparação: as duas figuras ficam lado a lado, na mesma altura e com a mesma largura", caixas[0][1] == caixas[1][1] and caixas[0][0] < caixas[1][0] and abs(caixas[0][2] - caixas[1][2]) <= 2, caixas)
         t_comp = pg.inner_text("#x-comp-txt")
-        checar("comparação: o texto traz o RR acumulado dos dois locais e a ressalva sobre o teste", "COMPARAÇÃO ENTRE OS LOCAIS DO ÓBITO" in t_comp and "“Todos os locais”" in t_comp and "“Hospital”" in t_comp and "não substitui um teste" in t_comp and "não são independentes" in t_comp and not re.search("[—–]", t_comp), t_comp)
+        checar("comparação: o texto traz o RR acumulado dos dois locais e a ressalva sobre o teste", "COMPARAÇÃO ENTRE OS LOCAIS DO ÓBITO" in t_comp and "“Todos os locais”" in t_comp and "“Hospital”" in t_comp and "teste de interação" in t_comp and "não estabelecem, por si só" in t_comp and "não são independentes" in t_comp and "sobrepõ" not in t_comp and not re.search("[—–]", t_comp), t_comp)
+        # 5e2. ficha dos dois recortes e comparação entre grupos sem inferência pela sobreposição dos intervalos
+        fx_, fy_ = fch("x-sub"), fch("y-sub")
+        checar("comparação: cada recorte tem a sua ficha, com o local do óbito e a ressalva sobre a comparação entre grupos",
+               "local do óbito: todos os locais" in fx_.get("Recorte", "") and "local do óbito: hospital" in fy_.get("Recorte", "") and "teste de interação" in fx_.get("Comparação entre grupos", "") and "teste de interação" in fy_.get("Comparação entre grupos", ""), (fx_, fy_))
+        ct_ = pg.inner_text("#x-comp-txt")
+        checar("comparação: o texto traz a ressalva sobre o teste de interação, sem concluir pela sobreposição dos intervalos",
+               "teste de interação" in ct_ and "sobrepõ" not in ct_ and "sobrepo" not in ct_, ct_[:500])
         checar("comparação: a Figura 4 do segundo recorte começa a ser pedida", pg.evaluate("()=>document.getElementById('y-hm').innerHTML.length")>0 and len(pg.query_selector_all("#y-hm-card #y-hm-sig")) == 0 and len(pg.query_selector_all("#x-hm-sig")) == 1)
         if capturas: pg.screenshot(path=os.path.join(capturas, "app_02e_comparacao.png"), full_page=True)
         sel("x-causa", "externas"); xpronto()
@@ -540,6 +559,12 @@ try:
             checar("aba CID: recorte com menos de 300 óbitos informa o limite sem pedir ao servidor", "modelo não estimado" in pg.inner_text("#k-note"))
             sel("k-local", "Todos os locais"); sel("k-faixa", "Todas as idades")
             checar("aba CID: os filtros da aba não mudam os da Figura 1", pg.input_value("#s-causa") == "naturais" and pg.input_value("#x-causa") == "naturais")
+            # 5f2. ficha da aba de causas específicas (item 10 da revisão)
+            kpronto()
+            fk_ = fch("k-sub")
+            ok_, det_ = ficha_ok(fk_, ["Dados", "Recorte", "Período do ajuste", "Exposição e defasagem", "Nível de exposição", "Modelo", "Família de testes", "Ressalvas"])
+            checar("aba Causas específicas: a ficha traz dados, recorte, período do ajuste, nível de exposição, modelo por causa, famílias de testes e ressalvas", ok_, (det_, list(fk_)))
+            checar("aba Causas específicas: a ficha descreve o q de Benjamini e Hochberg por família e a quase-Poisson como alternativa", "Benjamini e Hochberg" in fk_.get("Família de testes", "") and "quase-Poisson" in fk_.get("Modelo", ""), fk_)
 
         # 5g. aba de diagnósticos e sensibilidades: diagnósticos do modelo principal (Quadro 1) e 12 análises que mudam uma escolha por vez (Quadro 2)
         dk = lambda: pg.eval_on_selector_all("#d-kpis .kpi", "els=>els.map(e=>e.innerText.replace(/\\n/g,' | '))")
@@ -561,10 +586,13 @@ try:
         dpronto()
         L = dlinhas()
         checar("aba Diagnósticos: Quadro 2 tem o ajuste principal e as 12 análises", len(L) == 13 and L[0].startswith("Ajuste principal"), len(L))
+        fd_ = fch("d-sub")
+        ok_, det_ = ficha_ok(fd_, ["Dados", "Recorte", "Período do ajuste", "Exposição e defasagem", "Retiradas", "Análises", "Ressalvas"])
+        checar("aba Diagnósticos: a ficha traz dados, recorte, período do ajuste, exposição, retiradas, análises e ressalvas", ok_, (det_, list(fd_)))
         for r in ("Dia da semana", "metade dos nós", "dobro dos nós", "Defasagem máxima de 7", "Defasagem máxima de 14", "retirado do ajuste", "sem termo próprio", "não cíclico", "óbitos diários de COVID-19",
                   "Meses de registro não consolidado mantidos", "Dias sem dado de clima contados como dias sem calor", "Especificação anterior do painel"):
             checar(f"aba Diagnósticos: linha '{r}'", any(r in t for t in L[1:]))
-        checar("aba Diagnósticos: cada linha traz RR e IC nos dois níveis, dias de calor, eventos e diagnóstico residual", all(len(re.findall(r"[0-9],[0-9]{2} \([0-9],[0-9]{2} a [0-9],[0-9]{2}\)", t)) == 2 and re.search(r"[0-9.]+ \([0-9.]+\)", t) for t in L), L[:2])
+        checar("aba Diagnósticos: cada linha traz RR e IC nos dois níveis, dias com ≥ 4 h de IC ≥ 36 °C, eventos e diagnóstico residual", all(len(re.findall(r"[0-9],[0-9]{2} \([0-9],[0-9]{2} a [0-9],[0-9]{2}\)", t)) == 2 and re.search(r"[0-9.]+ \([0-9.]+\)", t) for t in L), L[:2])
         checar("aba Diagnósticos: o COVID retirado do ajuste tem menos dias que o principal", int(L[[i for i, t in enumerate(L) if "retirado do ajuste" in t][0]].split("\t")[1].replace(".", "")) < int(L[0].split("\t")[1].replace(".", "")), L[0])
         checar("aba Diagnósticos: a interpretação do Quadro 2 compara valores estimados e não o IC", "RR acumulado das 12 análises" in pg.inner_text("#d-sinterp") and "não" in pg.inner_text("#d-sinterp"))
         checar("aba Diagnósticos: textos sem travessão", not re.search("[—–]", pg.inner_text("#d-interp") + pg.inner_text("#d-sinterp") + pg.inner_text("#d-snote") + pg.inner_text("#d-note")))
@@ -599,6 +627,67 @@ try:
         caminho = d.value.path(); txt = open(caminho, encoding="utf-8-sig").read()
         checar("o nome do CSV identifica a causa", "_naturais.csv" in d.value.suggested_filename, d.value.suggested_filename)
         checar("CSV baixa com cabeçalho e linhas", txt.count("\n") > 100, txt[:200])
+        lin_ = txt.split("\n"); com_ = [l for l in lin_ if l.startswith("# ")]; cab_ = [l for l in lin_ if not l.startswith("# ") and l.strip()][0]
+        checar("CSV semanal: as linhas iniciais com # trazem dados, período do ajuste, exposição, retiradas, modelo e ressalvas",
+               com_ and com_[0].startswith("# Dados:") and all(any(l.startswith("# " + r + ":") for l in com_) for r in ("População", "Recorte", "Período do ajuste", "Exposição e defasagem", "Retiradas", "Modelo", "Ressalvas", "Período exibido")), com_[:12])
+        checar("CSV semanal: cabeçalho com os nomes do vocabulário do painel",
+               cab_ == "semana_inicio;ano_epidemiologico;semana_epidemiologica;observado;esperado_sem_calor;faixa_inferior_95;faixa_superior_95;dias_com_ic_maximo_ge_36;dias_nc2_a_nc5_estimados_retrospectivamente;registro_sim", cab_)
+        checar("CSV semanal: sem travessão nas linhas de ficha", not re.search("[—–]", "\n".join(com_)))
+        sel("s-esc", "dia"); pronto()
+        with pg.expect_download(timeout=15000) as d2:
+            pg.click("#s-csv")
+        txt2 = open(d2.value.path(), encoding="utf-8-sig").read(); lin2 = txt2.split("\n"); cab2 = [l for l in lin2 if not l.startswith("# ") and l.strip()][0]
+        checar("CSV diário: ficha com a linha do dia com exposição em t a t−3 e cabeçalho do vocabulário",
+               any(l.startswith("# Dia com exposição em t a t−3:") for l in lin2) and cab2.startswith("dia;observado;esperado_sem_calor;faixa_inferior_95;faixa_superior_95;horas_ic_ge_36;dia_com_4h_ic_ge_36;dia_com_exposicao_t_a_t3;ic_maximo_c;ic_medio_c;temperatura_media_ar_c;nc_estimado_retrospectivamente"), (cab2, lin2[:12]))
+        sel("s-esc", "sem"); sel("s-ini", pg.eval_on_selector("#s-ini", "e=>e.options[0].value")); pronto()
+
+        # 6b. ficha do resultado e vocabulário do painel (item 10 da revisão)
+        sub_ = pg.inner_text("#sub")
+        checar("cabeçalho: estudo ecológico de série temporal com componente analítico, Índice de Calor (IC) por extenso e aviso de que não há alerta operacional",
+               "Estudo ecológico de série temporal" in sub_ and "componente analítico" in sub_ and "Índice de Calor (IC)" in sub_ and "não são alertas operacionais" in sub_, sub_)
+        F1 = fch("s-ficha")
+        ok_, det_ = ficha_ok(F1, ["Dados", "População", "Recorte", "Causa do óbito", "Período do ajuste", "Exposição e defasagem", "Retiradas", "Modelo", "Período exibido", "Semana de calor", "Ressalvas"])
+        checar("Figura 1: a ficha traz dados, população, recorte, causa, período do ajuste, exposição, defasagem, retiradas, modelo, período exibido, semana de calor e ressalvas", ok_, (det_, list(F1)))
+        checar("Figura 1: a ficha informa as datas de atualização do SIM e do clima e a data de geração dos dados", "SIM atualizado em" in F1.get("Dados", "") and "clima atualizado em" in F1.get("Dados", "") and "dados gerados em" in F1.get("Dados", ""), F1.get("Dados"))
+        checar("Figura 1: ficha com a família do modelo, a defasagem de 0 a 10 dias e a população analisada",
+               re.search(r"família (binomial negativa \(θ = [\d,]+\)|quase-Poisson \(dispersão φ = [\d,]+)", F1.get("Modelo", "")) and "defasagem de 0 a 10 dias" in F1.get("Exposição e defasagem", "") and "residentes" in F1.get("População", ""), F1)
+        checar("Figura 1: a ficha descreve as retiradas do ajuste principal (dias sem registro, meses não consolidados, dias sem clima)",
+               "retirados do ajuste: dias sem registro no SIM; meses de registro não consolidado; dias sem dado de clima" in F1.get("Retiradas", "") and "período da COVID-19 (com o termo s(COVID))" in F1.get("Retiradas", ""), F1.get("Retiradas"))
+        checar("Figura 1: sem comparação entre grupos quando o recorte é o geral", "Comparação entre grupos" not in F1, list(F1))
+        sel("s-local", "Hospital"); pronto(); F2 = fch("s-ficha")
+        checar("Figura 1: trocar o local do óbito muda o recorte e o período do ajuste da ficha e traz a ressalva sobre a comparação entre grupos",
+               "local do óbito: hospital" in F2.get("Recorte", "") and F2.get("Período do ajuste") != F1.get("Período do ajuste") and "teste de interação" in F2.get("Comparação entre grupos", "") and "não é a residência" in F2.get("Ressalvas", ""), (F1.get("Recorte"), F2))
+        sel("s-causa", "externas"); pronto(); F3 = fch("s-ficha")
+        checar("Figura 1: trocar a causa muda a ficha", "V01 a Y98" in F3.get("Causa do óbito", "") and F3.get("Período do ajuste") != F2.get("Período do ajuste"), F3.get("Causa do óbito"))
+        sel("s-causa", "naturais"); sel("s-local", "Todos os locais")
+        pg.check("#s-r-covid"); pronto(); F4 = fch("s-ficha")
+        checar("Figura 1: retirar a COVID-19 muda as retiradas e o período do ajuste da ficha", "período da COVID-19 (o modelo não tem o termo s(COVID))" in F4.get("Retiradas", "") and F4.get("Período do ajuste") != F1.get("Período do ajuste"), (F4.get("Retiradas"), F4.get("Período do ajuste"), F1.get("Período do ajuste")))
+        pg.uncheck("#s-r-covid"); pronto()
+        checar("Figura 1: voltar ao ajuste principal reproduz a ficha inicial", fch("s-ficha") == F1)
+        sel("s-ini", "2018"); pronto(); F5 = fch("s-ficha")
+        checar("Figura 1: o período exibido muda a ficha e o período do ajuste continua o da série completa", F5.get("Período exibido") != F1.get("Período exibido") and F5.get("Período do ajuste") == F1.get("Período do ajuste") and "altera só o que é mostrado" in F5.get("Período exibido", ""), (F5.get("Período exibido"), F5.get("Período do ajuste")))
+        sel("s-ini", pg.eval_on_selector("#s-ini", "e=>e.options[0].value")); pronto()
+        # textos prontos: cartões do RR do modelo, legenda dos níveis de calor
+        kt_ = pg.inner_text("#s-kpis")
+        checar("cartões: o RR do modelo traz a frase pronta (exposição mantida por 11 dias, comparada com ausência da exposição, período do ajuste)",
+               re.search(r"RR acumulado em 0 a 10 dias: exposição de [\d,]+ h diárias com IC ≥ 36 °C mantida por 11 dias, em comparação com ausência dessa exposição no mesmo intervalo\. Estimativa do modelo ajustado para o período \d\d/\d\d/\d{4} a \d\d/\d\d/\d{4}\.", kt_), kt_[:700])
+        checar("cartões: a razão observado/esperado é descritiva, separada do RR, e traz a sigla O/E", "Razão observado/esperado sem calor (O/E)" in kt_ and "Comparação descritiva" in kt_ and "descritivo, não é rr" in kt_.lower(), kt_[:900])
+        nt_ = nota()
+        checar("legenda dos níveis de calor: NC estimado retrospectivamente, sem previsão, pode diferir do COR, 'acima de' x '≥', Alerta Rio/INMET x REDMET e aviso de que não é alerta operacional",
+               all(c in nt_ for c in ["estimados retrospectivamente", "não incorpora previsão", "Centro de Operações e Resiliência do Rio (COR)", "“acima de”", "Alerta Rio, do INMET e da REDMET", "não são alertas operacionais", "Quadro 1"]), nt_[:900])
+        # vocabulário: nenhuma aba traz os termos antigos
+        PROIB = [r"[Íí]ndice de calor", r"\bNC\d", r"dias? expostos?", r"dias? de calor", r"observado ÷", r"risco diário", r"excesso de óbitos", r"faixa de confiança", r"nível de alerta", r"sensação térmica", r"painel em Python", r"ainda utilizam o modelo anterior", r"IC de 95%"]
+        def varrer(nome, texto):
+            achados = {q: re.findall(".{0,40}" + q + ".{0,40}", texto) for q in PROIB}
+            achados = {q: v[:3] for q, v in achados.items() if v}
+            checar(f"vocabulário: {nome} sem os termos antigos (índice de calor em minúsculas, NC sem espaço, dia exposto, dias de calor, ÷, risco diário, excesso de óbitos, faixa de confiança, nível de alerta, sensação térmica)", not achados, achados)
+        todos_ = lambda i: pg.evaluate("i=>{const s=document.getElementById(i).cloneNode(true);s.querySelectorAll('script,style').forEach(e=>e.remove());return s.textContent}", i)
+        txt_dash_ = " ".join(pg.inner_text(i) for i in ("#sub", "#s-ficha", "#s-note", "#s-per-nota", "#i-serie", "#s-kpis"))
+        checar("vocabulário: cabeçalho, ficha, notas, interpretação e cartões da Figura 1 sem travessão", not re.search("[—–]", txt_dash_), re.findall(".{0,30}[—–].{0,30}", txt_dash_)[:3])
+        varrer("Figura 1", todos_("tab-serie") + " " + pg.inner_text("#sub"))
+        varrer("aba Exposição-resposta", todos_("tab-exp"))
+        varrer("aba Causas específicas", todos_("tab-cid"))
+        varrer("aba Diagnósticos", todos_("tab-dia"))
 
         # 7. recorte com menos de 300 óbitos: mensagem, sem pedido ao servidor
         sel("s-local", "Ignorado"); sel("s-faixa", "30-39")
@@ -624,6 +713,12 @@ try:
         pg.wait_for_function("document.getElementById('tab-sobre').innerText.includes('todos os óbitos ocorridos no Rio, residentes ou não')", timeout=15000)
         sobre = pg.inner_text("#tab-sobre")
         checar("métodos mudam com a população", "residentes ou não" in sobre)
+        checar("métodos: estudo ecológico de série temporal com componente analítico, glossário de termos, correspondência com o protocolo municipal e ficha de cada resultado",
+               all(c in sobre for c in ["Estudo ecológico de série temporal", "componente analítico", "Termos usados no painel", "Correspondência com o protocolo municipal", "Ficha de cada resultado", "REDMET", "Quadro 1 da página 6", "Razão observado/esperado sem calor (O/E)", "NC estimado retrospectivamente"]), [c for c in ["Estudo ecológico de série temporal", "componente analítico", "Termos usados no painel", "Correspondência com o protocolo municipal", "Ficha de cada resultado", "REDMET", "Quadro 1 da página 6", "Razão observado/esperado sem calor (O/E)", "NC estimado retrospectivamente"] if c not in sobre])
+        checar("métodos: sem o texto desatualizado sobre as demais abas e sem travessão", "ainda utilizam o modelo anterior" not in sobre and "painel em Python" not in sobre and not re.search("[—–]", sobre), re.findall(".{0,30}[—–].{0,30}", sobre)[:3])
+        checar("métodos: limitações (agregado municipal, rede de estações, confundimento residual, natureza ecológica, janela de 0 a 10 dias como decisão de modelagem)",
+               all(c in sobre for c in ["exposição é uma série municipal agregada", "rede de estações", "confundimento residual", "ecológico", "decisão de modelagem"]), [c for c in ["exposição é uma série municipal agregada", "rede de estações", "confundimento residual", "ecológico", "decisão de modelagem"] if c not in sobre])
+        varrer("Métodos e fontes", todos_("tab-sobre"))
         checar("métodos explicam a causa do óbito e as retiradas do ajuste", "Causa do óbito" in sobre and "Retirar períodos do ajuste" in sobre and "Curvas de exposição-resposta e de defasagem" in sobre and "sem taxas por população" in sobre, sobre[:300])
         checar("métodos mostram a fonte e a data da extração dos dados", "Fonte e data da extração" in sobre and "UTC" in sobre, sobre[-400:])
         tab_rec = pg.evaluate("""()=>{const t=[...document.querySelectorAll('#tab-sobre table')].find(t=>t.innerText.includes('Total de óbitos elegíveis'));

@@ -1,5 +1,5 @@
 <header class="top"><div class="in"><h1>Mortalidade e calor no município do Rio de Janeiro</h1>
-<p id="sub">Óbitos por causas naturais (SIM/DATASUS): observados e esperados sem calor, por local do óbito, faixa etária e raça/cor. Estudo ecológico de séries temporais, descritivo e exploratório. O número esperado é estimado por um modelo ajustado a cada recorte: modelo aditivo generalizado (GAM) com defasagens distribuídas (DLNM), adaptado do modelo de referência de Morais et al. (ver Métodos e fontes).</p></div></header>
+<p id="sub">Óbitos ocorridos no município do Rio de Janeiro e exposição ao calor. Estudo ecológico de série temporal, com componente analítico. Os modelos estimam a associação entre o Índice de Calor (IC) e a contagem diária de óbitos, após ajuste para os fatores descritos em Métodos e fontes. Os resultados são retrospectivos e não são alertas operacionais.</p></div></header>
 <div class="wrap">
 <nav role="tablist">
   <button role="tab" aria-selected="true" data-tab="serie">Série de óbitos</button>
@@ -15,27 +15,28 @@
     <label>Escala<select id="s-esc"><option value="sem">Semanal</option><option value="dia">Diária (um ponto por dia)</option></select></label>
     <label>Medida de calor do modelo<select id="s-exp"></select></label>
     <label id="s-critw">Sombrear semanas com<select id="s-crit">
-      <option value="ic">Calor intenso: ≥ 3 dias com índice de calor máximo ≥ 36 °C</option>
-      <option value="nc">Protocolo: ≥ 1 dia em NC2 a NC5 (≥ 4 h com índice de calor ≥ 36 °C)</option>
+      <option value="ic">≥ 3 dias com IC máximo ≥ 36 °C</option>
+      <option value="nc">≥ 1 dia em NC 2 a NC 5 (NC estimado retrospectivamente)</option>
       <option value="no">Sem sombreamento</option></select></label>
     <label title="A seleção de anos altera só o que é mostrado. O modelo é ajustado com a série completa.">Período exibido: ano inicial<select id="s-ini"></select></label>
     <label title="A seleção de anos altera só o que é mostrado. O modelo é ajustado com a série completa.">Período exibido: ano final<select id="s-fim"></select></label>
     <label>Clima no gráfico (valores diários)<select id="s-bar">
-      <option value="hi_med">Índice de calor médio do dia</option>
-      <option value="hi_max">Índice de calor máximo do dia</option>
-      <option value="t_med">Temperatura média do dia</option>
+      <option value="hi_med">IC médio do dia</option>
+      <option value="hi_max">IC máximo do dia</option>
+      <option value="t_med">Temperatura média do ar do dia</option>
       <option value="no">Sem colunas</option></select></label>
     <label title="Alinhados: o gráfico de óbitos fica sozinho e o clima vai para um painel logo abaixo, com o mesmo eixo de tempo. Sobrepostos: as colunas de clima ficam ao fundo do gráfico de óbitos, em um segundo eixo.">Disposição<select id="s-disp">
       <option value="alinhado">Gráficos alinhados (óbitos e clima)</option>
       <option value="sobreposto">Sobrepostos (clima ao fundo)</option></select></label>
     <label>Cor das colunas<select id="s-cor">
-      <option value="nc">Nível de calor do protocolo (NC1 a NC5)</option>
+      <option value="nc">NC 1 a NC 5 estimados retrospectivamente</option>
       <option value="lim">Laranja acima de um limiar (°C)</option></select></label>
     <label id="s-limw" class="hide">Limiar (°C)<input id="s-lim" type="number" value="32" step="0.5" min="10" max="55" style="width:84px"></label>
     <button class="btn" id="s-csv">Baixar CSV da série</button>
   </div>
   <p class="note" id="s-raca-nota" style="margin:12px 2px 6px"></p>
-  <p class="note" id="s-per-nota" style="margin:0 2px 14px"></p>
+  <p class="note" id="s-per-nota" style="margin:0 2px 10px"></p>
+  <div class="ficha hide" id="s-ficha"></div>
   <div class="kpis" id="s-kpis"></div>
   <div class="card sens hide" id="s-sensw">
     <h3 id="s-sens-t">Ajuste principal e sensibilidade da amostra</h3>

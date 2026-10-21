@@ -78,8 +78,10 @@ montar_figura1 <- function(cx, Y, ajustes, k_time, versao = "1.0") {
   }
   So <- lapply(chaves, function(k) as.integer(tapply(Y[[k]], factor(as.character(sem$ini), levels = as.character(sem$ini_ok)), sum)))
   names(So) <- chaves
+  # Período e amostra do ajuste principal de cada recorte (dias e óbitos dentro e fora do ajuste), para a ficha que acompanha cada resultado
+  aj <- setNames(lapply(chaves, function(k) resumo_ajuste(cx, Y[[k]], opc_de_codigo(COD_PADRAO))), chaves)
   c(base_figura1(cx, k_time, versao),
-    list(k = I(chaves), o = lapply(chaves, function(k) as.integer(Y[[k]])), m = m, So = So, S = S))
+    list(k = I(chaves), o = lapply(chaves, function(k) as.integer(Y[[k]])), m = m, So = So, S = S, aj = aj))
 }
 
 json_utf8 <- function(x) {

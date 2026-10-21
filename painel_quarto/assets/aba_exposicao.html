@@ -9,7 +9,7 @@
   </div>
   <!-- Os elementos com a classe "x" são copiados pelo aba_exposicao.js para o segundo recorte (classe "y", ids com prefixo y-). -->
   <div class="cmp" id="x-cmp">
-    <p class="note sub full x" data-sec="sub" id="x-sub"></p>
+    <div class="ficha hide full x" data-sec="sub" id="x-sub"></div>
     <div class="kpis full x" data-sec="k" id="x-kpis"></div>
     <div class="card x" data-sec="f2">
       <div class="fn">Figura 2</div><h2 id="x-h2">Resposta à exposição ao calor</h2>
@@ -47,9 +47,9 @@
     <div class="interp full x" data-sec="i" id="x-interp"></div>
     <div class="interp full cmpb" id="x-comp-txt"></div>
     <div class="card full x" data-sec="hm" id="x-hm-card">
-      <div class="fn">Figura 4</div><h2 id="x-hm-h2">RR de óbito segundo as horas do dia com índice de calor ≥ K °C</h2>
+      <div class="fn">Figura 4</div><h2 id="x-hm-h2">RR da contagem diária de óbitos segundo as horas do dia com IC ≥ K °C</h2>
       <label class="chk" data-nao-clonar style="display:flex;align-items:center;gap:6px;font-size:13px;margin:8px 0 6px"><input type="checkbox" id="x-hm-sig"> Destacar só RR com IC 95% que não inclui 1</label>
-      <label class="chk" data-nao-clonar style="display:flex;align-items:center;gap:6px;font-size:13px;margin:0 0 6px"><input type="checkbox" id="x-hm-n" checked> Mostrar, em cada célula, os dias expostos (d) e os eventos independentes (ev.)</label>
+      <label class="chk" data-nao-clonar style="display:flex;align-items:center;gap:6px;font-size:13px;margin:0 0 6px"><input type="checkbox" id="x-hm-n" checked> Mostrar, em cada célula, os dias com exposição (d) e os eventos independentes (ev.)</label>
       <p class="note" id="x-hm-prog" style="margin:0 0 8px"></p>
       <div style="overflow-x:auto"><table class="hm" id="x-hm"></table></div>
       <p class="note" id="x-hm-note"></p>

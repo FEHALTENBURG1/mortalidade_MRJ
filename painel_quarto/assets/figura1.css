@@ -109,3 +109,10 @@ table.tb.w{min-width:900px}table.tb.w th.n{white-space:normal}table.tb.w th,tabl
 
 details.det{margin-top:14px}details.det>summary{cursor:pointer;font-weight:600;font-size:13px;margin-bottom:8px}table.tb tr.ext td{font-weight:600}table.tb td.gr2,table.tb th.gr2{border-left:2px solid var(--line)}
 details.det .tabw{margin-bottom:14px}#x-sq td:last-child,#y-sq td:last-child{white-space:nowrap}
+/* ficha do resultado: dados, recorte, ajuste, exposição, retiradas, modelo e ressalvas junto de cada resultado */
+.ficha{font-size:12px;line-height:1.45;color:var(--mut);background:var(--card);border:1px solid var(--line);border-left:3px solid var(--azul);border-radius:4px;padding:8px 14px 9px;margin:0 0 14px}
+.ficha .ficha-t{font-size:10.5px;text-transform:uppercase;letter-spacing:.5px;font-weight:700;color:var(--azul);margin-bottom:3px}
+.ficha dl{display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:3px 22px;margin:0}
+.ficha dl>div{margin:0}.ficha dl>div.larga{grid-column:1/-1}
+.ficha dt{display:inline;font-weight:700;color:var(--ink)}.ficha dt::after{content:": "}.ficha dd{display:inline;margin:0}
+.cmp .ficha{margin:0}.cmp.dois .ficha dl{grid-template-columns:1fr}

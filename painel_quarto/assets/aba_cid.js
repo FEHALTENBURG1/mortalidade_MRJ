@@ -1,4 +1,4 @@
-/* Aba "Causas específicas (CID-10)" (app Shiny): RR em dias de calor para cada causa básica de 3 caracteres do recorte, com correção de Benjamini e Hochberg
+/* Aba "Causas específicas (CID-10)" (app Shiny): RR da contagem diária de óbitos com exposição ao calor para cada causa básica de 3 caracteres do recorte, com correção de Benjamini e Hochberg
    dentro de duas famílias fixas (principal: grupos do referencial; exploratória: demais causas). Todas as estimativas ficam visíveis por padrão; os filtros de
    capítulo e de significância só escolhem as linhas mostradas e não mudam o q.
    Cada causa é um modelo próprio (o modelo de referência, R/servico.R: ajustar_pedido_cid). O navegador pede primeiro a lista de causas do recorte ("cidlista")
@@ -37,7 +37,7 @@ const grupoRef = c => { const n = +c.slice(1,3); const g = GRUPOS_REF.find(([,fx
 const aPriori = c => grupoRef(c) !== null;
 // Famílias de testes do valor q. A principal é fixa: as causas avaliadas que pertencem aos grupos acima. A exploratória reúne as demais causas avaliadas.
 const FAMILIAS = [{id:"p", rot:"Família principal", sub:"grupos do referencial (Morais et al.)", f:aPriori}, {id:"e", rot:"Família exploratória", sub:"demais causas avaliadas", f:c=>!aPriori(c)}];
-const minus1 = t => t[0].toLowerCase()+t.slice(1);                // só a primeira letra: o °C da unidade não pode virar °c
+const minus1 = t => /^[A-ZÁÉÍÓÚÂÊÔÃÕÇ][a-záéíóúâêôãõç]/.test(t) ? t[0].toLowerCase()+t.slice(1) : t;                // só a primeira letra, e não nas siglas (HAAT, UPA): o °C da unidade não pode virar °c
 const NOME = c => ((M.cid_nomes||{})[c]) || "";
 const MAX_VOO = 2, ESPERA_MAX = 240000;
 
@@ -76,7 +76,7 @@ function bombear(e, exs){
 }
 
 function limpar(){
-  ["k-fig","k-interp","k-sub","k-interp2","k-leg"].forEach(i=>$(i).innerHTML="");
+  ["k-fig","k-interp","k-interp2","k-leg"].forEach(i=>$(i).innerHTML=""); P.texto.ficha("k-sub", null);
   $("k-prog").textContent = ""; $("k-note").textContent = ""; $("k-note2").textContent = "";
   if(grafico){ grafico.destroy(); grafico = null }
 }
@@ -86,12 +86,14 @@ function desenhar(){
   const r = $("k-raca").value !== "Todas"; if(r) $("k-faixa").value = "Todas as idades"; $("k-faixa").disabled = r;
   $("k-faixa").title = r ? "As séries por raça/cor são calculadas para todas as idades; volte a Todas em raça/cor para escolher uma faixa etária." : "";
   const e = estado(), E = EXP[e.medida], got = P.cid(e.kd);
-  const rotulo = `local do óbito: ${nm($("k-local").value).toLowerCase()}; faixa etária: ${$("k-faixa").value==="Todas as idades"?"todas as idades":$("k-faixa").value+" anos"}${r?"; raça/cor: "+(({PPI:"pretos, pardos e indígenas"})[$("k-raca").value]||$("k-raca").value.toLowerCase()):""}`;
   if(!P.eleg(e.causa,e.cod).has(e.k)){
     limpar(); $("k-note").textContent = `Menos de ${M.min_obitos} óbitos ${e.cod!=="000"?"no ajuste ":""}nesta combinação de filtros: modelo não estimado.`;
     return;
   }
-  $("k-sub").textContent = `Óbitos ${P.texto.causaPor(e.causa)}; ${rotulo}. Cada causa básica com pelo menos ${fn(M.cid_min)} óbitos nos dias do ajuste é avaliada em um modelo próprio.`;
+  P.texto.ficha("k-sub", {recorte:P.texto.recorte($("k-local").value,$("k-faixa").value,$("k-raca").value), kd:e.kd, ex:e.medida, m:e.m, filtrado:P.texto.filtrado($("k-local").value,$("k-faixa").value,$("k-raca").value),
+    modelo:`GAM com defasagens distribuídas (DLNM), ajustado por REML a cada causa básica de 3 caracteres com pelo menos ${fn(M.cid_min)} óbitos nos dias do ajuste; família binomial negativa, com quase-Poisson quando a binomial negativa não converge`,
+    linhas:[["Nível de exposição",`${fn(E.ref[e.nivel])} ${E.unidade} por dia, mantido em todos os ${M.lag+1} dias (RR acumulado em 0 a ${M.lag} dias)`],
+            ["Família de testes",`valor q de Benjamini e Hochberg dentro de duas famílias fixas, a principal (causas avaliadas dos ${GRUPOS_REF.length} grupos do referencial) e a exploratória (demais causas), sem correção conjunta entre elas; os filtros de exibição não alteram o q`]]});
   const lista = got.cidlista;
   if(!lista){
     const f = falhou.get(idK(e.kd,"cidlista"));
@@ -130,7 +132,7 @@ function desenhar(){
   $("k-prog").textContent = completo
     ? (erros.length ? `${erros.length} causa(s) sem estimativa por erro do servidor: ${erros.join(", ")}.` : "")
     : `Avaliando as causas: ${feitas} de ${pedir.length}. Na primeira vez cada causa leva de 3 a 10 segundos; depois o resultado fica guardado no servidor. O valor q de cada família aparece quando todas as causas dela estiverem calculadas.`;
-  $("k-h2").textContent = `Causas básicas (CID-10, 3 caracteres): RR com ${nivelTxt}`;
+  $("k-h2").textContent = `Causas básicas (CID-10, 3 caracteres): RR da contagem diária de óbitos com ${nivelTxt}`;
   const mostradas = fams.reduce((a,F)=>a+F.vis.length,0);
   const filtros = [cap!=="all" ? "capítulo "+(CAPS.find(([v])=>v===cap)||["",cap])[1] : null, soSig ? "só q < 0,05" : null].filter(Boolean);
   $("k-filtro").textContent = `Mostrando ${fn(mostradas)} de ${fn(pedir.length)} causas avaliadas${filtros.length ? " (filtros de exibição: "+filtros.join("; ")+")" : ", sem filtro de exibição"}${completo ? "" : " (as causas ainda em cálculo entram quando chegam)"}. `+
@@ -251,15 +253,15 @@ function serie(e, padrao){
             y:{beginAtZero:true,grid:{color:gridc},ticks:{color:tickc},title:{display:true,text:"Óbitos por semana",color:tickc}}},
     plugins:{legend:{display:false},covcid:{cov:sm.cov,inc:sm.inc},tooltip:{filter:i=>["Observado","Esperado sem calor",FAIXA].includes(i.dataset.label),
       callbacks:{label:q=>q.dataset.label===FAIXA ? `${FAIXA}: ${lo[q.dataIndex]==null?"–":fn(lo[q.dataIndex])+" a "+fn(up[q.dataIndex])}` : `${q.dataset.label}: ${q.parsed.y==null?"–":fn(q.parsed.y,q.dataset.label==="Observado"?0:1)}`,
-        afterBody:it=>{ const i=it[0].dataIndex, L=[`Início da semana: ${dBR(sm.ini[i])}`]; if(ob[i]!=null && es[i]!=null) L.push(`Observado ÷ esperado sem calor: ${fr(ob[i]/es[i])}`); if(sm.cov[i]) L.push("Semana do período COVID-19"); return L }}}}},
+        afterBody:it=>{ const i=it[0].dataIndex, L=[`Início da semana: ${dBR(sm.ini[i])}`]; if(ob[i]!=null && es[i]!=null) L.push(`Razão observado/esperado sem calor (O/E): ${fr(ob[i]/es[i])}`); if(sm.cov[i]) L.push("Semana do período COVID-19"); return L }}}}},
     plugins:[planoCov]});
   $("k-leg").innerHTML = `<span><i class="ln" style="background:${cz}"></i>Observado</span><span><i class="ln" style="background:${az};height:3px"></i>Esperado sem calor</span><span><i style="background:${mkCor(az,.17)}"></i>${FAIXA}</span><span><i class="dt" style="background:${ink}"></i>Acima da faixa</span>`;
   $("k-note2").textContent = `Mesmo modelo da Figura 1, ajustado a esta causa (${minus1(EXP[e.medida].nome)}). O esperado semanal é a soma dos esperados diários sem calor, e a faixa aproximada de variação de 95% usa a variância do modelo corrigida pela dispersão semanal (φ = ${fr(p.S.phi)}) e deixa de fora a incerteza dos coeficientes. `+
     `Sombreado cinza: semanas com dias sem registro no SIM. Barra cinza na base: semanas do período COVID-19.`+P.texto.notaClima(e.m)+P.texto.notaCausa(e.m);
-  // razão observado/esperado sem calor (O/E), descritiva: semanas de calor (pelo menos 3 dias com índice de calor máximo ≥ 36 °C, como na Figura 1) e demais semanas
+  // razão observado/esperado sem calor (O/E), descritiva: semanas de calor (pelo menos 3 dias com IC máximo ≥ 36 °C, como na Figura 1) e demais semanas
   const g = f => { let O = 0, Ee = 0, n = 0, ac = 0; idx.forEach(i=>{ if(ob[i]!=null && es[i]!=null && !sm.cov[i] && sm.cl[i] && f(i)){ O += ob[i]; Ee += es[i]; n++; if(acima[i]!=null) ac++ } }); return {O, E:Ee, n, ac, raz:Ee ? O/Ee : NaN} };
   const H = g(i=>sm.nb[i]>=3), Nn = g(i=>sm.nb[i]<3), T = g(()=>true);
-  $("k-interp2").innerHTML = T.n ? `<span class="t">Interpretação</span>Medida descritiva, que não é o RR do modelo: nas ${fn(H.n)} semanas de calor (pelo menos 3 dias com índice de calor máximo ≥ 36 °C), foram observados ${fn(H.O)} óbitos contra ${fn(H.E,0)} esperados sem calor pelo modelo, razão observado/esperado sem calor (O/E) = <b>${isFinite(H.raz)?fr(H.raz):"–"}</b>; `+
+  $("k-interp2").innerHTML = T.n ? `<span class="t">Interpretação</span>Medida descritiva, que não é o RR do modelo: nas ${fn(H.n)} semanas de calor (pelo menos 3 dias com IC máximo ≥ 36 °C), foram observados ${fn(H.O)} óbitos contra ${fn(H.E,0)} esperados sem calor pelo modelo, razão observado/esperado sem calor (O/E) = <b>${isFinite(H.raz)?fr(H.raz):"–"}</b>; `+
     `nas demais ${fn(Nn.n)} semanas, ${fn(Nn.O)} contra ${fn(Nn.E,0)}, O/E = <b>${isFinite(Nn.raz)?fr(Nn.raz):"–"}</b>. Em ${fn(T.ac)} das ${fn(T.n)} semanas (${fn(100*T.ac/T.n,1)}%), o observado ficou acima do limite superior da faixa aproximada de variação de 95% em torno do esperado sem calor. `+
     `A O/E compara somas de óbitos e não tem intervalo de confiança; semanas acima da faixa têm explicações possíveis além do calor (epidemias, mudanças de registro), e a figura mostra a coincidência com o calor apenas por associação.` : "";
 }

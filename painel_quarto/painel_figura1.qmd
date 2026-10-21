@@ -23,7 +23,7 @@ execute:
 # Em sessões com locale "C" (containers, CI) o texto com acento sairia como <U+00E7>: troca para UTF-8 antes de avaliar o resto.
 if (!l10n_info()[["UTF-8"]]) suppressWarnings(try(Sys.setlocale("LC_ALL", "C.UTF-8"), silent = TRUE))
 library(jsonlite)
-source("R/utf8.R"); for (f in c("R/exportar.R", "R/metodos.R")) fonte_utf8(f)
+source("R/utf8.R"); for (f in c("R/funcoes.R", "R/exportar.R", "R/metodos.R")) fonte_utf8(f)   # funcoes.R traz as constantes que o texto de Métodos cita (grupos de causa, locais, faixas)
 pop <- Sys.getenv("PAINEL_POP", "res")
 resumo <- fromJSON(file.path("saida", sprintf("resumo_%s.json", pop)), simplifyVector = TRUE)
 M <- resumo$meta

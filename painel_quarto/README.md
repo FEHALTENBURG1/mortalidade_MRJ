@@ -1,15 +1,27 @@
 # Painel de mortalidade e calor em R e Quarto: Figura 1
 
-Versão em R e Quarto da Figura 1 do painel (óbitos por causas naturais contra o número esperado sem calor, Rio de Janeiro). O painel em Python permanece inalterado; esta pasta cobre apenas a Figura 1, e as demais abas serão migradas gradualmente.
+Painel de mortalidade e calor no município do Rio de Janeiro, em R (Quarto e Shiny). É um estudo ecológico de série temporal, com componente analítico: os modelos estimam a associação entre o Índice de Calor (IC) e a contagem diária de óbitos no município, e o painel não emite alertas operacionais. A página estática cobre a Figura 1 (óbitos observados contra o número esperado sem calor); o app Shiny traz também as abas de exposição-resposta, causas específicas e diagnósticos. A pasta `painel/` (versão em Python) não foi alterada.
 
 O resultado é um arquivo HTML único (`painel_figura1.html`), sem servidor: o R ajusta os modelos, grava os resultados em JSON e o Quarto embute tudo na página. Os filtros (local do óbito, faixa etária, raça/cor, escala semanal ou diária, medida de calor, período) só escolhem entre modelos já calculados.
 
 ## O que mudou
 
-- Modelo. Cada recorte tem um modelo adaptado do modelo de Morais et al. (GAM com `mgcv` e cross-basis do `dlnm`, defasagem de 0 a 10 dias, binomial negativa), ajustado apenas aos óbitos daquele recorte. O esperado é o contrafactual sem calor desse modelo. No painel anterior a linha esperada da figura semanal vinha de um modelo só de tendência e sazonalidade, o que deixava a razão observado ÷ esperado perto de 1,00 em qualquer recorte.
+- Modelo. Cada recorte tem um modelo adaptado do modelo de Morais et al. (GAM com `mgcv` e cross-basis do `dlnm`, defasagem de 0 a 10 dias, binomial negativa), ajustado apenas aos óbitos daquele recorte. O esperado é o contrafactual sem calor desse modelo. A razão observado/esperado sem calor (O/E) é uma medida descritiva, separada do RR do modelo.
 - Faixas etárias, definidas para este estudo: 0-4, 5-9, 10-19, 20-29, 30-39, 40-49, 50-59, 60-69, 70-79 e 80+.
-- Registro não consolidado. Mesma regra do painel em Python: meses abaixo de 80% da mediana de referência ficam no ajuste e aparecem hachurados; dias sem nenhum óbito no SIM saem do ajuste.
-- Duas medidas de calor. Horas por dia com índice de calor ≥ 36 °C (spline natural, 1 grau de liberdade) e HAAT, os graus-hora acima de 36 °C (spline penalizado, 15 graus de liberdade).
+- Amostra do ajuste principal. Os dias sem nenhum óbito no SIM, os meses de registro não consolidado (abaixo de 80% da mediana de referência, hachurados nas figuras) e os dias sem dado de clima, com os 10 dias seguintes, saem do ajuste. O período da COVID-19 fica no ajuste, com um termo próprio. No app, as caixas de retirada permitem mudar essas escolhas como análise de sensibilidade.
+- Duas medidas de calor. Horas por dia com IC ≥ 36 °C (spline natural, 1 grau de liberdade) e HAAT, os graus-hora de IC acima de 36 °C no dia (spline penalizado, 15 graus de liberdade).
+
+## Vocabulário, ficha e textos do painel
+
+Os textos da Figura 1, das abas, dos cartões, das legendas e do CSV usam o mesmo vocabulário (tabela "Termos usados no painel" em `R/metodos.R`):
+
+- Índice de Calor (IC) na primeira menção, depois IC. Nível de Calor 1 a 5 (NC 1 a NC 5, com espaço), sempre "estimado retrospectivamente pelo painel": é uma reconstrução a partir das horas observadas de IC, sem previsão, que pode diferir do NC divulgado pelo Centro de Operações e Resiliência do Rio (COR).
+- "Dia com IC máximo ≥ 36 °C", "dia com ≥ 4 h de IC ≥ 36 °C" e "dia com exposição em t a t−3" no lugar de "dia de calor" e "dia exposto".
+- RR da contagem diária de óbitos, com IC 95% (só para o RR). A faixa do esperado semanal é a "faixa aproximada de variação de 95%". A razão observado/esperado sem calor (O/E) é descritiva e não é um RR.
+- O local do óbito não é a residência. Diferenças entre grupos pedem um teste de interação, e os RR apresentados separadamente não estabelecem que um grupo tenha associação maior.
+- Correspondência com o protocolo municipal: o Quadro 1 (página 6) usa "acima de" 36, 40 e 44 °C e o painel usa "≥"; o protocolo usa o Alerta Rio, o INMET e a REDMET e o painel usa o Alerta Rio e o INMET; a janela de 0 a 10 dias do modelo é uma decisão de modelagem, e o protocolo trabalha com 3 dias.
+
+Junto de cada resultado (Figura 1, abas do app e CSV) há uma ficha com a versão dos dados, a população, o recorte, a causa do óbito, o período do ajuste, a exposição e a defasagem, as retiradas, a família do modelo e as ressalvas. O texto da ficha vem de uma só função (`fichaLinhas()` em `assets/figura1.js`), então a página estática, o app e o CSV não divergem. O período exibido (seleção de anos) altera só o que é mostrado; o modelo é sempre ajustado com a série completa do recorte.
 
 ## Estrutura
 
@@ -75,10 +87,10 @@ O app tem uma aba por assunto, todas ajustadas pelo mesmo modelo (GAM com DLNM) 
 | Aba | Conteúdo |
 |:--|:--|
 | Série de óbitos | Figura 1: observados e esperados sem calor, semanal e diária |
-| Exposição-resposta e defasagem | Figura 2: RR acumulado em 0 a 10 dias pela exposição; Figura 3: gráfico de floresta com o RR de cada defasagem (lag 0 a 10) e o RR acumulado (0 a 1, 0 a 3, 0 a 7 e 0 a 10), nos dois níveis de referência; Figura 4: mapa de RR por horas no dia (H) e limiar do índice de calor (K), um modelo por célula. O seletor Comparar com (local do óbito) põe dois locais lado a lado, com a mesma escala nas Figuras 2 e 3 |
+| Exposição-resposta e defasagem | Figura 2: RR acumulado em 0 a 10 dias pela exposição; Figura 3: gráfico de floresta com o RR de cada defasagem (lag 0 a 10) e o RR acumulado (0 a 1, 0 a 3, 0 a 7 e 0 a 10), nos dois níveis de referência; Figura 4: mapa de RR por horas no dia (H) e limiar de IC (K), um modelo por célula. O seletor Comparar com (local do óbito) põe dois locais lado a lado, com a mesma escala nas Figuras 2 e 3 |
 | Causas específicas (CID-10) | Figura 5: gráfico de floresta com o RR de cada causa básica de 3 caracteres (pelo menos 1.500 óbitos nos dias do ajuste), com valor q de Benjamini e Hochberg dentro do conjunto e do capítulo escolhidos; Figura 5b: série semanal da causa escolhida. A medida de calor e o nível de exposição são escolhidos na aba |
 
-O mapa da Figura 4 tem 104 células (13 limiares, de 32 a 44 °C, e 8 níveis de horas). Cada célula é um GAM com DLNM próprio, com a exposição binária "pelo menos H horas com índice de calor ≥ K" (`ajustar_mapa_limiar()` em `R/modelo_joao.R`). O app pede uma coluna por limiar (medida `mapa32` a `mapa44`), no máximo duas ao mesmo tempo, e cada coluna leva cerca de 15 segundos na primeira vez; depois fica no cache em disco como qualquer outro ajuste. `Rscript shiny/atualizar_cache.R --aquecer` calcula de antemão as colunas do recorte inicial.
+O mapa da Figura 4 tem 104 células (13 limiares, de 32 a 44 °C, e 8 níveis de horas). Cada célula é um GAM com DLNM próprio, com a exposição binária "pelo menos H horas com IC ≥ K" (`ajustar_mapa_limiar()` em `R/modelo_joao.R`). O app pede uma coluna por limiar (medida `mapa32` a `mapa44`), no máximo duas ao mesmo tempo, e cada coluna leva cerca de 15 segundos na primeira vez; depois fica no cache em disco como qualquer outro ajuste. `Rscript shiny/atualizar_cache.R --aquecer` calcula de antemão as colunas do recorte inicial.
 
 Na aba de causas, cada causa é um modelo próprio, ajustado à série diária dela (`ajustar_pedido_cid()` em `R/servico.R`). O app pede primeiro a lista de causas do recorte (pedido `cidlista`), depois uma causa por vez (`cid_<CID>_<horas|haat>`, no máximo duas ao mesmo tempo) e, só quando o usuário clica em uma causa, a série semanal dela (`cidsem_<CID>_<horas|haat>`). Cada resposta de causa traz só o RR, o IC 95%, o valor de p e a contagem de óbitos; o valor q é calculado no navegador quando todas as causas da família estão prontas. Os nomes das causas ficam em `dados_auxiliares/cid_nomes.json`. Como a aba precisa da causa básica de cada óbito, `enxugar_contexto()` em `R/funcoes.R` passou a guardar a coluna `cid` no cache de dados, e por isso o cache inteiro precisa ser refeito uma vez (`atualizar_cache.R --forcar`). Para deixar a aba pré-calculada no recorte inicial, `atualizar_cache.R --aquecer-cid` ajusta cada causa para as duas medidas (de 15 a 30 minutos por população na primeira vez; pode rodar com `nohup` em segundo plano).
 
@@ -111,17 +123,23 @@ python3 testes/teste_pagina.py painel_figura1.html capturas/
 PAINEL_TESTE_TAR=silver_sim_mrj.tar.gz PAINEL_TESTE_HAAT=haat_diario_municipal.csv Rscript testes/teste_fontes.R
 PAINEL_CACHE=pasta_do_cache PAINEL_TESTE_BASE=saida/figura1_res.json Rscript testes/teste_servico.R
 PAINEL_CACHE=pasta_do_cache python3 testes/teste_app.py
+python3 testes/conferir_independente.py --silver pasta/silver --haat haat_diario_municipal.csv --json saida/figura1_res.json
+PAINEL_CACHE=pasta_do_cache Rscript testes/registrar_resultados.R
 ```
+
+`conferir_independente.py` recalcula em Python, direto do Parquet do SIM e do CSV do clima, os denominadores, a classificação das causas, as séries diárias e semanais de todos os recortes, os dias sem registro, os meses não consolidados, os dias sem clima e o Nível de Calor estimado, e compara com o JSON do R. `registrar_resultados.R` reajusta o recorte geral (residentes e todos, causas naturais e externas, as duas medidas de calor, cinco combinações de retiradas) e grava `docs/revisao_resultados.md` com a versão dos dados. O estado da revisão metodológica está em `docs/revisao_metodologica_status.md`.
 
 O teste do download e do cache sobe um servidor local que imita a API e os arquivos das Releases e confere: primeira carga, versão igual (não baixa de novo), versão nova (troca e apaga a antiga), tamanho errado, GitHub fora do ar e bloqueio de atualização simultânea. Sem as variáveis de ambiente roda só os testes que não precisam de dados.
 
 O teste do serviço compara o resultado de cada recorte ajustado sob demanda com o do `calcular_figura1.R` (referência gerada com os mesmos dados), confere o cache em disco, os códigos de erro e os pedidos assíncronos. O teste do app sobe o Shiny e percorre a página no navegador: figura inicial, troca de filtros, causa do óbito e retiradas do ajuste, população, recorte sem óbitos suficientes, outra sessão lendo do disco e aviso de dados novos.
 
-O teste do modelo simula uma série com efeito do calor conhecido e confere que o RR e o excesso de óbitos são recuperados. O teste da página percorre todos os recortes nas duas escalas e confere que o recorte muda o resultado.
+O teste do modelo simula uma série com efeito do calor conhecido e confere que o RR e a diferença atribuível ao calor são recuperados na série simulada. O teste da página percorre todos os recortes nas duas escalas e confere que o recorte muda o resultado.
 
 ## Limitações
 
-- Estudo ecológico, descritivo e exploratório; um modelo por recorte, sem correção para comparações múltiplas.
+- Estudo ecológico de série temporal, com componente analítico: o RR descreve associação em dados agregados e não risco individual. Um modelo por recorte; na aba de causas, o valor q de Benjamini e Hochberg vale dentro de cada uma das duas famílias fixas, sem correção conjunta entre elas.
+- A exposição é uma série municipal agregada, e a rede de estações mudou ao longo da série sem ajuste. O confundimento residual não está excluído, e há autocorrelação residual (ver a aba Diagnósticos), de modo que os intervalos dos RR podem ser estreitos demais.
+- O local do óbito não é a residência. Não há teste de interação entre grupos; comparar recortes pelos RR separados não estabelece diferença.
 - A faixa aproximada de variação de 95% do esperado não inclui a incerteza dos coeficientes e não tem cobertura garantida (ver o Quadro 5 da Figura 1 para a cobertura por período).
 - Não há termo de dia da semana, como no modelo de referência.
 - O período de COVID entra no ajuste com um termo suave próprio, então o esperado nesse período não serve de comparação. No app, a caixa de retirada remove o período do ajuste e deixa o esperado sem traçado nele.

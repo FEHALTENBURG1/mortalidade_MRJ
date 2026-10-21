@@ -17,15 +17,15 @@ suppressPackageStartupMessages({ library(mgcv); library(dlnm) })
 LAG <- 10
 K_REF <- 12; ANOS_REF <- 12.5
 EXPOSICOES <- list(
-  horas = list(nome = "Horas por dia com índice de calor ≥ 36 °C", var = "num_hr_36", fun = "ns", df = 1,  ref = c(4, 8),  unidade = "h"),
-  haat  = list(nome = "HAAT: graus-hora acima de 36 °C no dia",    var = "auc36",     fun = "ps", df = 15, ref = c(5, 20), unidade = "°C·h"))
+  horas = list(nome = "Horas por dia com IC ≥ 36 °C", var = "num_hr_36", fun = "ns", df = 1,  ref = c(4, 8),  unidade = "h"),
+  haat  = list(nome = "HAAT: graus-hora de IC acima de 36 °C no dia", var = "auc36",     fun = "ps", df = 15, ref = c(5, 20), unidade = "°C·h"))
 
 # Alternativa flexível pré-definida para as horas por dia: spline natural com 3 gl (nós interiores em 3 e 6 h, que dividem em três partes os dias com calor;
 # nós de borda no menor e no maior valor observado). O modelo de referência tem 1 gl na exposição, de modo que o log-RR é uma reta nas horas e
 # RR(8 h) = RR(4 h)^2 por construção; esta alternativa não impõe essa forma e serve para verificar se os dados sustentam a reta (ver comparar_flex).
 HORAS_NOS <- c(3, 6)
 EXPOSICAO_FLEX <- modifyList(EXPOSICOES$horas, list(fun = "ns", df = length(HORAS_NOS) + 1L, knots = HORAS_NOS,
-                                                    nome = "Horas por dia com índice de calor ≥ 36 °C, curva flexível"))
+                                                    nome = "Horas por dia com IC ≥ 36 °C, curva flexível"))
 
 # Calendário do modelo: tempo, dia do ano, índice do período COVID e as exposições (dia sem dado de clima = dia sem calor)
 base_modelo <- function(cx) {

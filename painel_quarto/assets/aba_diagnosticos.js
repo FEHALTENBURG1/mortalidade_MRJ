@@ -40,7 +40,7 @@ function bombear(e){
 }
 
 function limpar(){
-  ["d-kpis","d-suave","d-sens","d-interp","d-sinterp","d-sub"].forEach(i=>$(i).innerHTML="");
+  ["d-kpis","d-suave","d-sens","d-interp","d-sinterp"].forEach(i=>$(i).innerHTML=""); P.texto.ficha("d-sub", null);
   ["d-prog","d-note","d-note2","d-sprog","d-snote"].forEach(i=>$(i).textContent="");
   if(grafico){ grafico.destroy(); grafico = null }
 }
@@ -99,7 +99,7 @@ function interpDiag(p, E){
 function tabelaSens(e, got, E){
   const base = got["diag_"+e.medida];
   const rotulo = (nome,ex) => { const p=got[ex], f=falhou.get(idK(e.kd,ex)); return {p, f} };
-  const cab = `<thead><tr><th>Análise</th><th class="n">Dias no ajuste</th><th class="n">Óbitos no ajuste</th><th class="n">Dias de calor (eventos)</th><th class="n">RR com ${fn(E.ref[0])} ${E.unidade} por dia (IC 95%)</th><th class="n">RR com ${fn(E.ref[1])} ${E.unidade} por dia (IC 95%)</th><th class="n">ρ(1) dos resíduos</th><th class="n">Ljung-Box (p)</th><th class="n">χ² ÷ gl</th></tr></thead>`;
+  const cab = `<thead><tr><th>Análise</th><th class="n">Dias no ajuste</th><th class="n">Óbitos no ajuste</th><th class="n">Dias com ≥ 4 h de IC ≥ 36 °C (eventos)</th><th class="n">RR com ${fn(E.ref[0])} ${E.unidade} por dia (IC 95%)</th><th class="n">RR com ${fn(E.ref[1])} ${E.unidade} por dia (IC 95%)</th><th class="n">ρ(1) dos resíduos</th><th class="n">Ljung-Box (p)</th><th class="n">χ² ÷ gl</th></tr></thead>`;
   const linha = (rot, p, mudou, f) => {
     if(!p) return `<tr><td>${rot}</td><td colspan="8">${f ? "não foi possível ajustar: "+String(f).replace(/[<>&]/g,"") : "calculando o modelo…"}</td></tr>`;
     const v = base && p!==base ? variacao(p,base) : null, marca = v && relevante(v);
@@ -143,8 +143,8 @@ function desenhar(){
     limpar(); $("d-note").textContent = `Menos de ${M.min_obitos} óbitos ${e.cod!=="000"?"no ajuste ":""}nesta combinação de filtros: modelo não estimado.`;
     return;
   }
-  const rotulo = `local do óbito: ${nm($("d-local").value).toLowerCase()}; faixa etária: ${$("d-faixa").value==="Todas as idades"?"todas as idades":$("d-faixa").value+" anos"}${r?"; raça/cor: "+(({PPI:"pretos, pardos e indígenas"})[$("d-raca").value]||$("d-raca").value.toLowerCase()):""}`;
-  $("d-sub").textContent = `Óbitos ${P.texto.causaPor(e.causa)}; ${rotulo}; ${minus1(E.nome)}. Cada linha é um ajuste do mesmo recorte, com a mesma causa e as mesmas retiradas do ajuste, mudando uma só escolha.`;
+  P.texto.ficha("d-sub", {recorte:P.texto.recorte($("d-local").value,$("d-faixa").value,$("d-raca").value), kd:e.kd, ex:e.medida, m:e.m, filtrado:P.texto.filtrado($("d-local").value,$("d-faixa").value,$("d-raca").value),
+    linhas:[["Análises","cada linha do Quadro 2 é um ajuste do mesmo recorte, com a mesma causa e as mesmas retiradas do ajuste, mudando uma só escolha"]]});
   bombear(e);
   const base = got["diag_"+e.medida], fb = falhou.get(idK(e.kd,"diag_"+e.medida));
   if(!base){
@@ -162,9 +162,9 @@ function desenhar(){
   $("d-sprog").textContent = feitos<exs(e).length && !fb ? `${fn(feitos)} de ${fn(exs(e).length)} modelos concluídos. Cada linha leva de 2 a 10 segundos na primeira vez.` : "";
   tabelaSens(e,got,E);
   $("d-sinterp").innerHTML = interpSens(e,got,E);
-  $("d-snote").textContent = `Dias de calor: dias no ajuste com pelo menos 4 h de índice de calor ≥ 36 °C; evento: sequência de dias seguidos de calor. A variação do log-RR é (log RR da análise − log RR principal) ÷ log RR principal, em cada nível de referência; ● marca variações de ${REL*100}% ou mais. A coluna de resíduos resume o diagnóstico de cada ajuste (mesmo cálculo do Quadro 1). O termo de dia da semana não faz parte do modelo de referência. Defasagem máxima de 7 e 14 dias refaz a base cruzada e a retirada dos dias sem clima com essa janela.`;
+  $("d-snote").textContent = `Dias com ≥ 4 h de IC ≥ 36 °C: dias no ajuste que atendem a esse critério; evento: sequência de dias seguidos que o atendem. A variação do log-RR é (log RR da análise − log RR principal) ÷ log RR principal, em cada nível de referência; ● marca variações de ${REL*100}% ou mais. A coluna de resíduos resume o diagnóstico de cada ajuste (mesmo cálculo do Quadro 1). O termo de dia da semana não faz parte do modelo de referência. Defasagem máxima de 7 e 14 dias refaz a base cruzada e a retirada dos dias sem clima com essa janela.`;
 }
-const minus1 = t => t[0].toLowerCase()+t.slice(1);
+const minus1 = t => /^[A-ZÁÉÍÓÚÂÊÔÃÕÇ][a-záéíóúâêôãõç]/.test(t) ? t[0].toLowerCase()+t.slice(1) : t;                // só a primeira letra, e não nas siglas (HAAT, UPA): o °C da unidade não pode virar °c
 
 P.ouvir.seg.push((kd,ex)=>{ if(!eDg(ex)) return; voo.delete(idK(kd,ex)); agendar() });
 P.ouvir.erro.push(msg=>{
