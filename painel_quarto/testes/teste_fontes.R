@@ -82,7 +82,7 @@ if (!nzchar(tar_in) || !nzchar(haat_in) || !file.exists(tar_in) || !file.exists(
   x <- ler_contexto(pasta, "res")
   checar("1ª carga: ler_contexto devolve o contexto com metadados", !is.null(x) && x$meta$pop == "res" && nrow(x$cx$d) == x$meta$n_obitos && nrow(x$cx$d) > 100000)
   checar("1ª carga: cache sem as tabelas que o painel não usa", is.null(x$cx$d_todas_causas) && is.null(x$cx$cl_completo))
-  checar("1ª carga: traz os óbitos de outras causas (d_extra) com a marca de COVID", is.data.frame(x$cx$d_extra) && nrow(x$cx$d_extra) > 0 && all(c(COLUNAS_SERIE, "covid") %in% names(x$cx$d_extra)) && !"cid" %in% names(x$cx$d_extra))
+  checar("1ª carga: traz os óbitos de outras causas (d_extra) com a marca de COVID", is.data.frame(x$cx$d_extra) && nrow(x$cx$d_extra) > 0 && all(c(COLUNAS_SERIE, "covid", "grupo", "cid") %in% names(x$cx$d_extra)) && !"cid4" %in% names(x$cx$d_extra))
   xt <- ler_contexto(pasta, "todos")
   checar("1ª carga: 'todos' tem mais óbitos que 'res'", nrow(xt$cx$d) > nrow(x$cx$d))
   checar("1ª carga: rótulos com acento preservados", all(c("Domicílio", "Hospital") %in% as.character(unique(x$cx$d$local))))
@@ -91,8 +91,9 @@ if (!nzchar(tar_in) || !nzchar(haat_in) || !file.exists(tar_in) || !file.exists(
     checar("cache igual à leitura direta (óbitos naturais)", isTRUE(all.equal(x$cx$d, direto$d)))
     dd <- direto$d_todas_causas
     checar("cache igual à leitura direta (todas as causas: contagens e COVID)", nrow(obitos_causa(x$cx, "todas")) == nrow(dd) && nrow(x$cx$d_extra) == sum(!dd$natural) &&
-             sum(x$cx$d_extra$covid) == sum(eh_covid(dd$cid)) && nrow(obitos_causa(x$cx, "externas")) == sum(!dd$natural & !eh_covid(dd$cid)) &&
-             nrow(obitos_causa(x$cx, "todas_sem_covid")) == sum(!eh_covid(dd$cid)))
+             sum(x$cx$d_extra$covid) == sum(dd$grupo == "covid") && sum(dd$grupo == "covid") == sum(eh_covid(dd$cid4)) && nrow(obitos_causa(x$cx, "externas")) == sum(dd$grupo == "externa") &&
+             nrow(obitos_causa(x$cx, "todas_sem_covid")) == sum(dd$grupo != "covid"))
+    checar("cache igual à leitura direta (reconciliação das causas soma o total de óbitos elegíveis)", isTRUE(all.equal(x$cx$reconc, direto$reconc)) && x$cx$reconc$total == nrow(dd) && sum(x$cx$reconc$grupos$n) == nrow(dd))
     checar("cache igual à leitura direta (período, meses não consolidados, dias sem registro, clima)",
            identical(x$cx$fim, direto$fim) && identical(x$cx$meses_nc, direto$meses_nc) && identical(x$cx$sem_registro, direto$sem_registro) && isTRUE(all.equal(x$cx$clima, direto$clima)))
   }

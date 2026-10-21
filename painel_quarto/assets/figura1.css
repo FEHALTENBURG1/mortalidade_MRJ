@@ -83,3 +83,12 @@ header#title-block-header{display:none}
   .cmp.dois>*{grid-column:1!important;grid-row:auto!important}
   .cmp>.kpis{grid-template-columns:repeat(auto-fit,minmax(210px,1fr))}
 }
+
+/* tabela fixa de ajuste principal x sensibilidade (Figura 1) */
+.card.sens{margin-bottom:14px;padding:12px 16px 8px}
+.card.sens h3{font-size:14px;margin:0 0 8px;font-weight:650}
+.tabw{overflow-x:auto}
+table.tb{border-collapse:collapse;width:100%;font-size:13px}
+table.tb th,table.tb td{border-bottom:1px solid var(--line);padding:6px 10px;text-align:left;vertical-align:top}
+table.tb th{font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:var(--mut);font-weight:600}
+table.tb .n{text-align:right;white-space:nowrap}

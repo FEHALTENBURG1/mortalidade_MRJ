@@ -36,7 +36,9 @@ cat(sprintf("%s período %s a %s (%d dias) | óbitos naturais %d | dias sem regi
 cat("meses com registro não consolidado:", paste(format(cx$meses_nc, "%Y-%m"), collapse = ", "), "\n")
 
 Y <- series_segmentos(cx$d, cx$dias)
-no_ajuste <- vapply(Y, function(y) sum(y[!cx$sem_registro]), 0)
+fora <- fora_ajuste(cx, opc_de_codigo(COD_PADRAO))          # ajuste principal: sem os dias sem registro, os meses não consolidados e os dias sem clima (e os 10 seguintes)
+cat(sprintf("%s ajuste principal (código %s): %d dias no ajuste, %d fora\n", agora(), COD_PADRAO, sum(!fora), sum(fora)))
+no_ajuste <- vapply(Y, function(y) sum(y[!fora]), 0)
 Y <- Y[no_ajuste >= MIN_OBITOS]
 cat(sprintf("%s %d segmentos com pelo menos %d óbitos no ajuste\n", agora(), length(Y), MIN_OBITOS))
 
@@ -54,7 +56,7 @@ if (reaproveitou) {
     cat(sprintf("%s exposição '%s' (%s)...\n", agora(), e, EXPOSICOES[[e]]$nome))
     cbi <- cross_exposicao(b, EXPOSICOES[[e]])
     um <- function(k) {
-      r <- tryCatch(ajustar_segmento(Y[[k]], b, cbi, cx$sem_registro, kt), error = function(err) { message("falhou ", k, ": ", conditionMessage(err)); NULL })
+      r <- tryCatch(ajustar_segmento(Y[[k]], b, cbi, fora, kt), error = function(err) { message("falhou ", k, ": ", conditionMessage(err)); NULL })
       if (!is.null(r)) cat(sprintf("  %s %-52s %s n=%d RR(ref1)=%.3f\n", agora(), k, r$fam, r$n, r$rr[1, 1]))
       r
     }

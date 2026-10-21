@@ -7,16 +7,17 @@
 # Pedido = população + causa + retiradas + medida de calor + recorte.
 #   causa:     uma das CAUSAS (R/funcoes.R): naturais, todas_sem_covid, todas, externas.
 #   retiradas: código de 3 caracteres 0/1, na ordem COVID, meses não consolidados, dias sem clima (ver fora_ajuste() em R/modelo_joao.R).
-#              "000" é o modelo padrão (só os dias sem registro no SIM saem do ajuste).
+#              COD_PADRAO ("011") é o ajuste principal: saem os dias sem registro no SIM, os dias sem dado de clima e os 10 seguintes e os meses de registro
+#              não consolidado; o período da COVID fica. "001" (meses não consolidados mantidos) é a sensibilidade da amostra; "000" é a especificação
+#              anterior do painel, em que dias sem clima contavam como dias sem calor, e só serve de comparação.
 # Cache de ajustes: <cache>/ajustes/<chave>/<pop>_<medida>_<hash de causa, retiradas e recorte>.rds. A chave é a versão dos dados; versão nova,
 # pasta nova (atualizar_cache() apaga as pastas das versões antigas). Um ajuste é gravado em arquivo temporário e renomeado, como o contexto.
 
 .servico <- new.env()                       # estado do processo: modelo preparado de cada população
 
-VERSAO_AJUSTE <- 2L                         # muda quando o conteúdo do payload muda (ajustes gravados com outra versão são refeitos)
+VERSAO_AJUSTE <- 3L                         # muda quando o conteúdo do payload muda (ajustes gravados com outra versão são refeitos)
 
 CODIGOS_OPC <- c("000", "001", "010", "011", "100", "101", "110", "111")
-opc_de_codigo <- function(cod) { v <- strsplit(cod, "")[[1]] == "1"; list(covid = v[1], nc = v[2], clima = v[3]) }
 codigo_valido <- function(cod) is.character(cod) && length(cod) == 1 && !is.na(cod) && cod %in% CODIGOS_OPC
 
 # ---------------------------------------------------------------- preparo do modelo a partir do contexto
@@ -69,7 +70,7 @@ expo_valida <- function(expo) is.character(expo) && length(expo) == 1 && !is.na(
 
 # Ajusta um recorte (chave "local|faixa" ou "local|Todas as idades|raça") para uma medida de calor, uma causa e um conjunto de retiradas;
 # devolve o payload da figura (ou, para "mapa<K>", o payload da coluna K do mapa).
-ajustar_recorte <- function(P, key, expo, causa = "naturais", cod = "000") {
+ajustar_recorte <- function(P, key, expo, causa = "naturais", cod = COD_PADRAO) {
   stopifnot(expo_valida(expo), codigo_valido(cod))
   y <- y_do_pedido(P, causa, key, expo)
   stopifnot(!is.null(y))
@@ -79,7 +80,7 @@ ajustar_recorte <- function(P, key, expo, causa = "naturais", cod = "000") {
   pc <- cid_do_id(expo)
   if (!is.null(pc)) return(ajustar_pedido_cid(P, pc, key, causa, cod, y, fora))
   r <- ajustar_segmento(y, P$b, cbi_de(P, expo), fora, P$kt)
-  payload_segmento(r, y, P$sem, P$cov_w, curvas = TRUE)
+  payload_segmento(r, y, P$sem, P$cov_w, curvas = TRUE, aj = resumo_ajuste(P$cx, y, opc_de_codigo(cod)))
 }
 
 # Dados-base da figura (calendário, clima, sinalizações) mais o que o navegador precisa saber no modo sob demanda: causas, recortes elegíveis
@@ -134,7 +135,7 @@ obitos_causa_cid <- function(cx, causa) {
   if (is.null(cx$d_extra$cid)) stop("recorte_invalido: o cache do servidor não traz a causa básica dos óbitos não naturais; atualize-o com shiny/atualizar_cache.R --forcar", call. = FALSE)
   ex <- cx$d_extra
   switch(causa,
-         externas = ex[!ex$covid, cols],
+         externas = ex[ex$grupo == "externa", cols],            # V01 a Y98; lesões (S, T), outros códigos válidos, ausentes e inválidos não entram
          todas_sem_covid = rbind(nat, ex[!ex$covid, cols]),
          todas = rbind(nat, ex[, cols]))
 }
@@ -191,10 +192,10 @@ ajustar_pedido_cid <- function(P, pc, key, causa, cod, y, fora) {
 }
 
 # ---------------------------------------------------------------- cache de ajustes em disco
-arquivo_ajuste <- function(pasta, chave, pop, expo, key, causa = "naturais", cod = "000")
+arquivo_ajuste <- function(pasta, chave, pop, expo, key, causa = "naturais", cod = COD_PADRAO)
   file.path(pasta, "ajustes", chave, sprintf("%s_%s_%s.rds", pop, expo, substr(md5_texto(enc2utf8(paste(causa, cod, key, sep = "\r"))), 1, 12)))
 
-ler_ajuste <- function(pasta, chave, pop, expo, key, causa = "naturais", cod = "000") {
+ler_ajuste <- function(pasta, chave, pop, expo, key, causa = "naturais", cod = COD_PADRAO) {
   f <- arquivo_ajuste(pasta, chave, pop, expo, key, causa, cod)
   if (!file.exists(f)) return(NULL)
   x <- tryCatch(readRDS(f), error = function(e) NULL)
@@ -202,7 +203,7 @@ ler_ajuste <- function(pasta, chave, pop, expo, key, causa = "naturais", cod = "
   x$payload
 }
 
-gravar_ajuste <- function(payload, pasta, chave, pop, expo, key, causa = "naturais", cod = "000") {
+gravar_ajuste <- function(payload, pasta, chave, pop, expo, key, causa = "naturais", cod = COD_PADRAO) {
   f <- arquivo_ajuste(pasta, chave, pop, expo, key, causa, cod)
   dir.create(dirname(f), showWarnings = FALSE, recursive = TRUE)
   tmp <- paste0(f, ".", Sys.getpid(), ".parte")
@@ -223,7 +224,7 @@ limpar_ajustes_antigos <- function(pasta, chave_atual) {
 
 # ---------------------------------------------------------------- execução de um pedido (processo principal ou trabalhador)
 # Devolve list(payload, do_cache, segundos). Erros começam com um código: "dados_mudaram:" (o cache saiu da versão do pedido) ou "recorte_invalido:".
-executar_ajuste <- function(pasta, pop, chave, key, expo, causa = "naturais", cod = "000") {
+executar_ajuste <- function(pasta, pop, chave, key, expo, causa = "naturais", cod = COD_PADRAO) {
   if (!causa %in% names(CAUSAS) || !codigo_valido(cod)) stop("recorte_invalido: causa do óbito ou retiradas do ajuste não reconhecidas", call. = FALSE)
   x <- ler_ajuste(pasta, chave, pop, expo, key, causa, cod)
   if (!is.null(x)) return(list(payload = x, do_cache = TRUE, segundos = 0))
@@ -244,7 +245,7 @@ executar_ajuste <- function(pasta, pop, chave, key, expo, causa = "naturais", co
 
 # Devolve uma promessa com o resultado de executar_ajuste(). Pedidos iguais em andamento compartilham a mesma promessa.
 # Pede ao future um trabalhador que carrega o código de `raiz` na primeira vez e depois reaproveita o modelo preparado em memória.
-pedir_ajuste <- function(raiz, pasta, pop, chave, key, expo, causa = "naturais", cod = "000") {
+pedir_ajuste <- function(raiz, pasta, pop, chave, key, expo, causa = "naturais", cod = COD_PADRAO) {
   x <- if (causa %in% names(CAUSAS) && codigo_valido(cod)) ler_ajuste(pasta, chave, pop, expo, key, causa, cod) else NULL
   if (!is.null(x)) return(promises::promise_resolve(list(payload = x, do_cache = TRUE, segundos = 0)))
   id <- paste(chave, pop, causa, cod, expo, key, sep = "\r")

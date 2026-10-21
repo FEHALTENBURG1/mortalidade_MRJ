@@ -15,19 +15,78 @@ PPI    <- c("Preta", "Parda", "Indígena")
 RACA_SIM <- c("1" = "Branca", "2" = "Preta", "3" = "Amarela", "4" = "Parda", "5" = "Indígena")   # RACACOR do SIM
 
 # ---------------------------------------------------------------- causas
-eh_covid <- function(cid) {
-  cid <- toupper(trimws(as.character(cid)))
-  !is.na(cid) & (substr(cid, 1, 3) == "B34" | substr(cid, 1, 1) == "U")
-}
-# Causas naturais: capítulos A a R da CID-10, menos a COVID-19 (B34 truncado em 3 caracteres e códigos U)
-eh_natural <- function(cid) {
-  cid <- toupper(trimws(as.character(cid)))
-  !is.na(cid) & nchar(cid) >= 3 & substr(cid, 1, 1) %in% LETTERS[1:18] & !eh_covid(cid)
-}
+# A causa básica (CAUSABAS do SIM, 3 ou 4 caracteres, sem ponto) classifica cada óbito em exatamente um destes grupos, aplicados nesta ordem:
+#   ausente    sem código;
+#   invalida   código fora do formato da CID-10 (letra e dois dígitos, mais um dígito opcional) ou de categoria que a CID-10 não tem (por exemplo, D90 ou Y99);
+#   covid      B34.2 (código completo de 4 caracteres) e U07 (U07.1 e U07.2); os demais B34 (B34.0, B34.1, B34.8, B34.9...) são infecções virais e não COVID-19;
+#   natural    A00 a R99;
+#   lesao      S00 a T98 como causa básica (a CID-10 manda codificar a causa básica de uma lesão no capítulo das causas externas; por isso é registro a investigar);
+#   externa    V01 a Y98;
+#   outros_validos   demais códigos válidos (U00 a U99 que não são COVID-19, e Z00 a Z99).
+GRUPOS_CAUSA <- c(natural = "Causas naturais, A00 a R99, exceto COVID-19",
+                  covid = "COVID-19 (B34.2 e U07)",
+                  externa = "Causas externas, V01 a Y98",
+                  lesao = "Lesões e envenenamentos (S00 a T98) como causa básica",
+                  outros_validos = "Outros códigos válidos (U00 a U99 exceto COVID-19, e Z00 a Z99)",
+                  ausente = "Causa básica ausente",
+                  invalida = "Código de CID-10 inválido")
 
-# Causas de óbito que o filtro do Shiny oferece (a Figura 1 em Quarto usa só "naturais"). COVID-19 = B34 truncado em 3 caracteres e códigos U.
+# Faixas de categorias (3 caracteres) que existem na CID-10, por bloco; o que está entre blocos (D90 a D99, E91 a E99, H96 a H99, K94 a K99, P97 a P99, T99, V00, Y99) é inválido.
+CID_BLOCOS <- list(c("A00", "B99"), c("C00", "D49"), c("D50", "D89"), c("E00", "E90"), c("F00", "F99"), c("G00", "G99"), c("H00", "H59"), c("H60", "H95"),
+                   c("I00", "I99"), c("J00", "J99"), c("K00", "K93"), c("L00", "L99"), c("M00", "M99"), c("N00", "N99"), c("O00", "O99"), c("P00", "P96"),
+                   c("Q00", "Q99"), c("R00", "R99"), c("S00", "T98"), c("U00", "U99"), c("V01", "Y98"), c("Z00", "Z99"))
+
+limpar_cid <- function(cid) {                  # maiúsculas, sem espaços nem ponto; vazio vira NA
+  x <- gsub(".", "", toupper(trimws(as.character(cid))), fixed = TRUE)
+  x[!nzchar(x)] <- NA_character_
+  x
+}
+categoria_cid_valida <- function(cat3) {
+  ok <- rep(FALSE, length(cat3))
+  for (b in CID_BLOCOS) ok <- ok | (!is.na(cat3) & cat3 >= b[1] & cat3 <= b[2])
+  ok
+}
+eh_covid <- function(cid) {
+  x <- limpar_cid(cid)
+  !is.na(x) & (x == "B342" | substr(x, 1, 3) == "U07")
+}
+classificar_causa <- function(cid) {
+  x <- limpar_cid(cid)
+  g <- rep("outros_validos", length(x))
+  letra <- substr(x, 1, 1)
+  g[!is.na(x) & letra >= "A" & letra <= "R"] <- "natural"
+  g[!is.na(x) & letra %in% c("S", "T")] <- "lesao"
+  g[!is.na(x) & letra %in% c("V", "W", "X", "Y")] <- "externa"
+  g[eh_covid(x)] <- "covid"
+  g[!is.na(x) & !(grepl("^[A-Z][0-9]{2}[0-9]?$", x) & categoria_cid_valida(substr(x, 1, 3)))] <- "invalida"
+  g[is.na(x)] <- "ausente"
+  factor(g, levels = names(GRUPOS_CAUSA))
+}
+# Causas naturais: A00 a R99, exceto COVID-19 (B34.2 e U07)
+eh_natural <- function(cid) classificar_causa(cid) == "natural"
+
+# Causas de óbito que o filtro do Shiny oferece e os grupos de GRUPOS_CAUSA que cada uma reúne (a Figura 1 em Quarto usa só "naturais").
 CAUSAS <- c(naturais = "Causas naturais (CID-10, códigos A00 a R99, exceto COVID-19)", todas_sem_covid = "Todas as causas, exceto COVID-19",
-            todas = "Todas as causas, com COVID-19", externas = "Causas externas (óbitos fora de A00 a R99, exceto COVID-19)")
+            todas = "Todas as causas, com COVID-19", externas = "Causas externas (CID-10, códigos V01 a Y98)")
+CAUSA_GRUPOS <- list(naturais = "natural", todas_sem_covid = setdiff(names(GRUPOS_CAUSA), "covid"), todas = names(GRUPOS_CAUSA), externas = "externa")
+
+# Tabela de reconciliação: contagem de óbitos por grupo de causa e detalhes que explicam a classificação (B34.2 x demais B34, lesões, códigos inválidos).
+# A soma dos grupos é o total de óbitos elegíveis (os da população nos dias da análise). d precisa de cid4 (código completo) e grupo.
+reconciliar_causas <- function(d) {
+  n <- as.integer(table(d$grupo)[names(GRUPOS_CAUSA)])
+  g <- data.frame(grupo = names(GRUPOS_CAUSA), rotulo = unname(GRUPOS_CAUSA), n = n, stringsAsFactors = FALSE)
+  c4 <- d$cid4
+  det <- function(rot, sel) data.frame(rotulo = rot, n = sum(sel, na.rm = TRUE), stringsAsFactors = FALSE)
+  detalhe <- rbind(
+    det("B34.2 (COVID-19)", c4 %in% "B342"),
+    det("Demais B34 (B34.0, B34.1, B34.3 a B34.9), contados nas causas naturais", substr(c4, 1, 3) %in% "B34" & !(c4 %in% "B342")),
+    det("U07 (COVID-19)", substr(c4, 1, 3) %in% "U07"),
+    det("S00 a T98 na causa básica", d$grupo == "lesao"),
+    det("Código com mais de 4 caracteres ou fora do formato", d$grupo == "invalida" & !grepl("^[A-Z][0-9]{2}[0-9]?$", c4)),
+    det("Formato válido, mas categoria inexistente na CID-10", d$grupo == "invalida" & grepl("^[A-Z][0-9]{2}[0-9]?$", c4)))
+  list(total = nrow(d), grupos = g, detalhe = detalhe,
+       opcoes = lapply(CAUSA_GRUPOS, function(gr) sum(g$n[g$grupo %in% gr])))
+}
 
 # ---------------------------------------------------------------- dados
 cnes7 <- function(x) {                          # código CNES com 7 dígitos (zeros à esquerda restaurados)
@@ -77,7 +136,8 @@ carregar_obitos <- function(silver) {
   data.frame(
     dia = as.Date(d$DTOBITO, tz = "UTC"),
     idade_anos = as.numeric(d$idade_anos),
-    cid = substr(toupper(trimws(as.character(d$CAUSABAS))), 1, 3),
+    cid = substr(limpar_cid(d$CAUSABAS), 1, 3),        # categoria (3 caracteres), usada na aba de causas específicas
+    cid4 = limpar_cid(d$CAUSABAS),                     # código completo, para classificar a causa (B34.2 x demais B34, S a T, inválidos)
     LOCOCOR = as.character(d$LOCOCOR),
     CODESTAB = cnes7(d$CODESTAB),
     residente = d$residente_mrj %in% TRUE,
@@ -86,21 +146,27 @@ carregar_obitos <- function(silver) {
 }
 
 # ---------------------------------------------------------------- registro do SIM
-# Meses com registro não consolidado: taxa diária (óbitos / dias com algum óbito registrado) abaixo de LIMIAR x a mediana dos 12 meses de
-# referência anteriores. Meses de COVID e meses já marcados não entram na referência; mês sem nenhum registro não é marcado aqui (são dias sem registro).
-# Os meses marcados continuam no ajuste; o painel só os rotula.
+# Meses com registro não consolidado. O mês é marcado se cumprir ao menos uma destas regras, todas definidas a partir do próprio registro do SIM e nunca do resultado do modelo:
+#   (a) taxa diária (óbitos / dias com algum óbito registrado) abaixo de LIMIAR x a mediana dos 12 meses de referência anteriores;
+#   (b) algum dia do mês, entre o primeiro e o último dia com óbito do arquivo, sem nenhum óbito registrado (arquivo ainda não carregado);
+#   (c) mês em que o arquivo termina antes do último dia do mês (último mês do arquivo, incompleto).
+# Meses de COVID e meses já marcados não entram na referência da regra (a); mês sem nenhum registro não é marcado aqui (são dias sem registro).
+# O ajuste principal retira esses meses (R/modelo_joao.R, COD_PADRAO); a sensibilidade os mantém.
 meses_nao_consolidados <- function(dia_obitos, inicio = INICIO_SERIE, limiar = LIMIAR_MES) {
   d <- dia_obitos[dia_obitos >= inicio]
   meses <- seq(as.Date(format(min(d), "%Y-%m-01")), as.Date(format(max(d), "%Y-%m-01")), by = "month")
   chave <- format(meses, "%Y-%m")
   n    <- as.numeric(table(factor(format(d, "%Y-%m"), levels = chave)))
   dreg <- as.numeric(table(factor(format(unique(d), "%Y-%m"), levels = chave)))
+  dcal <- as.numeric(table(factor(format(seq(min(d), max(d), by = "day"), "%Y-%m"), levels = chave)))   # dias de calendário de cada mês até o último dia com óbito
   taxa <- ifelse(dreg > 0, n / dreg, NA_real_)
+  fim_ult <- seq(as.Date(format(max(d), "%Y-%m-01")), by = "month", length.out = 2)[2] - 1
+  pre <- (dreg > 0 & dreg < dcal) | (chave == format(max(d), "%Y-%m") & max(d) < fim_ult)       # regras (b) e (c)
   em_covid <- chave >= format(COVID[1], "%Y-%m") & chave <= format(COVID[2], "%Y-%m")
-  boas <- numeric(0); ruim <- rep(FALSE, length(chave))
+  boas <- numeric(0); ruim <- pre
   for (i in seq_along(chave)) {
     valido <- !em_covid[i] && !is.na(taxa[i])
-    if (valido && length(boas) >= 12) ruim[i] <- taxa[i] < limiar * stats::median(utils::tail(boas, 12))
+    if (valido && !pre[i] && length(boas) >= 12) ruim[i] <- taxa[i] < limiar * stats::median(utils::tail(boas, 12))
     if (valido && !ruim[i]) boas <- c(boas, taxa[i])
   }
   list(meses = meses, ruim = ruim, taxa = taxa)
@@ -179,8 +245,8 @@ COLUNAS_SERIE <- c("dia", "idade_anos", "raca", "local", "faixa")      # o que s
 enxugar_contexto <- function(cx) {
   d <- cx$d_todas_causas
   if (!is.null(d)) {
-    ex <- d[!d$natural, c(COLUNAS_SERIE, "cid")]                       # a causa básica (3 caracteres) fica, para a aba de causas específicas
-    ex$covid <- eh_covid(ex$cid)
+    ex <- d[!d$natural, c(COLUNAS_SERIE, "cid", "grupo")]              # a causa básica (3 caracteres) e o grupo de causa ficam, para a aba de causas específicas
+    ex$covid <- ex$grupo == "covid"
     rownames(ex) <- NULL
     cx$d_extra <- ex
   }
@@ -196,7 +262,7 @@ obitos_causa <- function(cx, causa) {
   if (is.null(cx$d_extra)) stop("o cache não traz as causas não naturais: rode shiny/atualizar_cache.R --forcar")
   ex <- cx$d_extra
   switch(causa,
-         externas = ex[!ex$covid, COLUNAS_SERIE],
+         externas = ex[ex$grupo == "externa", COLUNAS_SERIE],
          todas_sem_covid = rbind(nat, ex[!ex$covid, COLUNAS_SERIE]),
          todas = rbind(nat, ex[, COLUNAS_SERIE]))
 }
@@ -210,13 +276,14 @@ contexto <- function(silver, clima_csv, cnes_csv, pop = "res", inicio = INICIO_S
   dias <- seq(per$inicio, per$fim, by = "day")
   d <- d_all[d_all$dia >= per$inicio & d_all$dia <= per$fim, ]
   if (pop == "res") d <- d[d$residente, ]
-  d$natural <- eh_natural(d$cid)
+  d$grupo <- classificar_causa(d$cid4)
+  d$natural <- d$grupo == "natural"
   d$local <- classificar_local(d, tabela_cnes(cnes_csv))
   d$faixa <- faixa_etaria(d$idade_anos)
   dn <- d[d$natural, ]
   sr <- dias_sem_registro(d_all$dia, dias)
   nc_mes <- format(dias, "%Y-%m") %in% format(per$meses_nc, "%Y-%m")
-  list(pop = pop, d = dn, d_todas_causas = d, dias = dias, fim = per$fim, inicio = per$inicio, meses_nc = per$meses_nc,
+  list(pop = pop, d = dn, d_todas_causas = d, reconc = reconciliar_causas(d), dias = dias, fim = per$fim, inicio = per$inicio, meses_nc = per$meses_nc,
        sem_registro = sr, nao_consolidado = nc_mes & !sr, covid = dias >= COVID[1] & dias <= COVID[2],
        clima = cbind(dia = dias, cl[match(dias, cl$dia), setdiff(names(cl), "dia")]), cl_completo = cl)
 }

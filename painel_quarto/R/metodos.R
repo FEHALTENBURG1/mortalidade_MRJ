@@ -9,6 +9,22 @@ fd <- function(x) format(as.Date(x), "%d/%m/%Y")
 mm <- function(ym) paste0(substr(ym, 6, 7), "/", substr(ym, 1, 4))
 rr_txt <- function(v) sprintf("%s (IC 95%%: %s a %s)", fmt(v[1], 2), fmt(v[2], 2), fmt(v[3], 2))
 
+# Tabela de reconciliação das causas: óbitos por grupo de causa básica (soma = total de óbitos elegíveis, os da população nos dias da série),
+# a que opção do seletor Causa do óbito cada grupo pertence e o detalhe dos códigos que explicam a classificação. r = M$reconc (reconciliar_causas).
+tabela_reconciliacao <- function(r) {
+  if (is.null(r) || is.null(r$grupos)) return("")
+  rot <- c(naturais = "Naturais", todas_sem_covid = "Todas, exceto COVID-19", todas = "Todas, com COVID-19", externas = "Externas")
+  g <- r$grupos
+  em <- vapply(g$grupo, function(gr) paste(rot[names(CAUSA_GRUPOS)[vapply(CAUSA_GRUPOS, function(v) gr %in% v, TRUE)]], collapse = "; "), "")
+  linhas <- paste0("| ", g$rotulo, " | ", fmt(g$n), " | ", em, " |\n", collapse = "")
+  opc <- paste0(vapply(names(rot), function(k) paste0(rot[[k]], ": ", fmt(r$opcoes[[k]])), ""), collapse = "; ")
+  det <- paste0("- ", r$detalhe$rotulo, ": ", fmt(r$detalhe$n), "\n", collapse = "")
+  paste0("**Reconciliação das causas.** Dos ", fmt(r$total), " óbitos elegíveis (os da população selecionada nos dias da série), cada um pertence a um só grupo de causa básica:\n\n",
+         "| Grupo de causa básica | Óbitos | Opções do seletor |\n|:--|--:|:--|\n", linhas,
+         "| **Total de óbitos elegíveis** | **", fmt(r$total), "** | |\n\n",
+         "Óbitos por opção do seletor: ", opc, ". Detalhe dos códigos:\n\n", det, "\n")
+}
+
 # M: meta da Figura 1 (base_figura1); n_sem_idade: óbitos sem idade informada;
 # resumo: resumo_figura1() (só no Quarto); dados: list(sim_atualizado, clima_atualizado, repo_sim, gerado_em) (só no Shiny)
 texto_metodos <- function(M, n_sem_idade, resumo = NULL, dados = NULL) {
@@ -24,14 +40,14 @@ texto_metodos <- function(M, n_sem_idade, resumo = NULL, dados = NULL) {
     "Esta página apresenta a Figura 1 do painel, reescrita em R e Quarto. O processamento dos dados e o ajuste dos modelos são feitos em R (`calcular_figura1.R`), e os resultados ficam incorporados a este arquivo, que abre diretamente no navegador. Como cada recorte (combinação de local do óbito, faixa etária e raça/cor) já tem o seu modelo calculado, a troca de filtros não reestima os modelos."
 
   causas_p <- if (demanda)
-    pg("O seletor Causa do óbito oferece quatro séries: causas naturais (padrão, definidas acima), todas as causas exceto COVID-19, todas as causas com COVID-19 e causas externas. Neste painel, causas externas são os óbitos fora dos códigos A00 a R99 da CID-10 e sem COVID-19, o que inclui lesões e demais causas externas (códigos S a Y) e registros sem CID válida. Cada causa tem a sua própria série de óbitos, e a lista de recortes com óbitos suficientes varia conforme a causa.")
+    pg("O seletor Causa do óbito oferece quatro séries: causas naturais (padrão, definidas acima), todas as causas exceto COVID-19, todas as causas com COVID-19 e causas externas. Neste painel, causas externas são os óbitos com causa básica nos códigos V01 a Y98 da CID-10. Os códigos S00 a T98 descrevem a natureza da lesão e, pelas regras de codificação da CID-10, não deveriam ser a causa básica. Quando aparecem, assim como as causas básicas ausentes e os códigos inválidos, formam grupos próprios, que entram apenas em Todas as causas. A tabela de reconciliação, na seção Dados, mostra quantos óbitos há em cada grupo e a quais opções do seletor ele pertence. Cada causa tem a sua própria série de óbitos, e a lista de recortes com óbitos suficientes varia conforme a causa.")
   else ""
   retirar_p <- if (demanda) paste0(
     "### Retirar períodos do ajuste\n\n",
-    pg("Por padrão, o ajuste segue o modelo de referência (Morais et al.): o período da COVID-19 permanece no ajuste, com o termo `s(COVID)` absorvendo o excesso; os meses de registro não consolidado permanecem no ajuste; e os dias sem dados de clima entram como dias sem calor. Três caixas de seleção, no grupo Retirar do ajuste do modelo, alteram esse padrão. Cada caixa marcada exclui os dias correspondentes dos dados usados para estimar o modelo (os dias sem registro no SIM são sempre excluídos):"),
-    "- Período da COVID-19 (", fd(M$covid[1]), " a ", fd(M$covid[2]), "): o modelo é ajustado sem esses dias e deixa de ter o termo `s(COVID)`.\n",
-    "- Meses com registro não consolidado (", nc_txt, "): os dias desses meses são excluídos do ajuste.\n",
-    "- Dias sem dados de clima e os ", M$lag, " seguintes: sem a caixa marcada, esses dias contam como dias sem calor. Com ela, são excluídos do ajuste, junto com os ", M$lag, " dias posteriores a cada um, porque a defasagem de 0 a ", M$lag, " dias usa o clima dos dias anteriores.\n\n",
+    pg("O ajuste principal é a amostra descrita em Período e registro do SIM: as caixas Meses com registro não consolidado e Dias sem dados de clima vêm marcadas, e o período da COVID-19 permanece no ajuste, com o termo `s(COVID)` absorvendo o excesso. Três caixas de seleção, no grupo Retirar do ajuste do modelo, alteram essa escolha. Cada caixa marcada exclui os dias correspondentes dos dados usados para estimar o modelo (os dias sem registro no SIM são sempre excluídos):"),
+    "- Período da COVID-19 (", fd(M$covid[1]), " a ", fd(M$covid[2]), "), desmarcada por padrão: o modelo é ajustado sem esses dias e deixa de ter o termo `s(COVID)`.\n",
+    "- Meses com registro não consolidado (", nc_txt, "), marcada por padrão: os dias desses meses são excluídos do ajuste. Desmarcada, é a sensibilidade em que o modelo usa esses meses, nos quais o número de óbitos observado pode estar abaixo do real.\n",
+    "- Dias sem dados de clima e os ", M$lag, " seguintes, marcada por padrão: esses dias são excluídos do ajuste, junto com os ", M$lag, " dias posteriores a cada um, porque a defasagem de 0 a ", M$lag, " dias usa o clima dos dias anteriores. Desmarcada, os dias sem clima contam como dias sem calor, que é a especificação anterior do painel; ela trata a falta de medição como ausência de calor e fica disponível só como sensibilidade.\n\n",
     pg("Semanas com algum dia fora do ajuste ficam sem esperado. Cada combinação de causa e de retiradas corresponde a um modelo distinto, ajustado e armazenado no servidor na primeira solicitação. O mínimo de ", M$min_obitos, " óbitos considera apenas os dias mantidos no ajuste."))
   else ""
 
@@ -54,6 +70,8 @@ texto_metodos <- function(M, n_sem_idade, resumo = NULL, dados = NULL) {
     pg("Como a aba avalia dezenas de causas de uma só vez, parte dos RR diferentes de 1 apareceria por acaso. A correção de Benjamini e Hochberg controla a taxa de falsas descobertas dentro da família formada pelas causas do conjunto e do capítulo escolhidos, e o valor q resultante só é calculado quando todas as causas da família estão estimadas. As causas com q < 0,05 ficam destacadas, e uma caixa permite incluir as demais, em cinza. Mudar o conjunto ou o capítulo muda a família e, portanto, o q. O conjunto Causas selecionadas do referencial reúne as causas dos 15 grupos do estudo de referência (Morais et al.), escritos em códigos de 3 caracteres: influenza e pneumonia (J09, J12 a J18); doenças respiratórias crônicas inferiores (J40 a J47); outras doenças respiratórias (J00 a J06, J20 a J39, J60 a J70, J80 a J99, R09 e U04); doenças hipertensivas (I10 a I15); doenças isquêmicas do coração (I20 a I25); insuficiência cardíaca (I50); doenças cerebrovasculares (I60 a I69); outras doenças do aparelho circulatório (I00 a I09, I26 a I49, I51, I52 e I70 a I99); neoplasias malignas (C00 a C97); Alzheimer e demência (G30, G31, F01 e F03); diabetes (E10 a E14); insuficiência renal (N17 a N19); sepse (A40 e A41); infecção do trato urinário (N39); e causas mal definidas (capítulo R). A lista é fixa e não depende dos resultados do painel. O estudo de referência modela esses grupos, e esta aba estima cada causa de 3 caracteres dentro deles."),
     pg("Cada causa é pedida ao servidor separadamente, no máximo duas ao mesmo tempo, e o resultado fica guardado em disco. Por isso a figura se completa causa a causa, e a primeira abertura de um recorte leva de 3 a 10 segundos por causa. Ao clicar em uma causa, a Figura 5b mostra seus óbitos semanais observados e o esperado sem calor do modelo daquela causa, com a faixa de 95% calculada como na Figura 1. Os nomes das causas vêm do arquivo `dados_auxiliares/cid_nomes.json`, que cobre as causas de 3 caracteres avaliadas."))
   else ""
+
+  recon_p <- tabela_reconciliacao(M$reconc)
 
   pop_frase <- if (demanda) "A população selecionada corresponde a" else "A população desta versão corresponde a"
 
@@ -78,7 +96,7 @@ texto_metodos <- function(M, n_sem_idade, resumo = NULL, dados = NULL) {
     paste0("```\nRscript calcular_figura1.R --silver entrada/sim/silver --haat entrada/haat_diario_municipal.csv\nquarto render painel_figura1.qmd\n```\n\n",
            "Pacotes de R: `mgcv`, `dlnm`, `nanoparquet`, `jsonlite`, `knitr`.")
   versao <- if (demanda)
-    paste0(" Versão dos dados: SIM atualizado em ", dados$sim_atualizado, " (", dados$repo_sim, ") e clima atualizado em ", dados$clima_atualizado, " (horários em UTC); cache gerado em ", dados$gerado_em, ".")
+    paste0(" Fonte e data da extração: SIM atualizado em ", dados$sim_atualizado, " (", dados$repo_sim, ") e clima atualizado em ", dados$clima_atualizado, " (horários em UTC); cache gerado em ", dados$gerado_em, ".")
   else paste0(" Versão dos dados desta página: gerada em ", M$gerado_em, ".")
 
   paste0(
@@ -87,18 +105,18 @@ texto_metodos <- function(M, n_sem_idade, resumo = NULL, dados = NULL) {
     "### Dados\n\n",
     pg("Os óbitos provêm do Sistema de Informações sobre Mortalidade (SIM/DATASUS), por meio do repositório de dados (data lake) do projeto, em sua camada silver, com os óbitos ocorridos no município do Rio de Janeiro desde 2006. ",
         pop_frase, " ", pop_txt, ": ", fmt(M$n_obitos), " óbitos por causas naturais entre ", fd(M$inicio), " e ", fd(M$fim),
-        ". Causa natural é aquela registrada nos capítulos I a XVIII da CID-10 (códigos A00 a R99), exceto a COVID-19 (B34 e códigos U)", if (demanda) "." else ". Os óbitos por COVID-19 ficam fora de todas as séries."),
+        ". Causa natural é aquela registrada nos capítulos I a XVIII da CID-10 (códigos A00 a R99), exceto a COVID-19. A COVID-19 é identificada pelo código completo da causa básica: B34.2 (infecção por coronavírus de localização não especificada, usada no início de 2020) e U07 (U07.1 e U07.2). Os demais códigos B34 (B34.0, B34.1 e B34.3 a B34.9), que são outras infecções virais, permanecem nas causas naturais", if (demanda) "." else ". Os óbitos por COVID-19 ficam fora de todas as séries."),
     causas_p,
+    recon_p,
     pg("O local do óbito parte do campo LOCOCOR do SIM e é refinado pelo tipo de estabelecimento registrado no Cadastro Nacional de Estabelecimentos de Saúde (CNES): os tipos 5, 7, 15 e 62 correspondem a Hospital; os tipos 20, 21 e 73, a UPA / pronto atendimento (UPA: Unidade de Pronto Atendimento); e os demais estabelecimentos de saúde, a Outros estabelecimentos. Domicílio, via pública, outros locais e ignorado são os registrados diretamente no LOCOCOR."),
     pg("As faixas etárias, definidas para este estudo, são 0-4, 5-9, 10-19, 20-29, 30-39, 40-49, 50-59, 60-69, 70-79 e 80 anos ou mais. Os ", fmt(n_sem_idade), " óbitos sem idade informada entram apenas em Todas as idades."),
     pg("A raça/cor provém do campo RACACOR. Branca, preta e parda têm série própria, e o agregado PPI reúne preta, parda e indígena. As categorias indígena e amarela não têm óbitos suficientes para série própria, e os óbitos com raça/cor ignorada ou não informada entram apenas em Todas. As séries por raça/cor são calculadas para todas as idades."),
-    pg("O clima é a série diária municipal `haat_diario_municipal.csv`, calculada a partir do repositório de dados climáticos do projeto (Instituto Nacional de Meteorologia, INMET, e Alerta Rio): média horária das estações, índice de calor pela equação do National Weather Service dos Estados Unidos (Rothfusz, 1990) e horas acima de cada limiar (HAAT). A metodologia segue Morais et al. (repositório *heat_mortality_MRJ_article*, usado com autorização). Há dados de clima a partir de abril de 2007; antes disso, o calor entra nos modelos como ausente."),
+    pg("O clima é a série diária municipal `haat_diario_municipal.csv`, calculada a partir do repositório de dados climáticos do projeto (Instituto Nacional de Meteorologia, INMET, e Alerta Rio): média horária das estações, índice de calor pela equação do National Weather Service dos Estados Unidos (Rothfusz, 1990) e horas acima de cada limiar (HAAT). A metodologia segue Morais et al. (repositório *heat_mortality_MRJ_article*, usado com autorização). Há dados de clima a partir de 17/04/2007. Dia sem dado de clima (", fmt(M$dias_sem_clima), " dias na série) é dado ausente, e não dia sem calor: no ajuste principal esses dias e os ", M$lag, " seguintes ficam fora do modelo, e os óbitos deles continuam nos gráficos."),
     "### Período e registro do SIM\n\n",
     pg("A série termina na menor das duas datas: o último dia com óbito registrado no SIM e o último dia com dados de clima. Os dias sem nenhum óbito registrado (", fmt(M$dias_sem_registro),
         " dias) correspondem a arquivo ainda não carregado: são excluídos do ajuste e aparecem em cinza claro."),
-    pg("Meses com taxa diária de óbitos inferior a 80% da mediana dos 12 meses de referência anteriores são classificados como registro não consolidado (", nc_txt, "; ", fmt(M$dias_nc),
-        " dias). Esses meses permanecem no ajuste", if (demanda) " por padrão", " e aparecem hachurados, porque o número observado pode estar abaixo do real",
-        if (demanda) "; a caixa Meses com registro não consolidado, no grupo Retirar do ajuste do modelo, exclui esses meses do ajuste, e o esperado deixa de ser traçado neles", ". A taxa do mês é o número de óbitos dividido pelo número de dias com algum óbito registrado; os meses do período da COVID-19 e os já classificados como não consolidados não compõem a referência."),
+    pg("Um mês é classificado como de registro não consolidado quando atende a pelo menos uma de três regras, todas baseadas na completude do registro e nenhuma no valor do RR: (1) a taxa diária de óbitos é inferior a 80% da mediana dos 12 meses de referência anteriores; (2) há pelo menos um dia sem nenhum óbito entre o primeiro e o último dia do arquivo; (3) é o último mês do arquivo e este termina antes do último dia do mês. A taxa do mês é o número de óbitos dividido pelo número de dias com algum óbito registrado; os meses do período da COVID-19 e os já classificados como não consolidados não compõem a referência. Nesta versão, os meses não consolidados são ", nc_txt, " (", fmt(M$dias_nc), " dias)", if (demanda) ". Eles aparecem hachurados nos gráficos" else ", hachurados nos gráficos", "."),
+    pg("A amostra principal do ajuste retira, além dos dias sem registro no SIM, os meses não consolidados e os dias sem dado de clima com os ", M$lag, " seguintes. O período da COVID-19 permanece no ajuste, com o termo `s(COVID)`. Os óbitos dos dias retirados continuam nos gráficos e são contados à parte, por motivo, na nota abaixo da figura.", if (demanda) " Abaixo da Figura 1, uma tabela fixa compara a amostra principal com a sensibilidade em que os meses não consolidados são mantidos, com o RR e o IC 95% nos dois níveis de referência, o período estimado e o número de dias e de óbitos de cada ajuste; o título da figura informa o período efetivamente estimado." else "", " O painel não dispõe de uma versão consolidada do SIM para comparar a completude dos meses recentes, o que é uma limitação do critério."),
     "### O modelo\n\n",
     pg("Cada recorte (local do óbito por faixa etária, ou local do óbito por raça/cor) e cada medida de calor têm um modelo próprio, adaptado do modelo de Morais et al. (script `02_model_fitting.R` do repositório citado acima): um modelo aditivo generalizado (GAM) com defasagens distribuídas (DLNM), ajustado com `mgcv::gam` por máxima verossimilhança restrita (REML). Os óbitos de cada dia seguem uma distribuição binomial negativa:"),
     "```\nlog(mu_t) = a + cb(calor, defasagem 0 a 10) + s(tempo) + s(dia do ano) + s(COVID)\n```\n\n",
@@ -131,7 +149,8 @@ texto_metodos <- function(M, n_sem_idade, resumo = NULL, dados = NULL) {
     "- A faixa de 95% não inclui a incerteza dos coeficientes do modelo.\n",
     "- O período da COVID-19 é absorvido por um termo suave; por isso, o esperado nesse período não serve de comparação, e as semanas e os dias desse período ficam fora dos indicadores.", if (demanda) " Se a caixa de retirada estiver marcada, o período fica sem esperado.", "\n",
     if (demanda) "- Os modelos analisam contagens de óbitos, sem taxas por população: a população não entra como offset, e o spline de tempo absorve a variação lenta dela ao longo dos anos. A comparação de níveis entre populações ou entre anos exigiria taxas; o RR independe dessa limitação.\n",
-    "- Não há dados de clima antes de 17/04/2007; nesse período, o calor entra no modelo como ausente.\n",
+    "- Não há dados de clima antes de 17/04/2007, e há falhas posteriores. Esses dias e os ", M$lag, " seguintes ficam fora do ajuste principal. A exclusão não corrige dias com poucas horas de medição, nos quais a contagem de horas de calor pode estar subestimada.\n",
+    "- A classificação de mês não consolidado depende da própria série de óbitos e de uma referência de 12 meses; não foi comparada com uma versão consolidada do SIM.\n",
     "- As demais abas do painel em Python (RR por faixa e defasagem, horas por limiar, CIDs, unidades e clima) ainda utilizam o modelo anterior e serão migradas gradualmente.\n\n",
     "### Reprodução\n\n",
     repro, versao, "\n\n",

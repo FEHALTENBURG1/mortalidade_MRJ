@@ -8,6 +8,8 @@
 #
 # Esperado sem calor (contrafactual): o preditor linear do modelo com a cross-basis trocada pela exposição zero, em cada dia.
 # Dias sem registro no SIM saem do ajuste (resposta ausente); dias de COVID ficam e o termo s(covid_id) absorve o período.
+# Ajuste principal (COD_PADRAO): também saem os dias sem dado de clima e os LAG dias seguintes e os meses de registro não consolidado do SIM.
+# Um dia sem clima não é um dia sem calor: a exposição desses dias é desconhecida, e a cross-basis dos LAG dias seguintes depende dela.
 # Não há termo de dia da semana, como no modelo de referência (o dia da semana foi uma análise de sensibilidade à parte).
 
 suppressPackageStartupMessages({ library(mgcv); library(dlnm) })
@@ -27,20 +29,42 @@ base_modelo <- function(cx) {
   b
 }
 
-# Dias fora do ajuste (resposta ausente). Sempre saem os dias sem registro no SIM. Opcionalmente, e na ordem das caixas do app:
+# Dias fora do ajuste (resposta ausente). Sempre saem os dias sem registro no SIM. Opcionalmente, na ordem das caixas do app (1 = retirar do ajuste):
 #   covid = os dias do período COVID (sem eles, o termo suave do período some do modelo);
 #   nc    = os dias de meses com registro não consolidado;
-#   clima = os dias sem dado de clima e os LAG dias seguintes (a cross-basis deles dependeria de exposição ausente).
-# opc: list(covid, nc, clima) de TRUE/FALSE. Sem opc, só os dias sem registro (o que a Figura 1 em Quarto faz).
-fora_ajuste <- function(cx, opc = list(covid = FALSE, nc = FALSE, clima = FALSE)) {
-  fora <- cx$sem_registro
-  if (isTRUE(opc$covid)) fora <- fora | cx$covid
-  if (isTRUE(opc$nc)) fora <- fora | cx$nao_consolidado
-  if (isTRUE(opc$clima)) {
-    sem <- which(is.na(cx$clima$hi_max)); n <- length(fora)
-    fora[unique(pmin(rep(sem, each = LAG + 1) + 0:LAG, n))] <- TRUE
-  }
-  fora
+#   clima = os dias sem dado de clima e os LAG dias seguintes (a cross-basis deles dependeria de exposição ausente). Com clima = FALSE esses dias entram
+#           como dias sem calor, que é a especificação anterior do painel e só serve de sensibilidade.
+# opc: list(covid, nc, clima) de TRUE/FALSE. Código de três caracteres "covid nc clima": o ajuste principal é COD_PADRAO.
+COD_PADRAO <- "011"
+opc_de_codigo <- function(cod) { v <- strsplit(cod, "")[[1]] == "1"; list(covid = v[1], nc = v[2], clima = v[3]) }      # "011" -> covid FALSE, nc TRUE, clima TRUE
+MOTIVOS_FORA <- c(sem_registro = "sem registro no SIM", clima = "sem dado de clima ou nos 10 dias seguintes", nc = "mês com registro não consolidado", covid = "período da COVID-19")
+
+dias_sem_clima <- function(cx) is.na(cx$clima$hi_max)
+dias_clima_afetados <- function(cx) {            # dias sem clima e os LAG seguintes
+  sem <- which(dias_sem_clima(cx)); n <- length(cx$dias)
+  out <- rep(FALSE, n); out[unique(pmin(rep(sem, each = LAG + 1) + 0:LAG, n))] <- TRUE
+  out
+}
+
+# Motivo de cada dia fora do ajuste (um só por dia, na ordem de MOTIVOS_FORA); NA = dia no ajuste.
+motivo_fora <- function(cx, opc = list(covid = FALSE, nc = FALSE, clima = FALSE)) {
+  m <- rep(NA_character_, length(cx$dias))
+  marca <- function(v, nome) m[is.na(m) & v] <<- nome
+  marca(cx$sem_registro, "sem_registro")
+  if (isTRUE(opc$clima)) marca(dias_clima_afetados(cx), "clima")
+  if (isTRUE(opc$nc)) marca(cx$nao_consolidado, "nc")
+  if (isTRUE(opc$covid)) marca(cx$covid, "covid")
+  m
+}
+fora_ajuste <- function(cx, opc = list(covid = FALSE, nc = FALSE, clima = FALSE)) !is.na(motivo_fora(cx, opc))
+
+# O que o ajuste usa e o que deixa de fora, para mostrar junto do resultado: dias e óbitos no ajuste, primeiro e último dia, e dias e óbitos
+# fora do ajuste por motivo (na ordem de MOTIVOS_FORA). y = óbitos por dia do recorte.
+resumo_ajuste <- function(cx, y, opc) {
+  m <- motivo_fora(cx, opc); dentro <- is.na(m)
+  list(nd = sum(dentro), no = sum(y[dentro]), ini = as.character(cx$dias[dentro][1]), fim = as.character(cx$dias[dentro][sum(dentro)]),
+       xd = I(vapply(names(MOTIVOS_FORA), function(k) sum(m %in% k), 1L, USE.NAMES = FALSE)),
+       xo = I(vapply(names(MOTIVOS_FORA), function(k) as.integer(sum(y[m %in% k])), 1L, USE.NAMES = FALSE)))
 }
 
 k_tempo <- function(n_dias) max(round(K_REF * n_dias / (ANOS_REF * 365.25)), 6)

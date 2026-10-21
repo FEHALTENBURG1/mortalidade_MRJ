@@ -71,4 +71,13 @@ ok(identical(which(fc & !cx3$sem_registro), c(100:111, 195:200)), "retiradas: di
 ok(identical(f(covid = TRUE, nc = TRUE, clima = TRUE), cx3$sem_registro | cx3$covid | cx3$nao_consolidado | fc), "retiradas: as três juntas somam os dias retirados")
 cx3$clima$hi_max <- 30
 ok(identical(fora_ajuste(cx3, list(clima = TRUE)), cx3$sem_registro), "retiradas: sem dia sem clima, a caixa não tira nada")
+# motivo de cada dia fora do ajuste e resumo do ajuste (ordem: sem registro, clima, nc, covid; cada dia conta uma vez)
+cx3$clima$hi_max[c(100, 101, 195)] <- NA
+mt <- motivo_fora(cx3, list(covid = TRUE, nc = TRUE, clima = TRUE))
+ok(identical(which(!is.na(mt)), which(fora_ajuste(cx3, list(covid = TRUE, nc = TRUE, clima = TRUE)))) && mt[5] == "sem_registro" && mt[20] == "covid" && mt[60] == "nc" && mt[100] == "clima" && mt[111] == "clima" && is.na(mt[112]), "motivo de cada dia fora do ajuste")
+y3 <- rep(2L, n3)
+ra <- resumo_ajuste(cx3, y3, list(covid = TRUE, nc = TRUE, clima = TRUE))
+ok(identical(as.integer(ra$xd), c(1L, 18L, 11L, 21L)) && identical(as.integer(ra$xo), c(2L, 36L, 22L, 42L)) && ra$ini == "2020-01-01" && ra$fim == as.character(d3[194]), "resumo do ajuste: contagens por motivo e primeiro e último dia no ajuste")
+ok(ra$nd == n3 - 1L - 18L - 11L - 21L && ra$no == 2L * ra$nd, "resumo do ajuste: dias e óbitos no ajuste")
+ok(identical(strsplit(COD_PADRAO, "")[[1]], c("0", "1", "1")), "ajuste principal: retira meses não consolidados e dias sem clima, mantém o período da COVID-19 (código covid-nc-clima = 011)")
 cat("\nTodos os testes do modelo passaram.\n")

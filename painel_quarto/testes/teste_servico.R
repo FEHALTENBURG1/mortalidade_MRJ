@@ -75,7 +75,9 @@ P <- obter_P(pasta, "res")
 b <- base_sob_demanda(P)
 checar("base: marca o modo sob demanda e traz a lista de recortes de cada causa e de cada combinação de retiradas",
        isTRUE(b$meta$sob_demanda) && setequal(names(b$meta$elegiveis), names(CAUSAS)) && all(vapply(b$meta$elegiveis, function(x) setequal(names(x), CODIGOS_OPC), TRUE)))
-checar("base: causas naturais sem retiradas dão exatamente os recortes do JSON completo", setequal(unlist(b$meta$elegiveis$naturais[["000"]]), unlist(ref$k)))
+checar("base: causas naturais no ajuste principal dão exatamente os recortes do JSON completo", setequal(unlist(b$meta$elegiveis$naturais[[COD_PADRAO]]), unlist(ref$k)))
+checar("base: o ajuste principal tem os recortes da especificação anterior, menos os que perdem óbitos com as retiradas", all(unlist(b$meta$elegiveis$naturais[[COD_PADRAO]]) %in% unlist(b$meta$elegiveis$naturais[["000"]])) && length(unlist(b$meta$elegiveis$naturais[[COD_PADRAO]])) <= length(unlist(b$meta$elegiveis$naturais[["000"]])))
+checar("base: traz a reconciliação das causas, que soma o total de óbitos elegíveis", { r <- b$meta$reconc; !is.null(r) && sum(r$grupos$n) == r$total && r$opcoes$naturais == nrow(P$cx$d) && r$opcoes$todas == r$total && r$opcoes$todas_sem_covid == r$total - sum(P$cx$d_extra$covid) })
 checar("base: tirar mais dias do ajuste nunca acrescenta recortes", all(vapply(names(CAUSAS), function(ca)
   all(vapply(CODIGOS_OPC, function(cod) all(unlist(b$meta$elegiveis[[ca]][[cod]]) %in% unlist(b$meta$elegiveis[[ca]][["000"]])), TRUE)), TRUE)))
 checar("base: todas as causas têm pelo menos os recortes das causas naturais", all(unlist(b$meta$elegiveis$naturais[["000"]]) %in% unlist(b$meta$elegiveis$todas[["000"]])))
@@ -99,8 +101,12 @@ r_cov <- executar_ajuste(pasta, "res", chave, K, "horas", "naturais", "100")
 r_nc  <- executar_ajuste(pasta, "res", chave, K, "horas", "naturais", "010")
 r_cli <- executar_ajuste(pasta, "res", chave, K, "horas", "naturais", "001")
 r_ext <- executar_ajuste(pasta, "res", chave, K, "horas", "externas", "000")
+r_000 <- executar_ajuste(pasta, "res", chave, K, "horas", "naturais", "000")
 e_nat <- json_de(r_nat)$e; sin <- json_de(r_nat)$S$e
-checar("retiradas: sem retirada, só os dias sem registro no SIM ficam sem esperado", identical(nas(e_nat), as.logical(cx$sem_registro)))
+checar("ajuste principal: ficam sem esperado os dias sem registro, os meses não consolidados e os dias sem clima (e os dez seguintes)", identical(nas(e_nat), as.logical(fora_ajuste(cx, opc_de_codigo(COD_PADRAO)))) && sum(nas(e_nat)) > sum(cx$sem_registro))
+checar("ajuste principal: o payload traz o resumo do ajuste (dias, óbitos, período e dias fora por motivo)", { a <- json_de(r_nat)$aj; !is.null(a) && a$nd == sum(!fora_ajuste(cx, opc_de_codigo(COD_PADRAO))) && a$no == sum(num(json_de(r_nat)$o)[!fora_ajuste(cx, opc_de_codigo(COD_PADRAO))]) && length(a$xd) == length(MOTIVOS_FORA) && sum(unlist(a$xd)) + a$nd == length(cx$dias) && a$ini < a$fim })
+checar("retiradas: sem retirada alguma (especificação anterior), só os dias sem registro no SIM ficam sem esperado", identical(nas(json_de(r_000$payload)$e), as.logical(cx$sem_registro)))
+checar("retiradas: o ajuste principal muda o RR em relação à especificação anterior", !igual(json_de(r_nat)$rr, json_de(r_000$payload)$rr, 0.0001))
 j_cov <- json_de(r_cov$payload)
 checar("retirar COVID: os dias de COVID ficam sem esperado, os demais continuam", all(nas(j_cov$e)[cx$covid]) && identical(nas(j_cov$e), as.logical(cx$sem_registro | cx$covid)))
 checar("retirar COVID: as semanas de COVID ficam sem esperado semanal", all(nas(j_cov$S$e)[P$cov_w]) && !all(nas(j_cov$S$e)))
@@ -135,7 +141,7 @@ checar("poucos óbitos depois da retirada: erro recorte_invalido", {
   length(sem111) == 0 || identical(cod(executar_ajuste(pasta, "res", chave, sem111[1], "horas", "naturais", "111")), "recorte_invalido") })
 
 # mapa de horas por dia x limiar (Figura 4): uma coluna por pedido, "mapa<K>"
-KM <- "Via pública|40-49"                                                     # recorte pequeno (poucas centenas de óbitos por ano), para o teste ser rápido
+KM <- "Via pública|60-69"                                                     # recorte pequeno (cerca de 400 óbitos no ajuste principal), para o teste ser rápido
 rm1 <- executar_ajuste(pasta, "res", chave, KM, "mapa36")
 pm <- json_de(rm1$payload)
 checar("mapa: a coluna traz o limiar, as 8 linhas de horas e os intervalos", identical(pm$tipo, "mapa") && pm$limiar == 36 && length(pm$h) == 8 && length(pm$rr) == 8 && length(pm$lo) == 8 && length(pm$hi) == 8 && length(pm$nd) == 8 && !rm1$do_cache)
@@ -147,7 +153,7 @@ checar("mapa: o segundo pedido sai do disco", executar_ajuste(pasta, "res", chav
 # a célula (36 °C, 4 h) refeita à mão com o mesmo GAM deve dar o mesmo RR
 h4 <- match(4, pm$h)
 if (!is.na(num(pm$rr)[h4])) {
-  yk <- y_causa(P, "naturais")[[KM]]; fora0 <- fora_ajuste(cx, opc_de_codigo("000"))
+  yk <- y_causa(P, "naturais")[[KM]]; fora0 <- fora_ajuste(cx, opc_de_codigo(COD_PADRAO))
   nh <- cx$clima$num_hr_36; nh[is.na(nh)] <- 0; x4 <- as.numeric(nh >= 4)
   cb4 <- crossbasis(c(rep(0, LAG), x4), lag = LAG, argvar = list(fun = "lin"), arglag = list(fun = "ns", df = 3))
   cbi4 <- matrix(as.numeric(cb4[-seq_len(LAG), , drop = FALSE]), nrow = length(x4), dimnames = list(NULL, colnames(cb4)))
@@ -183,7 +189,7 @@ cc <- executar_ajuste(pasta, "res", chave, KC, "cid_I21_horas")
 pc <- json_de(cc$payload)
 checar("cid: a causa traz RR, IC 95% e p nos dois níveis de referência", identical(pc$tipo, "cid") && identical(pc$cid, "I21") && length(pc$rr) == 2 && all(num(pc$lo) < num(pc$rr) & num(pc$rr) < num(pc$hi)) && all(num(pc$p) >= 0 & num(pc$p) <= 1) && !cc$do_cache)
 checar("cid: o RR de todas as causas somadas é o do recorte (modelo da Figura 1) e o de uma causa parte do mesmo modelo", {
-  y <- y_cid(P, "naturais", KC, "I21"); r <- ajustar_segmento(y, P$b, cbi_de(P, "horas"), fora_ajuste(P$cx, opc_de_codigo("000")), P$kt)
+  y <- y_cid(P, "naturais", KC, "I21"); r <- ajustar_segmento(y, P$b, cbi_de(P, "horas"), fora_ajuste(P$cx, opc_de_codigo(COD_PADRAO)), P$kt)
   isTRUE(all.equal(num(pc$rr), round(as.numeric(r$rr["rr", ]), 4))) && isTRUE(all.equal(num(pc$p), unname(signif(2 * pnorm(-abs(log(r$rr["rr", ]) / r$se)), 4)))) })
 checar("cid: com a medida de horas o valor de p é o mesmo nos dois níveis (resposta linear no log)", abs(num(pc$p)[1] - num(pc$p)[2]) < 1e-12)
 checar("cid: o segundo pedido sai do disco", executar_ajuste(pasta, "res", chave, KC, "cid_I21_horas")$do_cache)
@@ -200,22 +206,22 @@ checar("cid: a base traz os nomes das causas e o mínimo de óbitos", { bb <- ba
 
 # pedidos assíncronos pelo future: pedidos iguais compartilham a promessa e o resultado é o mesmo
 suppressWarnings(future::plan("multisession", workers = 1))
-p1 <- pedir_ajuste(raiz, pasta, "res", chave, "Via pública|40-49", "horas")                 # a primeira chamada sobe o trabalhador e cria o pedido
-t_2 <- system.time(p2 <- pedir_ajuste(raiz, pasta, "res", chave, "Via pública|40-49", "horas"))[["elapsed"]]
+p1 <- pedir_ajuste(raiz, pasta, "res", chave, "Via pública|60-69", "horas")                 # a primeira chamada sobe o trabalhador e cria o pedido
+t_2 <- system.time(p2 <- pedir_ajuste(raiz, pasta, "res", chave, "Via pública|60-69", "horas"))[["elapsed"]]
 checar("pedido igual em andamento não abre outro trabalho", t_2 < 0.5 && length(ls(.pendentes, all.names = TRUE)) == 1, sprintf("%.2f s, %d pendentes", t_2, length(ls(.pendentes, all.names = TRUE))))
 res <- NULL; err <- NULL; res_b <- NULL
 promises::then(p2, function(v) res_b <<- v)
 promises::then(p1, function(v) res <<- v, function(e) err <<- e)
 t0 <- Sys.time(); while (is.null(res) && is.null(err) && difftime(Sys.time(), t0, units = "secs") < 180) later::run_now(0.2)
-checar("pedido assíncrono termina e traz o payload", !is.null(res) && is.null(err) && all(comparar(res$payload, "Via pública|40-49", "horas")), if (!is.null(err)) conditionMessage(err) else "")
-res2 <- NULL; promises::then(pedir_ajuste(raiz, pasta, "res", chave, "Via pública|40-49", "horas"), function(v) res2 <<- v)
+checar("pedido assíncrono termina e traz o payload", !is.null(res) && is.null(err) && all(comparar(res$payload, "Via pública|60-69", "horas")), if (!is.null(err)) conditionMessage(err) else "")
+res2 <- NULL; promises::then(pedir_ajuste(raiz, pasta, "res", chave, "Via pública|60-69", "horas"), function(v) res2 <<- v)
 t0 <- Sys.time(); while (is.null(res2) && difftime(Sys.time(), t0, units = "secs") < 20) later::run_now(0.1)
 checar("os dois pedidos iguais recebem o mesmo payload", !is.null(res_b) && identical(res_b$payload, res$payload))
 checar("o mesmo pedido de novo sai do disco na hora", !is.null(res2) && res2$do_cache)
 res3 <- NULL; err3 <- NULL
-promises::then(pedir_ajuste(raiz, pasta, "res", chave, "Via pública|40-49", "horas", "externas", "110"), function(v) res3 <<- v, function(e) err3 <<- e)
+promises::then(pedir_ajuste(raiz, pasta, "res", chave, "Via pública|60-69", "horas", "externas", "110"), function(v) res3 <<- v, function(e) err3 <<- e)
 t0 <- Sys.time(); while (is.null(res3) && is.null(err3) && difftime(Sys.time(), t0, units = "secs") < 180) later::run_now(0.2)
-checar("pedido assíncrono com causa e retiradas termina e grava o ajuste", !is.null(res3) && is.null(err3) && !res3$do_cache && file.exists(arquivo_ajuste(pasta, chave, "res", "horas", "Via pública|40-49", "externas", "110")), if (!is.null(err3)) conditionMessage(err3) else "")
+checar("pedido assíncrono com causa e retiradas termina e grava o ajuste", !is.null(res3) && is.null(err3) && !res3$do_cache && file.exists(arquivo_ajuste(pasta, chave, "res", "horas", "Via pública|60-69", "externas", "110")), if (!is.null(err3)) conditionMessage(err3) else "")
 err2 <- NULL; promises::then(pedir_ajuste(raiz, pasta, "res", "chave_antiga", recortes[1], "haat"), function(v) NULL, function(e) err2 <<- e)
 t0 <- Sys.time(); while (is.null(err2) && difftime(Sys.time(), t0, units = "secs") < 60) later::run_now(0.2)
 checar("erro no trabalhador chega à promessa com o código", !is.null(err2) && grepl("^dados_mudaram:", conditionMessage(err2)))

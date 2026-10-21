@@ -61,14 +61,15 @@ ler_texto <- function(f) paste(readLines(f, encoding = "UTF-8", warn = FALSE), c
 for (i in seq_along(ABAS)) ABAS[[i]]$html <- ler_texto(file.path(raiz, "assets", paste0(ABAS[[i]]$arquivo, ".html")))
 
 # Filtros que só existem no app e que cada aba repete com o seu prefixo: causa do óbito e o que retirar do ajuste do modelo.
-# O JavaScript os reconhece pelo id (<prefixo>-causa, <prefixo>-r-covid, <prefixo>-r-nc, <prefixo>-r-clima).
+# O JavaScript os reconhece pelo id (<prefixo>-causa, <prefixo>-r-covid, <prefixo>-r-nc, <prefixo>-r-clima). As caixas de meses não consolidados e de dias sem clima
+# começam marcadas: é o ajuste principal (COD_PADRAO, R/modelo_joao.R).
 filtros_modelo <- function(p) {
   causas <- sprintf("\n    <label>Causa do óbito<select id=\"%s-causa\">%s</select></label>", p,
                     paste0(sprintf("<option value=\"%s\">%s</option>", names(CAUSAS), CAUSAS), collapse = ""))
-  retirar <- gsub("@", p, paste0("\n    <fieldset class=\"ret\"><legend>Retirar do ajuste do modelo</legend>",
+  retirar <- gsub("@", p, paste0("\n    <fieldset class=\"ret\" title=\"Marcado: os dias saem do ajuste do modelo. O ajuste principal retira os meses de registro não consolidado e os dias sem dado de clima (e os 10 seguintes); desmarcar é uma análise de sensibilidade. Dias sem clima mantidos entram como dias sem calor, que era a especificação anterior do painel.\"><legend>Retirar do ajuste do modelo</legend>",
     "<label class=\"chk\"><input type=\"checkbox\" id=\"@-r-covid\"> <span id=\"@-r-covid-t\">Período da COVID-19</span></label>",
-    "<label class=\"chk\"><input type=\"checkbox\" id=\"@-r-nc\"> Meses com registro não consolidado</label>",
-    "<label class=\"chk\"><input type=\"checkbox\" id=\"@-r-clima\"> Dias sem dados de clima (e os 10 seguintes)</label></fieldset>"), fixed = TRUE)
+    "<label class=\"chk\"><input type=\"checkbox\" id=\"@-r-nc\" checked> Meses com registro não consolidado</label>",
+    "<label class=\"chk\"><input type=\"checkbox\" id=\"@-r-clima\" checked> Dias sem dados de clima (e os 10 seguintes)</label></fieldset>"), fixed = TRUE)
   paste0(causas, retirar)
 }
 

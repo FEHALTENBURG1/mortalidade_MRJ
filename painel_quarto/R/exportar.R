@@ -17,7 +17,8 @@ tabela_semanal <- function(cx, sem) {
        mxh = arred(mx, 1), mt = arred(tapply(cl$t_med, g, mean, na.rm = TRUE), 1),
        cov = as.logical(tapply(cx$covid, g, any)), inc = as.logical(tapply(cx$sem_registro, g, any)),
        nc = as.logical(tapply(cx$nao_consolidado, g, any)) & !as.logical(tapply(cx$sem_registro, g, any)),
-       cl = nao_na(cl$hi_max) >= 4)                                  # semana com pelo menos 4 dias de clima
+       cl = nao_na(cl$hi_max) >= 4,                                  # semana com pelo menos 4 dias de clima
+       sc = as.logical(tapply(is.na(cl$hi_max), g, any)))            # semana com algum dia sem dado de clima (exposição não observada)
 }
 
 # Parte da Figura 1 que não depende do recorte: metadados, clima, sinalizações diárias e calendário de semanas.
@@ -31,25 +32,28 @@ base_figura1 <- function(cx, k_time, versao = "1.0") {
     meta = list(versao = versao, gerado_em = format(Sys.time(), "%Y-%m-%d %H:%M"), pop = cx$pop,
                 inicio = as.character(cx$inicio), fim = as.character(cx$fim), n_dias = length(cx$dias), k_tempo = k_time, lag = LAG,
                 meses_nc = I(format(cx$meses_nc, "%Y-%m")), dias_sem_registro = sum(cx$sem_registro), dias_nc = sum(cx$nao_consolidado),
+                dias_sem_clima = sum(is.na(cx$clima$hi_max)), cod_padrao = COD_PADRAO, motivos_fora = as.list(MOTIVOS_FORA),
+                reconc = cx$reconc,
                 n_obitos = nrow(cx$d), min_obitos = MIN_OBITOS, locais = I(c("Todos os locais", LOCAIS)), faixas = I(c("Todas as idades", FAIXAS)),
                 racas = I(RACAS), covid = I(as.character(COVID)),
                 exposicoes = lapply(EXPOSICOES, function(e) list(nome = e$nome, ref = I(e$ref), unidade = e$unidade, fun = e$fun, df = e$df))),
     rc = as.list(setNames(as.integer(rc), names(rc))),
     dias = as.character(cx$dias), cl = cl_,
-    fl = list(inc = as.integer(cx$sem_registro), nc = as.integer(cx$nao_consolidado), cov = as.integer(cx$covid)),
+    fl = list(inc = as.integer(cx$sem_registro), nc = as.integer(cx$nao_consolidado), cov = as.integer(cx$covid), sc = as.integer(is.na(cx$clima$hi_max))),
     sem = tabela_semanal(cx, sem))
 }
 
 # Tudo que a figura precisa de um recorte e uma medida de calor, a partir do ajuste r (ajustar_segmento) e da série diária y:
 # família e dispersão, RR, esperado diário (décimos), observado diário e semanal e o esperado semanal com a faixa de 95%.
 # Com curvas = TRUE (app Shiny), traz também as curvas de exposição-resposta e de defasagem do modelo (`cv`), usadas na aba de exposição-resposta.
-payload_segmento <- function(r, y, sem, cov_w, curvas = FALSE) {
+payload_segmento <- function(r, y, sem, cov_w, curvas = FALSE, aj = NULL) {
   w <- semanal(r, y, sem, cov_w)
   g <- factor(as.character(sem$ini), levels = as.character(sem$ini_ok))
   p <- list(f = r$fam, d = arred(r$disp, 3), rr = arred(as.numeric(r$rr), 4), e = dec(r$mu_sem_calor),
             o = as.integer(y), So = as.integer(tapply(y, g, sum)),
             S = list(e = arred(w$e, 1), l = arred(w$l, 1), u = arred(w$u, 1), phi = arred(w$phi, 2)))
   if (curvas) p$cv <- curvas_payload(r$curvas)
+  if (!is.null(aj)) p$aj <- aj                       # dias e óbitos no ajuste e fora dele, por motivo (resumo_ajuste)
   p
 }
 

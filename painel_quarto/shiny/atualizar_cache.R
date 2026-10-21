@@ -45,11 +45,11 @@ if (any(c("--aquecer", "--aquecer-cid") %in% args) && ok) {
     if (is.null(obter_P(pasta, pop, chave))) stop("sem contexto no cache")
     pedidos <- if ("--aquecer" %in% args) c("horas", "haat", paste0("mapa", LIMIARES)) else character(0)
     if ("--aquecer-cid" %in% args) {
-      causas <- jsonlite::fromJSON(executar_ajuste(pasta, pop, chave, recorte, "cidlista", "naturais", "000")$payload)$cid
+      causas <- jsonlite::fromJSON(executar_ajuste(pasta, pop, chave, recorte, "cidlista", "naturais", COD_PADRAO)$payload)$cid
       pedidos <- c(pedidos, as.vector(rbind(paste0("cid_", causas, "_horas"), paste0("cid_", causas, "_haat"))))
     }
     for (expo in pedidos) {
-      x <- executar_ajuste(pasta, pop, chave, recorte, expo, "naturais", "000")
+      x <- executar_ajuste(pasta, pop, chave, recorte, expo, "naturais", COD_PADRAO)
       cat(format(Sys.time(), "%Y-%m-%d %H:%M:%S"), pop, expo, if (x$do_cache) "no disco" else sprintf("ajustado em %.0f s", x$segundos), "\n")
     }
   }, error = function(e) cat(format(Sys.time(), "%Y-%m-%d %H:%M:%S"), "aquecimento de", pop, "interrompido:", conditionMessage(e), "\n"))

@@ -6,8 +6,22 @@ source(file.path(raiz, "R/utf8.R")); fonte_utf8(file.path(raiz, "R/funcoes.R"))
 ok <- function(cond, msg) { if (!isTRUE(cond)) stop("FALHOU: ", msg, call. = FALSE); cat("ok  ", msg, "\n") }
 
 # --- causas
-ok(identical(eh_natural(c("I219", "J189", "R99", "V892", "X954", "B342", "U071", "C509", "", NA, "A15")), c(TRUE, TRUE, TRUE, FALSE, FALSE, FALSE, FALSE, TRUE, FALSE, FALSE, TRUE)), "causas naturais: A a R, sem V a Y e sem COVID (B34 e U)")
-ok(all(eh_covid(c("B34", "B342", "U07")) & !eh_covid(c("B33", "I10", NA))), "COVID: B34 e códigos U")
+ok(identical(eh_natural(c("I219", "J189", "R99", "V892", "X954", "B342", "U071", "C509", "", NA, "A15", "B349", "B34", "S720", "Z000")),
+             c(TRUE, TRUE, TRUE, FALSE, FALSE, FALSE, FALSE, TRUE, FALSE, FALSE, TRUE, TRUE, TRUE, FALSE, FALSE)), "causas naturais: A00 a R99, sem COVID-19 (B34.2 e U07); os demais B34 são naturais")
+ok(identical(eh_covid(c("B342", "B34.2", "U071", "U072", "U07", "B34", "B349", "B340", "B33", "I10", "U04", NA)), c(TRUE, TRUE, TRUE, TRUE, TRUE, FALSE, FALSE, FALSE, FALSE, FALSE, FALSE, FALSE)),
+   "COVID-19: B34.2 e U07; B34 sem subcategoria ou outras subcategorias de B34 não contam")
+cid <- c("I219", "B342", "B349", "U071", "U04", "S720", "T140", "V892", "X954", "Y349", "Z000", "", NA, "R99", "D90", "Y99", "V00", "I2", "ABCDE", "i21.9", "H96", "D49", "K94", "P96", "T98", "T99")
+esp <- c("natural", "covid", "natural", "covid", "outros_validos", "lesao", "lesao", "externa", "externa", "externa", "outros_validos", "ausente", "ausente", "natural", "invalida", "invalida", "invalida",
+         "invalida", "invalida", "natural", "invalida", "natural", "invalida", "natural", "lesao", "invalida")
+ok(identical(as.character(classificar_causa(cid)), esp), "classificação da causa básica: naturais, COVID-19, externas V01 a Y98, lesões S a T, outros válidos, ausentes e inválidos")
+ok(identical(levels(classificar_causa(cid)), names(GRUPOS_CAUSA)), "grupos de causa na ordem de GRUPOS_CAUSA")
+# reconciliação: a soma dos grupos é o total, e cada opção do seletor soma os grupos que reúne
+dr <- data.frame(cid4 = limpar_cid(cid), stringsAsFactors = FALSE); dr$grupo <- classificar_causa(dr$cid4)
+rc <- reconciliar_causas(dr)
+ok(rc$total == length(cid) && sum(rc$grupos$n) == rc$total, "reconciliação: a soma dos grupos coincide com o total de óbitos elegíveis")
+ok(rc$opcoes$todas == rc$total && rc$opcoes$naturais + rc$opcoes$externas + sum(rc$grupos$n[rc$grupos$grupo %in% c("covid", "lesao", "outros_validos", "ausente", "invalida")]) == rc$total &&
+   rc$opcoes$todas_sem_covid == rc$total - rc$grupos$n[rc$grupos$grupo == "covid"], "reconciliação: opções do seletor (naturais, externas, todas sem COVID-19, todas)")
+ok(rc$detalhe$n[1] == 1 && rc$detalhe$n[2] == 1 && rc$detalhe$n[3] == 1, "reconciliação: detalhe de B34.2, demais B34 e U07")
 
 # --- faixas etárias da UNICEF: limites inferiores incluídos
 idade <- c(0, 0.5, 4.99, 5, 9, 10, 19.9, 20, 29, 30, 79.9, 80, 105, NA)
@@ -44,7 +58,10 @@ ok(identical(ruim, "2011-03"), "mês a 60% da referência é marcado; mês a 90%
 # a taxa usa os dias com registro: mês em que só os 10 primeiros dias foram carregados não é marcado
 dia_obitos2 <- c(dia_obitos[dia_obitos < as.Date("2011-06-01")], rep(seq(as.Date("2011-06-01"), as.Date("2011-06-10"), by = "day"), 10))
 r2 <- meses_nao_consolidados(dia_obitos2, as.Date("2010-01-01"))
-ok(!"2011-06" %in% format(r2$meses[r2$ruim], "%Y-%m"), "mês com poucos dias carregados mas taxa normal não é marcado")
+ok("2011-06" %in% format(r2$meses[r2$ruim], "%Y-%m"), "último mês do arquivo incompleto (termina antes do fim do mês) é marcado, mesmo com taxa normal")
+dia_obitos3 <- dia_obitos[!(dia_obitos >= as.Date("2010-08-10") & dia_obitos <= as.Date("2010-08-12"))]       # três dias sem nenhum óbito no meio de um mês
+r3 <- meses_nao_consolidados(dia_obitos3, as.Date("2010-01-01"))
+ok(identical(format(r3$meses[r3$ruim], "%Y-%m"), c("2010-08", "2011-03")), "mês com dia sem nenhum óbito registrado é marcado")
 ok(all(dias_sem_registro(dia_obitos2, seq(as.Date("2011-06-08"), as.Date("2011-06-12"), by = "day")) == c(FALSE, FALSE, FALSE, TRUE, TRUE)), "dias sem nenhum óbito = sem registro")
 per <- definir_periodo(dia_obitos2, as.Date("2011-06-30"), as.Date("2010-01-01"))
 ok(per$fim == as.Date("2011-06-10"), "fim = menor entre o último dia com óbito e o último dia com clima")
