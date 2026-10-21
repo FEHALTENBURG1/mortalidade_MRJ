@@ -319,11 +319,22 @@ limiar_do_id <- function(id) {
   if (length(m) == 2 && as.integer(m[2]) %in% LIMIARES) as.integer(m[2]) else NA_integer_
 }
 
-# Uma célula: x = exposição binária do calendário. Devolve c(rr, lo, hi, nd, fam), com NA no RR se a célula não for estimada.
+# Eventos independentes de uma exposição binária: conjuntos de dias expostos em que dois dias expostos consecutivos distam no máximo `lag` dias (a mesma definição de
+# suporte_exposicao). Conta os eventos que têm pelo menos um dia exposto dentro do ajuste.
+eventos_independentes <- function(x, fora, lag = LAG) {
+  ie <- which(x > 0)
+  if (!length(ie)) return(0L)
+  grp <- cumsum(c(TRUE, diff(ie) > lag))
+  length(unique(grp[!fora[ie]]))
+}
+
+# Uma célula: x = exposição binária do calendário. Devolve c(rr, lo, hi, nd, ev), com NA no RR se a célula não for estimada.
+# nd = dias expostos no ajuste; ev = eventos independentes de calor (sequências de dias expostos separadas por mais de LAG dias sem exposição).
 celula_mapa <- function(x, y, b, fora, k_time) {
   ok <- !fora
   nd <- sum(x[ok])
-  vazia <- c(rr = NA_real_, lo = NA_real_, hi = NA_real_, nd = nd)
+  ev <- eventos_independentes(x, fora)
+  vazia <- c(rr = NA_real_, lo = NA_real_, hi = NA_real_, nd = nd, ev = ev)
   if (nd < MIN_DIAS_EXPOSTOS || nd > sum(ok) - 30) return(vazia)
   cb <- crossbasis(c(rep(0, LAG), x), lag = LAG, argvar = list(fun = "lin"), arglag = list(fun = "ns", df = 3))
   cb_i <- matrix(as.numeric(cb[-seq_len(LAG), , drop = FALSE]), nrow = length(x), dimnames = list(NULL, colnames(cb)))
@@ -332,7 +343,7 @@ celula_mapa <- function(x, y, b, fora, k_time) {
     fit <- ajustar_gam(dd, cb_i, NULL, k_time)$fit
     ib <- grep("^cb_i", names(coef(fit)))
     pr <- crosspred(cb, coef = coef(fit)[ib], vcov = vcov(fit)[ib, ib], model.link = "log", at = 1, cen = 0)
-    c(rr = unname(pr$allRRfit), lo = unname(pr$allRRlow), hi = unname(pr$allRRhigh), nd = nd)
+    c(rr = unname(pr$allRRfit), lo = unname(pr$allRRlow), hi = unname(pr$allRRhigh), nd = nd, ev = ev)
   }, error = function(e) NULL)
   if (is.null(r) || !all(is.finite(r[c("rr", "lo", "hi")]))) vazia else r
 }
@@ -341,7 +352,7 @@ celula_mapa <- function(x, y, b, fora, k_time) {
 ajustar_mapa_limiar <- function(y, b, nh, fora, k_time, K, horas = HORAS_MAPA) {
   nh[is.na(nh)] <- 0
   m <- sapply(horas, function(h) celula_mapa(as.numeric(nh >= h), y, b, fora, k_time))
-  list(tipo = "mapa", limiar = K, h = horas, rr = m["rr", ], lo = m["lo", ], hi = m["hi", ], nd = m["nd", ], n = sum(y[!fora]))
+  list(tipo = "mapa", limiar = K, h = horas, rr = m["rr", ], lo = m["lo", ], hi = m["hi", ], nd = m["nd", ], ev = m["ev", ], n = sum(y[!fora]))
 }
 
 # Variância de um dia sob o modelo

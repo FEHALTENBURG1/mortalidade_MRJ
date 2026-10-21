@@ -192,7 +192,7 @@ try:
         sel("s-local", "Todos os locais"); pronto()
         checar("Quadro 5: voltar ao recorte já calculado mostra o fora da amostra sem novo pedido", not visivel("s-cob-btn") and linhas5() == L5o)
         # 5b3. Período exibido: a seleção de anos altera só o que é mostrado; os RR vêm do modelo ajustado com a série completa
-        etiq = lambda: pg.eval_on_selector_all("#s-kpis .kpi", "els=>els.map(e=>[(e.querySelector('.tg')||{}).textContent||'', e.querySelector('.v').textContent])")
+        etiq = lambda: pg.eval_on_selector_all("#s-kpis .kpi", "els=>els.map(e=>[e.querySelector('.tg')?[...e.querySelector('.tg').childNodes].filter(n=>n.nodeType===3).map(n=>n.textContent).join(''):'', e.querySelector('.v').textContent])")
         et0 = etiq(); L5_0 = linhas5(); h2_0 = texto("s-h2")
         checar("Período exibido: os controles de anos e a nota usam o nome novo", "período exibido: ano inicial" in texto("tab-serie").lower() and "período exibido: ano final" in texto("tab-serie").lower() and "ano inicial" not in texto("tab-serie").lower().replace("período exibido: ano inicial", "") and texto("s-per-nota").startswith("Período exibido: ") and "(série completa)" in texto("s-per-nota"), texto("s-per-nota")[:200])
         checar("Período exibido: os dois cartões de RR dizem 'Modelo ajustado com a série completa' e os demais 'Período exibido'", len(et0) >= 6 and [e for e, _ in et0].count("Modelo ajustado com a série completa") == 2 and all(e in ("Modelo ajustado com a série completa", "Período exibido") for e, _ in et0), et0)
@@ -216,6 +216,42 @@ try:
         sel("s-local", "Todos os locais"); sel("s-faixa", "Todas as idades")
         pg.uncheck("#s-r-covid"); sel("s-causa", "naturais"); pronto()
         checar("estado restaurado para o padrão", kpis() == k_ini)
+
+
+        # 5b4. RR do modelo x razão O/E descritiva (cartões diferenciados) e gráficos alinhados de clima e óbitos
+        tipos = lambda: pg.eval_on_selector_all("#s-kpis .kpi", "els=>els.map(e=>({cls:e.className.split(' '),chip:(e.querySelector('.tp')||{}).textContent||'',l:e.querySelector('.l').innerText}))")
+        T0 = tipos(); mod0 = [t for t in T0 if "mod" in t["cls"]]; desc0 = [t for t in T0 if "desc" in t["cls"]]
+        tem_rr = lambda t: re.search(r"\bRR\b", t) is not None
+        checar("Figura 1: os cartões de RR são 'mod' com o selo 'RR do modelo'; os de O/E e de frequência acima da faixa são 'desc' com o selo 'Descritivo, não é RR'",
+               len(mod0) == 2 and all(t["chip"] == "RR do modelo" and tem_rr(t["l"]) for t in mod0) and len(desc0) == 4 and all(t["chip"] == "Descritivo, não é RR" and not tem_rr(t["l"]) for t in desc0), T0)
+        checar("Figura 1: nenhum cartão de O/E é chamado de RR, e nenhum cartão de RR traz O/E", all(not ("O/E" in t["l"] or "observado/esperado" in t["l"]) or ("desc" in t["cls"] and not tem_rr(t["l"])) for t in T0) and all("O/E" not in t["l"] for t in mod0), T0)
+        checar("Figura 1: a razão de semanas de calor se chama 'razão observado/esperado sem calor (O/E)'", any("razão observado/esperado sem calor (O/E)" in t["l"] for t in desc0), [t["l"] for t in desc0])
+        sel("s-esc", "dia"); pronto(); Td = tipos()
+        checar("Figura 1 diária: dois cartões de RR do modelo e três descritivos, nenhum O/E chamado de RR", len([t for t in Td if "mod" in t["cls"]]) == 2 and len([t for t in Td if "desc" in t["cls"]]) == 3 and all(not tem_rr(t["l"]) for t in Td if "desc" in t["cls"]), Td)
+        sel("s-esc", "sem"); pg.select_option("#s-ini", index=0); pronto()
+        # gráficos alinhados (padrão) x sobrepostos
+        geo = lambda: pg.evaluate("""()=>{const a=Chart.getChart('s-chart'),c=Chart.getChart('s-chart2');return a&&c?{a:[a.chartArea.left,a.chartArea.right],c:[c.chartArea.left,c.chartArea.right],n1:a.data.labels.length,n2:c.data.labels.length,l1:a.data.labels[0],l2:c.data.labels[c.data.labels.length-1],ya:a.options.scales.y.title.text,bar1:!!(a.options.plugins.barras),yt1:a.options.scales.yt.display,ytc:c.options.scales.yt.title.text,vals:JSON.stringify(c.options.plugins.barras.vals)}:null}""")
+        g = geo()
+        checar("Gráficos alinhados (padrão): painel de clima abaixo do de óbitos, com a mesma área de plotagem horizontal e o mesmo eixo do tempo",
+               g and visivel("s-box2") and visivel("s-leg2") and abs(g["a"][0] - g["c"][0]) < 1 and abs(g["a"][1] - g["c"][1]) < 1 and g["n1"] == g["n2"] and g["l1"] and not g["bar1"] and g["yt1"] is False and pg.input_value("#s-disp") == "alinhado", g)
+        checar("Gráficos alinhados: a legenda do clima fica no painel de clima, e a de óbitos não repete as colunas; a nota descreve o painel", "painel de clima" in texto("s-leg2").lower() and "eixo da direita" not in texto("s-leg") and "coluna diária" not in texto("s-leg") and "Painel de clima, alinhado ao gráfico de óbitos" in nota(), (texto("s-leg2")[:200], nota()[-300:]))
+        checar("Gráficos alinhados: os eixos têm título curto e o painel de clima mostra as cores dos níveis de calor (NC)", "IC médio (°C)" == g["ytc"] and "NC" in texto("s-leg2") and pixels() > 2000 and pg.evaluate("""()=>{const c=document.getElementById('s-chart2'),g=c.getContext('2d'),d=g.getImageData(0,0,c.width,c.height).data;let n=0;for(let i=3;i<d.length;i+=4) if(d[i]>0) n++;return n}""") > 2000, g)
+        vals_al = g["vals"]
+        if capturas: pg.screenshot(path=os.path.join(capturas, "app_01b_alinhado.png"), full_page=True)
+        sel("s-disp", "sobreposto")
+        gs = pg.evaluate("""()=>{const a=Chart.getChart('s-chart');return {bar1:!!(a.options.plugins.barras),yt1:a.options.scales.yt.display,vals:a.options.plugins.barras?JSON.stringify(a.options.plugins.barras.vals):null,c2:!!Chart.getChart('s-chart2')}}""")
+        checar("Gráficos sobrepostos: o painel de clima some, as colunas voltam ao fundo com segundo eixo e os mesmos valores diários",
+               not visivel("s-box2") and not visivel("s-leg2") and gs["bar1"] and gs["yt1"] is True and not gs["c2"] and gs["vals"] == vals_al and "eixo da direita" in texto("s-leg") and "Colunas ao fundo" in nota(), (gs, texto("s-leg")[:200]))
+        sel("s-bar", "no")
+        checar("Sem colunas de clima, só há o gráfico de óbitos, em qualquer disposição", not visivel("s-box2") and pg.evaluate("()=>!Chart.getChart('s-chart2')"))
+        sel("s-disp", "alinhado")
+        checar("Sem colunas de clima e disposição alinhada: continua só o gráfico de óbitos", not visivel("s-box2") and not visivel("s-leg2"))
+        sel("s-bar", "hi_med")
+        sel("s-esc", "dia"); pronto(); gd = geo()
+        checar("Gráficos alinhados na escala diária: mesma área de plotagem e mesmo número de dias nos dois painéis", gd and abs(gd["a"][0] - gd["c"][0]) < 1 and abs(gd["a"][1] - gd["c"][1]) < 1 and gd["n1"] == gd["n2"] and visivel("s-box2"), gd)
+        sel("s-esc", "sem"); pg.select_option("#s-ini", index=0); pronto()
+        checar("Gráficos alinhados: voltar à escala semanal restaura o painel de clima", visivel("s-box2") and geo() is not None and pg.input_value("#s-disp") == "alinhado")
+        checar("Gráficos e cartões: sem travessão nas legendas do painel de clima", not re.search("[—–]", texto("s-leg2")))
 
         # 5c. aba de exposição-resposta e defasagem (filtros próprios, mesmos modelos)
         xk = lambda: pg.eval_on_selector_all("#x-kpis .kpi", "els=>els.map(e=>[e.querySelector('.v').innerText, e.querySelector('.l').innerText].join(' | '))")
@@ -303,15 +339,34 @@ try:
         hm_pend = lambda: pg.evaluate("()=>[...document.querySelectorAll('#x-hm td:not(.rl)')].filter(t=>t.innerText==='…').length")
         hm_pronto = lambda t=600000: pg.wait_for_function("document.querySelectorAll('#x-hm td:not(.rl)').length===104 && ![...document.querySelectorAll('#x-hm td:not(.rl)')].some(t=>t.innerText==='…') && document.getElementById('x-hm-interp').innerText.includes('combinações estimadas')", timeout=t)
         checar("Figura 4: cabeçalho com os limiares de 32 a 44 °C e 8 linhas de horas", hm_cols() == [str(k) for k in range(32, 45)] and pg.evaluate("()=>document.querySelectorAll('#x-hm td.rl').length") == 8, hm_cols())
-        pg.wait_for_function("[...document.querySelectorAll('#x-hm td:not(.rl)')].some(t=>/^[0-9],[0-9]{2}$/.test(t.innerText))", timeout=120000)
+        pg.wait_for_function("[...document.querySelectorAll('#x-hm td:not(.rl)')].some(t=>/^[0-9],[0-9]{2}$/.test(t.childNodes[0].textContent))", timeout=120000)
         checar("Figura 4: a primeira coluna recebida é a de 36 °C e a tabela mostra progresso", "Calculando as colunas do mapa" in pg.inner_text("#x-hm-prog") or hm_pend() == 0, pg.inner_text("#x-hm-prog"))
         if capturas: pg.screenshot(path=os.path.join(capturas, "app_02d_mapa_parcial.png"), full_page=True)
         hm_pronto()
-        celulas = pg.evaluate("()=>[...document.querySelectorAll('#x-hm td:not(.rl)')].map(t=>({t:t.innerText,title:t.title,bold:t.style.fontWeight}))")
+        celulas = pg.evaluate("()=>[...document.querySelectorAll('#x-hm td:not(.rl)')].map(t=>({t:t.childNodes[0].textContent,title:t.title,bold:t.style.fontWeight,sub:(t.querySelector('.sub')||{}).innerText||null,outline:t.style.outline}))")
         rrs = [c for c in celulas if re.match(r"^\d,\d{2}$", c["t"])]
         checar("Figura 4: 104 células, a maioria estimada, o resto com traço", len(celulas) == 104 and len(rrs) > 60 and all(c["t"] in ("–",) or re.match(r"^\d,\d{2}$", c["t"]) for c in celulas), (len(celulas), len(rrs)))
         checar("Figura 4: o texto da célula traz limiar, horas, RR com IC 95% e dias expostos", all(("Índice de calor ≥" in c["title"] and "IC 95%" in c["title"] and "dias expostos" in c["title"]) for c in rrs))
-        checar("Figura 4: o RR de 36 °C com 1 h bate com o da interpretação", re.search(r"36 °C e pelo menos 1 hora no dia, RR = (\d,\d{2})", pg.inner_text("#x-hm-interp")) and re.search(r"36 °C e pelo menos 1 hora no dia, RR = (\d,\d{2})", pg.inner_text("#x-hm-interp")).group(1) == pg.inner_text("#x-hm tr:nth-child(2) td:nth-child(6)"), pg.inner_text("#x-hm-interp")[:300])
+        cel_ref = pg.evaluate("()=>document.querySelector('#x-hm tr:nth-child(5) td:nth-child(6)').childNodes[0].textContent")
+        m_ref = re.search(r"definição de dia de calor do protocolo \(pelo menos 4 h com índice de calor ≥ 36 °C\), RR = (\d,\d{2})", pg.inner_text("#x-hm-interp"))
+        checar("Figura 4: o RR da célula de referência do protocolo (36 °C, 4 h) bate com o da interpretação", m_ref and m_ref.group(1) == cel_ref, pg.inner_text("#x-hm-interp")[:300])
+        # dias expostos e eventos independentes em cada célula; a célula (36 °C, 4 h) é a linha de 1 dia do Quadro 4 (outro caminho de cálculo, no servidor)
+        subs = [c["sub"] for c in celulas]
+        checar("Figura 4: cada célula mostra os dias expostos (d) e os eventos independentes (ev.), no texto e na dica", all(s_ and re.match(r"^[\d.]+ d · [\d.]+ ev\.$", s_) for s_ in subs) and all(re.search(r"[\d.]+ dias expostos em [\d.]+ evento\(s\) independente\(s\)", c["title"]) for c in celulas), subs[:4])
+        def _dev(c):
+            m_ = re.search(r"([\d.]+) dias expostos em ([\d.]+) evento", c["title"]); return int(m_.group(1).replace(".", "")), int(m_.group(2).replace(".", ""))
+        def _sub(c):
+            m_ = re.match(r"^([\d.]+) d · ([\d.]+) ev\.$", c["sub"]); return int(m_.group(1).replace(".", "")), int(m_.group(2).replace(".", ""))
+        checar("Figura 4: o texto da célula e a dica dizem o mesmo número de dias e de eventos, e os eventos nunca superam os dias", all(_sub(c) == _dev(c) and _dev(c)[1] <= _dev(c)[0] for c in celulas))
+        L4_ref = L4[0]                                                                         # 4 h por dia ou mais, duração de 1 dia: dias expostos (col. 4) e eventos independentes (col. 5)
+        d36, e36 = _dev(celulas[3 * 13 + 4])                                                   # linha H = 4 h (4ª linha), coluna K = 36 °C (5ª coluna)
+        checar("Figura 4: a célula (36 °C, 4 h) tem os mesmos dias expostos e eventos independentes da linha de 1 dia do Quadro 4", (d36, e36) == (num(L4_ref[4]), num(L4_ref[5])), ((d36, e36), L4_ref))
+        checar("Figura 4: nas células aninhadas, os dias expostos não crescem com as horas (cada coluna)", all(_dev(celulas[i * 13 + j])[0] >= _dev(celulas[(i + 1) * 13 + j])[0] for i in range(7) for j in range(13)))
+        checar("Figura 4: só a célula de referência do protocolo tem contorno; o máximo não é destacado", [i for i, c in enumerate(celulas) if "2px" in c["outline"]] == [3 * 13 + 4] and "O maior valor da tabela" not in pg.inner_text("#x-hm-interp") and "não indica o melhor limiar" in pg.inner_text("#x-hm-interp") and pg.eval_on_selector_all("#x-hm-interp b", "bs=>bs.length") == 1, pg.inner_text("#x-hm-interp")[:500])
+        pg.uncheck("#x-hm-n")
+        checar("Figura 4: desmarcar 'mostrar dias e eventos' tira a segunda linha das células e mantém a dica", pg.evaluate("()=>document.querySelectorAll('#x-hm td .sub').length")==0 and "dias expostos" in pg.evaluate("()=>document.querySelector('#x-hm tr:nth-child(5) td:nth-child(6)').title"))
+        pg.check("#x-hm-n")
+        checar("Figura 4: marcar de novo devolve as 104 linhas de dias e eventos", pg.evaluate("()=>document.querySelectorAll('#x-hm td .sub').length")==104)
         checar("Figura 4: a interpretação e a nota não usam travessão", "—" not in pg.inner_text("#x-hm-interp") + pg.inner_text("#x-hm-note") and "–" not in pg.inner_text("#x-hm-interp"))
         sem_ic = pg.evaluate("()=>[...document.querySelectorAll('#x-hm td:not(.rl)')].filter(t=>/^[0-9],/.test(t.innerText) && t.style.fontWeight!=='700').length")
         pg.check("#x-hm-sig")
@@ -321,10 +376,10 @@ try:
         if capturas: pg.screenshot(path=os.path.join(capturas, "app_02d_mapa.png"), full_page=True)
         # trocar o recorte pede novas colunas; voltar usa o que já chegou
         sel("x-causa", "externas"); hm_pronto()
-        checar("Figura 4: outra causa do óbito gera outro mapa", [c["t"] for c in pg.evaluate("()=>[...document.querySelectorAll('#x-hm td:not(.rl)')].map(t=>({t:t.innerText}))")] != [c["t"] for c in celulas])
+        checar("Figura 4: outra causa do óbito gera outro mapa", [c["t"] for c in pg.evaluate("()=>[...document.querySelectorAll('#x-hm td:not(.rl)')].map(t=>({t:t.childNodes[0].textContent}))")] != [c["t"] for c in celulas])
         sel("x-causa", "naturais")
         pg.wait_for_function("document.getElementById('x-hm-interp').innerText.includes('combinações estimadas')", timeout=5000)
-        checar("Figura 4: voltar ao recorte anterior redesenha na hora, sem novo cálculo", [c["t"] for c in pg.evaluate("()=>[...document.querySelectorAll('#x-hm td:not(.rl)')].map(t=>({t:t.innerText}))")] == [c["t"] for c in celulas])
+        checar("Figura 4: voltar ao recorte anterior redesenha na hora, sem novo cálculo", [c["t"] for c in pg.evaluate("()=>[...document.querySelectorAll('#x-hm td:not(.rl)')].map(t=>({t:t.childNodes[0].textContent}))")] == [c["t"] for c in celulas])
         sel("x-local", "Ignorado"); sel("x-faixa", "30-39")
         pg.wait_for_function("document.getElementById('x-hm-note').innerText.includes('Menos de 300 óbitos')", timeout=5000)
         checar("Figura 4: recorte com poucos óbitos informa o limite e esvazia a tabela", pg.evaluate("()=>document.getElementById('x-hm').innerHTML==='' ") )
@@ -361,52 +416,123 @@ try:
         sel("x-local2", "__sem__"); xpronto()
         checar("sem comparação de novo: a aba volta ao recorte único", not visivel("y-kpis") and xk() == xk_ini)
 
-        # 5f. aba de causas específicas (CID-10): um modelo por causa, valor q de Benjamini e Hochberg na família escolhida
+        # 5f. aba de causas específicas (CID-10): um modelo por causa; q de Benjamini e Hochberg dentro de duas famílias fixas (principal e exploratória);
+        # capítulo e significância só filtram a exibição; todas as estimativas visíveis por padrão
         # (precisa de um cache com a causa básica de cada óbito; com cache antigo o servidor avisa e esta parte é pulada)
         kcod = lambda: pg.evaluate("()=>[...document.querySelectorAll('#k-fig g[data-c]')].map(g=>g.dataset.c)")
         ktit = lambda: pg.evaluate("()=>[...document.querySelectorAll('#k-fig g[data-c] title')].map(t=>t.textContent)")
-        kpronto = lambda t=420000: pg.wait_for_function("document.getElementById('k-prog').innerText==='' && /causas avaliadas|Nenhuma causa|Menos de/.test(document.getElementById('k-interp').innerText + document.getElementById('k-note').innerText)", timeout=t)
+        kpronto = lambda t=900000: pg.wait_for_function("document.getElementById('k-prog').innerText==='' && /causas avaliadas|Nenhuma causa|Menos de/.test(document.getElementById('k-interp').innerText + document.getElementById('k-note').innerText)", timeout=t)
         num_br = lambda t: 0.0005 if t.startswith("<") else float(t.replace(",", "."))
+        # oráculo independente da família principal: os 15 grupos do estudo de referência, como listados no texto de Métodos (R/metodos.R)
+        GRUPOS_REF_PY = [("J", 9, 9), ("J", 12, 18), ("J", 40, 47), ("J", 0, 6), ("J", 20, 39), ("J", 60, 70), ("J", 80, 99), ("R", 9, 9), ("U", 4, 4), ("I", 10, 15), ("I", 20, 25), ("I", 50, 50),
+                         ("I", 60, 69), ("I", 0, 9), ("I", 26, 49), ("I", 51, 52), ("I", 70, 99), ("C", 0, 97), ("G", 30, 31), ("F", 1, 1), ("F", 3, 3), ("E", 10, 14), ("N", 17, 19), ("A", 40, 41),
+                         ("N", 39, 39), ("R", 0, 99)]
+        def principal_py(c): return any(c[0] == l and a <= int(c[1:3]) <= b for l, a, b in GRUPOS_REF_PY)
+        def cap_py(c):
+            l = c[0]
+            if l == "B": return "A"
+            if l == "D": return "C" if int(c[1:3]) < 50 else "D"
+            if l in "VWXY": return "X"
+            return l
+        def krows():
+            r = pg.evaluate("""()=>[...document.querySelectorAll('#k-fig g[data-c]')].map(g=>({c:g.dataset.c,f:g.dataset.f,t:g.querySelector('title').textContent,fill:g.querySelector('circle').getAttribute('fill'),sw:g.querySelector('circle').getAttribute('stroke-width')}))""")
+            for x in r:
+                x["q"] = num_br(re.search(r"q = (<?[0-9,]+)", x["t"]).group(1)) if "q = " in x["t"] else None
+                x["p"] = num_br(re.search(r"p = (<?[0-9,]+)", x["t"]).group(1))
+            return r
+        def qmap(): return {x["c"]: x["q"] for x in krows()}
+        filtro = lambda: pg.inner_text("#k-filtro")
         pg.click("nav button[data-tab=cid]")
         pg.wait_for_function("!document.getElementById('tab-cid').classList.contains('hide')", timeout=5000)
-        checar("aba CID: filtros de recorte, medida, nível, conjunto e capítulo, e filtros de causa e retiradas próprios",
-               opcoes("k-exp") == ["horas", "haat"] and opcoes("k-conj") == ["todas", "apriori"] and len(opcoes("k-cap")) == 19 and len(opcoes("k-nivel")) == 2
+        checar("aba CID: filtros de recorte, medida, nível e famílias; capítulo e significância como filtros de exibição; filtros de causa e retiradas próprios",
+               opcoes("k-exp") == ["horas", "haat"] and opcoes("k-conj") == ["todas", "principal"] and len(opcoes("k-cap")) == 19 and len(opcoes("k-nivel")) == 2
+               and pg.query_selector("#k-sig") and not pg.query_selector("#k-todos") and not pg.is_checked("#k-sig") and pg.input_value("#k-cap") == "all" and pg.input_value("#k-conj") == "todas"
                and opcoes("k-causa") == ["naturais", "todas_sem_covid", "todas", "externas"] and all(pg.query_selector(f"#k-r-{c}") for c in ("covid", "nc", "clima")))
         pg.wait_for_function("document.getElementById('k-prog').innerText!=='' || document.querySelectorAll('#k-fig g[data-c]').length>0 || document.getElementById('k-note').innerText!==''", timeout=120000)
         pg.wait_for_function("!document.getElementById('k-prog').innerText.startsWith('Obtendo')", timeout=120000)
         if "não traz a causa básica" in pg.inner_text("#k-prog") or "Não foi possível obter" in pg.inner_text("#k-prog"):
             print("PULADO: o cache deste teste não traz a causa básica de cada óbito (refaça com atualizar_cache.R --forcar ou montar_cache_local.R): ", pg.inner_text("#k-prog")[:160], flush=True)
         else:
-            sel("k-conj", "apriori"); sel("k-cap", "I"); kpronto()
-            cods = kcod()
-            checar("aba CID: causas selecionadas do referencial no capítulo IX (aparelho circulatório): só causas I, com figura e interpretação", len(cods) > 0 and all(c.startswith("I") for c in cods) and "causas avaliadas" in pg.inner_text("#k-interp"), (cods, pg.inner_text("#k-interp")[:200]))
-            qs = [num_br(re.search(r"q = (<?[0-9,]+)", t).group(1)) for t in ktit()]
-            checar("aba CID: com o filtro padrão só aparecem causas com q < 0,05", all(q < 0.05 for q in qs), qs)
-            pg.check("#k-todos"); n_todas = len(kcod())
-            tit = ktit(); ps = [num_br(re.search(r"p = (<?[0-9,]+)", t).group(1)) for t in tit]; qs2 = [num_br(re.search(r"q = (<?[0-9,]+)", t).group(1)) for t in tit]
-            checar("aba CID: incluir as causas sem diferença traz todas as causas da família", n_todas >= len(cods) and sum(1 for q in qs2 if q < 0.05) == len(cods), (n_todas, len(cods)))
-            ordem = sorted(range(len(ps)), key=lambda i: (ps[i], qs2[i]))             # p e q vêm arredondados em 3 casas: empates em p ordenam por q
-            checar("aba CID: o valor q nunca fica abaixo do p e não decresce com o p (Benjamini e Hochberg)", all(q2 >= p - 0.0006 for p, q2 in zip(ps, qs2)) and all(qs2[ordem[i]] <= qs2[ordem[i + 1]] + 0.0011 for i in range(len(ordem) - 1)), list(zip(ps, qs2))[:8])
-            checar("aba CID: nota e interpretação sem travessão", not re.search("[—–]", pg.inner_text("#k-note") + pg.inner_text("#k-interp")))
-            pg.uncheck("#k-todos")
+            # só a família principal: todas as estimativas aparecem, sem filtro, e todas pertencem aos 15 grupos
+            sel("k-conj", "principal"); kpronto()
+            rp = krows(); cp = [x["c"] for x in rp]
+            checar("aba CID: só a família principal: todas as causas avaliadas aparecem por padrão (sem filtro de significância) e só há causas dos 15 grupos do referencial",
+                   len(cp) > 10 and all(x["f"] == "p" for x in rp) and all(principal_py(c) for c in cp) and any(x["q"] >= 0.05 for x in rp), (len(cp), [c for c in cp if not principal_py(c)]))
+            m = re.search(r"Mostrando ([\d.]+) de ([\d.]+) causas avaliadas, sem filtro de exibição", filtro())
+            checar("aba CID: a linha 'Mostrando m de N causas' confere com a figura e informa que o q não muda com os filtros",
+                   m and int(m.group(1).replace(".", "")) == len(cp) == int(m.group(2).replace(".", "")) and "não muda com esses filtros" in filtro() and "família principal" in filtro().lower(), filtro())
+            q_prin = qmap()
+            if capturas: pg.screenshot(path=os.path.join(capturas, "app_02f_cid_principal.png"), full_page=True)
+            # as duas famílias: a lista completa, em dois blocos
+            sel("k-conj", "todas"); kpronto()
+            rt = krows(); ct = [x["c"] for x in rt]
+            qt = {x["c"]: x["q"] for x in rt}
+            checar("aba CID: duas famílias: a principal é o conjunto fixo dos 15 grupos (conferido por um oráculo independente) e a exploratória reúne o resto",
+                   len(ct) > len(cp) and all((x["f"] == "p") == principal_py(x["c"]) for x in rt) and any(x["f"] == "e" for x in rt) and sorted(x["c"] for x in rt if x["f"] == "p") == sorted(cp), (len(ct), len(cp)))
+            checar("aba CID: escolher só a família principal não muda o q dela", all(q_prin[c] == qt[c] for c in cp), [(c, q_prin[c], qt[c]) for c in cp if q_prin[c] != qt[c]][:5])
+            fam_tx = pg.inner_text("#k-fig")
+            checar("aba CID: a figura tem um bloco por família, com o número de causas e a explicação do q", "Família principal" in fam_tx and "Família exploratória" in fam_tx and "q de Benjamini e Hochberg dentro da família" in fam_tx, fam_tx[:300])
+            checar("aba CID: marcador cheio na família principal e vazado na exploratória",
+                   all(x["sw"] == ("1.5" if x["f"] == "p" else "2") for x in rt) and len({x["fill"] for x in rt if x["f"] == "e"}) == 1 and "vazado" in pg.inner_text("#k-leg5") and "cheio" in pg.inner_text("#k-leg5"), pg.inner_text("#k-leg5"))
+            m2 = re.search(r"Mostrando ([\d.]+) de ([\d.]+) causas avaliadas, sem filtro", filtro())
+            checar("aba CID: sem filtro, todas as causas avaliadas estão à vista e a linha de filtro conta as duas famílias", m2 and int(m2.group(1).replace(".", "")) == len(ct) == int(m2.group(2).replace(".", "")) and "família exploratória" in filtro().lower(), filtro())
+            # q válido dentro de cada família: q >= p, não decresce com p e respeita o limite de Benjamini e Hochberg
+            ok_bh = True; det = []
+            for f in ("p", "e"):
+                rr_f = [x for x in rt if x["f"] == f]; n = len(rr_f)
+                o = sorted(rr_f, key=lambda x: (x["p"], x["q"]))
+                if not all(x["q"] >= x["p"] - 0.0006 for x in rr_f): ok_bh = False; det.append((f, "q < p"))
+                if not all(o[i]["q"] <= o[i + 1]["q"] + 0.0011 for i in range(n - 1)): ok_bh = False; det.append((f, "q decresce"))
+                if not all(x["q"] <= min(1, (x["p"] + 0.0005) * n / (i + 1)) + 0.0011 for i, x in enumerate(o)): ok_bh = False; det.append((f, "q acima de p n / r"))
+            checar("aba CID: dentro de cada família, q nunca fica abaixo do p, não decresce com o p e respeita o limite p n / r (Benjamini e Hochberg)", ok_bh, det)
+            # filtro de capítulo: só a lista, sem mudar q nem a família
+            sel("k-cap", "I")
+            rI = krows(); cI = [x["c"] for x in rI]
+            checar("aba CID: o filtro de capítulo mostra só as causas do capítulo, com o mesmo q e a mesma família de antes",
+                   len(cI) > 0 and sorted(cI) == sorted(c for c in ct if cap_py(c) == "I") and all(qt[x["c"]] == x["q"] and ((x["f"] == "p") == principal_py(x["c"])) for x in rI), (cI, [c for c in ct if cap_py(c) == "I"]))
+            mI = re.search(r"Mostrando ([\d.]+) de ([\d.]+) causas avaliadas \(filtros de exibição: capítulo ", filtro())
+            checar("aba CID: com o filtro de capítulo a linha informa 'Mostrando m de N' e que o q não muda; as famílias continuam as mesmas",
+                   mI and int(mI.group(1).replace(".", "")) == len(cI) and int(mI.group(2).replace(".", "")) == len(ct) and "não muda com esses filtros" in filtro(), filtro())
+            # filtro de significância: só as linhas com q < 0,05
+            pg.check("#k-sig")
+            rS = krows()
+            checar("aba CID: 'só causas com q < 0,05' mostra exatamente as causas com q < 0,05 do capítulo e não recalcula o q",
+                   len(rS) > 0 and sorted(x["c"] for x in rS) == sorted(c for c in cI if qt[c] < 0.05) and all(qt[x["c"]] == x["q"] for x in rS), ([x["c"] for x in rS], [(c, qt[c]) for c in cI]))
+            sel("k-cap", "all")
+            rS2 = krows()
+            checar("aba CID: sem filtro de capítulo, o filtro de significância deixa as causas com q < 0,05 das duas famílias, com o mesmo q",
+                   sorted(x["c"] for x in rS2) == sorted(c for c in ct if qt[c] < 0.05) and all(qt[x["c"]] == x["q"] for x in rS2), len(rS2))
+            pg.uncheck("#k-sig")
+            checar("aba CID: sem filtros, a lista volta a ter todas as causas", len(krows()) == len(ct))
+            tit = ktit()
+            txt_cid = pg.inner_text("#k-note") + " " + pg.inner_text("#k-interp") + " " + pg.inner_text("#k-filtro") + " " + pg.inner_text("#k-leg5")
+            checar("aba CID: nota e interpretação sem travessão e com as duas famílias, sem correção conjunta e com o q independente dos filtros",
+                   not re.search("[—–]", txt_cid) and all(t in txt_cid.lower() for t in ("família principal", "família exploratória", "não há correção conjunta", "não depende do capítulo")) and "Na família principal" in pg.inner_text("#k-interp") and "Na família exploratória" in pg.inner_text("#k-interp"), txt_cid[:400])
             pg.wait_for_function("document.getElementById('k-h2b').innerText.length>20 && document.getElementById('k-chart')", timeout=120000)
             pg.wait_for_function("document.getElementById('k-selnote').innerText.startsWith('Causa escolhida')", timeout=120000)
             checar("aba CID: a Figura 5b abre com uma causa já escolhida e desenha a série semanal", xpix("k-chart") > 1500 and "Óbitos semanais por causa: " in pg.inner_text("#k-h2b"), pg.inner_text("#k-h2b"))
+            i5b = pg.inner_text("#k-interp2")
+            checar("aba CID: a Figura 5b chama a razão de observado/esperado sem calor (O/E), diz que não é o RR do modelo e traz as razões das semanas de calor e das demais",
+                   "razão observado/esperado sem calor (O/E)" in i5b and "não é o RR do modelo" in i5b and len(re.findall(r"O/E\)? = \d,\d{2}", i5b)) == 2 and "excesso atribuído" not in i5b and not re.search(r"RR (=|de) \d,\d{2}", i5b), i5b[:400])
             if capturas: pg.screenshot(path=os.path.join(capturas, "app_02f_cid.png"), full_page=True)
             outra = [c for c in kcod() if c not in pg.inner_text("#k-h2b")]
             if outra:
                 pg.click(f"#k-fig g[data-c={outra[0]}]")
                 pg.wait_for_function("c=>document.getElementById('k-h2b').innerText.includes(c) && document.getElementById('k-selnote').innerText.startsWith('Causa escolhida')", arg=outra[0], timeout=120000)
                 checar("aba CID: clicar em uma causa troca a série semanal", outra[0] in pg.inner_text("#k-selnote") and xpix("k-chart") > 1500, pg.inner_text("#k-selnote"))
+            # outra medida e outro nível, em um recorte com poucas causas (as famílias continuam as mesmas e o q é refeito dentro delas)
+            sel("k-faixa", "30-39"); kpronto()
+            rs0 = krows(); t0 = ktit()
+            checar("aba CID: recorte de 30 a 39 anos: poucas causas, cada uma na sua família, com q dentro da família", 0 < len(rs0) <= 5 and all(((x["f"] == "p") == principal_py(x["c"])) and x["q"] is not None for x in rs0), [(x["c"], x["f"], x["q"]) for x in rs0])
             sel("k-exp", "haat")
-            checar("aba CID: a medida HAAT refaz os níveis e pede as causas de novo", opcoes("k-nivel") == ["0", "1"] and ("Avaliando" in pg.inner_text("#k-prog") or len(kcod()) > 0))
+            checar("aba CID: a medida HAAT refaz os níveis e pede as causas de novo", opcoes("k-nivel") == ["0", "1"])
             kpronto()
-            checar("aba CID: com o HAAT o resultado é outro", ktit() != tit, (len(ktit()), len(tit)))
+            checar("aba CID: com o HAAT o resultado é outro", ktit() != t0, (len(ktit()), len(t0)))
             sel("k-exp", "horas"); sel("k-nivel", "1"); kpronto()
-            checar("aba CID: o segundo nível de exposição dá outro resultado", ktit() != tit)
-            sel("k-nivel", "0"); sel("k-conj", "todas"); sel("k-cap", "all"); sel("k-causa", "externas"); kpronto()
+            checar("aba CID: o segundo nível de exposição dá outro resultado", ktit() != t0)
+            sel("k-nivel", "0"); sel("k-faixa", "Todas as idades"); sel("k-causa", "externas"); kpronto()
             ext = kcod()
-            checar("aba CID: causas externas na aba só listam causas dos capítulos V a Y", len(ext) > 0 and all(c[0] in "VWXY" for c in ext) and "causas externas" in pg.inner_text("#k-sub"), ext)
+            checar("aba CID: causas externas na aba só listam causas dos capítulos V a Y, todas na família exploratória", len(ext) > 0 and all(c[0] in "VWXY" for c in ext) and all(x["f"] == "e" for x in krows()) and "causas externas" in pg.inner_text("#k-sub"), ext)
             sel("k-causa", "naturais"); sel("k-local", "Todos os locais"); sel("k-faixa", "5-9"); kpronto(120000)
             checar("aba CID: recorte com menos de 1.500 óbitos por causa informa o limite", "Nenhuma causa tem pelo menos 1.500 óbitos" in pg.inner_text("#k-note") and len(kcod()) == 0, pg.inner_text("#k-note")[:200])
             sel("k-local", "Ignorado"); sel("k-faixa", "30-39")

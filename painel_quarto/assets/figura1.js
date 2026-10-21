@@ -88,7 +88,7 @@ function racaNota(){ const rc=(SH&&D.rcs)?D.rcs[modo().causa]:D.rc; if(!rc){ $("
   const tot=Object.values(rc).reduce((a,b)=>a+b,0), pc=v=>fn(100*(v||0)/tot,1)+"%", n=k=>rc[k]||0;
   $("s-raca-nota").textContent=`Distribuição da raça/cor (campo RACACOR do SIM) nos ${fn(tot)} ${modo().causa==="naturais"?"óbitos por causas naturais da série":"óbitos da série ("+CAUSA_ROT[modo().causa]+")"}: branca ${pc(n("Branca"))}, parda ${pc(n("Parda"))}, preta ${pc(n("Preta"))}, amarela ${pc(n("Amarela"))}, indígena ${pc(n("Indígena"))} e raça/cor ignorada ou não informada ${pc(n("Ignorada"))}. As categorias indígena (${fn(n("Indígena"))} óbitos) e amarela (${fn(n("Amarela"))}) não têm óbitos suficientes para série própria. Os óbitos indígenas compõem o agregado PPI (preta, parda e indígena), e os de raça/cor amarela, ignorada ou não informada entram apenas em Todas. As séries por raça/cor são calculadas para todas as idades.` }
 
-["s-local","s-faixa","s-exp","s-crit","s-ini","s-fim","s-bar","s-lim","s-cor"].forEach(i=>$(i).onchange=desenhar);
+["s-local","s-faixa","s-exp","s-crit","s-ini","s-fim","s-bar","s-lim","s-cor","s-disp"].forEach(i=>$(i).onchange=desenhar);
 ["s-causa","s-r-covid","s-r-nc","s-r-clima"].forEach(i=>{ const e=$(i); if(e) e.onchange=desenhar });
 $("s-raca").onchange=()=>{ racaSync(); desenhar() };
 $("s-esc").onchange=()=>{ if($("s-esc").value==="dia"){ const f=+$("s-fim").value, i=+$("s-ini").value;      // escala diária: começa com os 3 últimos anos
@@ -108,6 +108,7 @@ const covPlugin={id:"covid",beforeDatasetsDraw(c,_a,o){const {ctx,chartArea:a,sc
   if(o.cov){ctx.fillStyle=css("--cinza");ctx.globalAlpha=.55;runs(o.cov,(l,r)=>ctx.fillRect(l,a.bottom-5,r-l,5))}
   ctx.restore()}};
 const BARRA_NOME={t_med:"Temperatura média do dia",hi_max:"Índice de calor máximo do dia",hi_med:"Índice de calor médio do dia"};
+const BARRA_CURTO={t_med:"Temp. média (°C)",hi_max:"IC máximo (°C)",hi_med:"IC médio (°C)"};      // título do eixo do painel de clima, que é baixo
 const NC_COR={1:null,2:"rgba(224,138,80,.42)",3:"rgba(205,102,36,.75)",4:"rgba(196,60,43,.85)",5:"rgba(98,24,70,.92)"};
 const barPlugin={id:"barras",beforeDatasetsDraw(c,_a,o){ if(!o||!o.vals) return;
   const {ctx,chartArea:a,scales:{x,yt}}=c; if(!yt) return;
@@ -130,11 +131,11 @@ const pontoPlugin={id:"traco",beforeDatasetsDraw(c,_a,o){ if(!o) return;
 function rrDoModelo(k, ex){
   const r=D.m[ex].rr[k], e=EXP[ex], t=i=>`${fr(r[i])} (IC 95%: ${fr(r[i+1])} a ${fr(r[i+2])})`;
   const quad = ex==="horas" ? " Na reta imposta pelo modelo (1 grau de liberdade), este RR é o de 4 h elevado ao quadrado, e não uma estimativa independente." : "";
-  return [0,3].map((i,j)=>[t(i), `RR acumulado nas defasagens de 0 a ${M.lag} dias, para exposição de ${REF_TXT[ex](e.ref[j],e.unidade)} em todos os ${M.lag+1} dias.`+(j===1?quad:""), TAG_MOD]) }
+  return [0,3].map((i,j)=>[t(i), `RR acumulado nas defasagens de 0 a ${M.lag} dias, para exposição de ${REF_TXT[ex](e.ref[j],e.unidade)} em todos os ${M.lag+1} dias.`+(j===1?quad:""), TAG_MOD, "mod"]) }
 const modeloTxt = (k, ex) => { const f=D.m[ex].f[k], d=D.m[ex].d[k];
   return f==="nb"?`binomial negativa (θ = ${fn(d,1)})`:`quase-Poisson (dispersão φ = ${fn(d,2)}; a binomial negativa não convergiu)` };
 
-let chS=null;
+let chS=null, chC=null;                                   // chS: óbitos; chC: painel de clima (disposição alinhada)
 const FAIXA = "Faixa aproximada de variação de 95%";
 function desenhar(){
   if($("tab-serie").classList.contains("hide")) return;
@@ -147,6 +148,8 @@ function desenhar(){
   if(SH && eleg().has(key) && !carregado(kd,ex)){ pedir(key,ex); return }      // mantém a figura anterior, esmaecida, até o servidor responder
   quadros(false);
   if(chS){chS.destroy();chS=null}
+  if(chC){chC.destroy();chC=null}
+  $("s-box2").classList.add("hide"); $("s-leg2").classList.add("hide"); $("s-box1").classList.remove("curto");
   const k=ix.get(kd);
   const aj=(D.aj||{})[kd], pe=periodoExibido(), partes=[];
   if(aj) partes.push(`ajuste estimado de ${dBR(aj.ini)} a ${dBR(aj.fim)}`);
@@ -160,7 +163,7 @@ function desenhar(){
 window.__desenhar=desenhar; window.__abas={serie:desenhar};
 
 /* ---------- modo Shiny: pedir recortes ao servidor ---------- */
-const quadros = on => { $("s-kpis").classList.toggle("calc",on); $("s-chart").parentNode.classList.toggle("calc",on); $("s-cobw").classList.toggle("calc",on) };
+const quadros = on => { $("s-kpis").classList.toggle("calc",on); $("s-chart").parentNode.classList.toggle("calc",on); $("s-box2").classList.toggle("calc",on); $("s-cobw").classList.toggle("calc",on) };
 const carregado = (kd,ex) => ix.has(kd) && D.m[ex] && D.m[ex].f[ix.get(kd)]!==undefined && D.S[ex][kd]!==undefined;
 function enviar(key,ex,causa,cod){
   const id=idPedido(POP,key,ex,causa,cod); if(PEND.has(id)) return; PEND.add(id);
@@ -293,6 +296,30 @@ function quadroCob(){
 }
 
 /* ---------- barras de clima ao fundo (comum às duas escalas) ---------- */
+/* Disposição alinhada: o clima sai do gráfico de óbitos e vai para um painel logo abaixo, com o mesmo eixo do tempo e a mesma largura do eixo vertical. */
+const LARG_Y = 64, larguraY = sc => { sc.width = LARG_Y }, eixoX = sc => { sc.paddingLeft = 0; sc.paddingRight = 10 };
+const alinhado = B => !!B.bars && $("s-disp").value==="alinhado";
+function infoClimaSemana(B,q){
+  const v=(B.bars[q]||[]).filter(z=>z!=null&&!isNaN(z)); if(!v.length) return null;
+  let t=`${BARRA_NOME[B.bv]}: ${fn(Math.min(...v),1)} a ${fn(Math.max(...v),1)} °C na semana; `;
+  if(B.modoNC&&B.ncs){ const c={}; B.ncs[q].forEach(n=>{ if(n!=null&&n>1) c[n]=(c[n]||0)+1 }); const l=Object.keys(c).map(n=>`${c[n]} dia(s) em NC${n}`); t+=l.length?l.join(", "):"nenhum dia acima de NC1" }
+  else t+=`${v.filter(z=>z>B.lim).length} dia(s) acima de ${fn(B.lim,1)} °C`;
+  return t }
+function painelClima(B,labels,tickCb,tip){
+  $("s-box1").classList.add("curto"); $("s-box2").classList.remove("hide"); $("s-leg2").classList.remove("hide");
+  if(chS) chS.resize();
+  const tickc=css("--mut"), gridc=css("--grid"), cz=css("--cinza"), la=css("--laranja");
+  const topo=B.bars.map(w=>{ const v=w.filter(z=>z!=null&&!isNaN(z)); return v.length?Math.max(...v):null });
+  $("s-leg2").innerHTML=legendaBarras(B,cz,la,mkCor,true);
+  chC=new Chart($("s-chart2"),{type:"line",data:{labels,datasets:[{label:BARRA_NOME[B.bv],data:topo.map(v=>v==null?0:v),yAxisID:"yt",borderWidth:0,pointRadius:0,pointHoverRadius:0}]},
+    options:{responsive:true,maintainAspectRatio:false,animation:false,interaction:{mode:"index",intersect:false},
+      scales:{x:{grid:{display:false},afterFit:eixoX,ticks:{color:tickc,autoSkip:false,maxRotation:0,callback:tickCb}},
+        yt:{position:"left",min:0,max:B.tmax,grid:{color:gridc},ticks:{color:tickc,stepSize:10},title:{display:true,text:BARRA_CURTO[B.bv],color:tickc},afterFit:larguraY}},
+      plugins:{legend:{display:false},barras:{vals:B.bars,nc:B.modoNC?B.ncs:null,lim:B.lim,cor0:mkCor(cz,.30),cor1:mkCor(la,.62),corL:la,linhas:B.linhas},
+        tooltip:{callbacks:{title:it=>tip.titulo(it[0].dataIndex),label:c=>topo[c.dataIndex]==null?"Sem dado de clima (exposição não observada)":`${tip.rotulo}: ${fn(topo[c.dataIndex],1)} °C`,
+          afterBody:it=>{ const t=tip.extra(it[0].dataIndex); return t?[t]:[] }}}}},
+    plugins:[barPlugin]}) }
+
 function barrasClima(idxDias, porSemana){
   const bv=$("s-bar").value, lim=isFinite(parseFloat($("s-lim").value))?parseFloat($("s-lim").value):32, modoNC=$("s-cor").value==="nc";
   $("s-limw").classList.toggle("hide",modoNC);
@@ -306,16 +333,18 @@ function barrasClima(idxDias, porSemana){
   const tmax=Math.ceil(Math.max(bmax,modoNC?(bv==="hi_max"?44:0):lim,10)/10)*10;
   const linhas=!bars?[]:modoNC?(bv==="hi_max"?[{v:36,t:"36 °C"},{v:40,t:"40 °C"},{v:44,t:"44 °C"}]:[]):[{v:lim,t:lim.toString().replace(".",",")+" °C"}];
   return {bv,lim,modoNC,bars,ncs,bmax,bAcima,bDias,nNC,tmax,linhas} }
-function legendaBarras(B,cz,la,mk){
+function legendaBarras(B,cz,la,mk,AL){
   if(!B.bars) return "";
-  return `<span><i style="background:${mk(cz,.30)}"></i>${BARRA_NOME[B.bv]} (coluna diária, eixo da direita)</span>`+(B.modoNC?[2,3,4,5].map(n=>`<span><i style="background:${NC_COR[n]}"></i>NC${n} (${fn(B.nNC[n])} dias)</span>`).join("")+`<span><i style="background:${mk(cz,.30)}"></i>NC1 (${fn(B.nNC[1])} dias)</span>`:`<span><i style="background:${mk(la,.62)}"></i>dia acima de ${fn(B.lim,1)} °C</span>`) }
+  return `<span><i style="background:${mk(cz,.30)}"></i>${BARRA_NOME[B.bv]} (coluna diária${AL?" do painel de clima":", eixo da direita"})</span>`+(B.modoNC?[2,3,4,5].map(n=>`<span><i style="background:${NC_COR[n]}"></i>NC${n} (${fn(B.nNC[n])} dias)</span>`).join("")+`<span><i style="background:${mk(cz,.30)}"></i>NC1 (${fn(B.nNC[1])} dias)</span>`:`<span><i style="background:${mk(la,.62)}"></i>dia acima de ${fn(B.lim,1)} °C</span>`) }
 const mkCor=(c,al)=>{const m=c.match(/#(..)(..)(..)/);return m?`rgba(${parseInt(m[1],16)},${parseInt(m[2],16)},${parseInt(m[3],16)},${al})`:c};
-const NOTA_BARRAS = B => B.bars?` Colunas ao fundo: ${BARRA_NOME[B.bv].toLowerCase()}, no eixo da direita (°C). `+
+const NOTA_BARRAS = (B,AL) => B.bars?` ${AL?"Painel de clima, alinhado ao gráfico de óbitos pelo eixo do tempo":"Colunas ao fundo"}: ${BARRA_NOME[B.bv].toLowerCase()}, ${AL?"com a escala em °C à esquerda":"no eixo da direita (°C)"}. `+
   (B.modoNC?"A cor das colunas indica o nível de calor (NC) do protocolo de calor da Prefeitura do Rio de Janeiro (Decreto Rio nº 54.740/2024), reconstruído a partir do número de horas por dia com índice de calor igual ou superior a 36, 40 e 44 °C (o decreto usa a expressão “acima de”; aqui o corte inclui o próprio limiar). NC2: pelo menos 4 h com índice de calor igual ou superior a 36 °C em 1 ou 2 dias seguidos. NC3: o mesmo critério por 3 dias seguidos ou mais. NC4: pelo menos 4 h com índice igual ou superior a 40 °C dentro de uma sequência de NC3. NC5: pelo menos 2 h com índice igual ou superior a 44 °C dentro de uma sequência de NC3. A reconstrução usa apenas valores observados (o decreto admite também a previsão) e não substitui o nível divulgado pelo Centro de Operações Rio (COR-Rio). Como o nível depende das horas nos limiares, a cor pode não acompanhar a altura da coluna quando esta representa o índice de calor médio ou a temperatura média."
    :`Em laranja, os dias acima de ${fn(B.lim,1)} °C: ${fn(B.bAcima)} de ${fn(B.bDias)} dias no período mostrado (${fn(100*B.bAcima/Math.max(B.bDias,1),1)}%).`):"";
 /* Etiqueta de cada cartão: o que muda com o período exibido (seleção de anos) e o que vem do modelo ajustado com a série completa. */
 const TAG_MOD = "Modelo ajustado com a série completa", TAG_PER = "Período exibido";
-const kpiHtml = lista => lista.map(([v,l,tag])=>`<div class="kpi">${tag?`<div class="tg">${tag}</div>`:""}<div class="v">${v}</div><div class="l">${l}</div></div>`).join("");
+/* tipo: "mod" = RR estimado pelo modelo; "desc" = medida descritiva (razão O/E, frequência acima da faixa), que não é um RR e não tem intervalo de confiança. A etiqueta e a borda diferenciam os dois. */
+const TIPO_KPI = {mod:"RR do modelo", desc:"Descritivo, não é RR"};
+const kpiHtml = lista => lista.map(([v,l,tag,tipo])=>`<div class="kpi${tipo?" "+tipo:""}">${(tag||tipo)?`<div class="tg">${tipo?`<span class="tp">${TIPO_KPI[tipo]}</span>`:""}${tag||""}</div>`:""}<div class="v">${v}</div><div class="l">${l}</div></div>`).join("");
 /* Textos que dependem do que foi retirado do ajuste (sem as caixas marcadas, saem idênticos aos da página do Quarto). */
 const rotCov = (m=modo()) => m.covid ? "Período da COVID-19 (fora do ajuste)" : "Período da COVID-19 (termo próprio no modelo)";
 const rotNC = (m=modo()) => m.nc ? "Registro não consolidado (fora do ajuste)" : "Registro não consolidado (no ajuste)";
@@ -347,7 +376,7 @@ function desenharSemana(k){
   const calor = crit==="ic"? nb.map(v=>v>=3) : crit==="nc"? nn.map(v=>v>=1) : nb.map(()=>false);
   const acima=ob.map((v,i)=>!cov[i]&&v!=null&&up[i]!=null&&v>up[i]?v:null);
   const tickc=css("--mut"), gridc=css("--grid"), az=css("--azul"), la=css("--laranja"), cz=css("--cinza"), ink=css("--ink");
-  const B=barrasClima(idx.map(i=>diaIx.get(sem.ini[i])), true);
+  const B=barrasClima(idx.map(i=>diaIx.get(sem.ini[i])), true), AL=alinhado(B);
   chS=new Chart($("s-chart"),{type:"bar",data:{labels,datasets:[
     {label:"darkcol",type:"bar",data:dark,yAxisID:"yb",backgroundColor:mkCor(la,.40),borderWidth:0,barPercentage:1,categoryPercentage:1,order:9},
     {label:"lightcol",type:"bar",data:light,yAxisID:"yb",backgroundColor:mkCor(la,.16),borderWidth:0,barPercentage:1,categoryPercentage:1,order:9},
@@ -358,27 +387,26 @@ function desenharSemana(k){
     {label:"Acima da faixa",type:"line",data:acima,showLine:false,pointRadius:3,pointBackgroundColor:ink,pointBorderColor:css("--card"),pointBorderWidth:1,order:1},
     {label:"_eixo_t",type:"line",data:idx.map(()=>null),yAxisID:"yt",borderWidth:0,pointRadius:0}
   ]},options:{responsive:true,maintainAspectRatio:false,animation:false,interaction:{mode:"index",intersect:false},
-    scales:{x:{grid:{display:false},ticks:{color:tickc,autoSkip:false,maxRotation:0,callback:function(v){const i=idx[v];return sem.se[i]===1?sem.ano[i]:""}}},
-      y:{beginAtZero:true,grid:{color:gridc},ticks:{color:tickc},title:{display:true,text:"Óbitos por semana",color:tickc}},
+    scales:{x:{grid:{display:false},afterFit:AL?eixoX:undefined,ticks:{color:tickc,autoSkip:false,maxRotation:0,callback:function(v){const i=idx[v];return sem.se[i]===1?sem.ano[i]:""}}},
+      y:{beginAtZero:true,grid:{color:gridc},ticks:{color:tickc},title:{display:true,text:"Óbitos por semana",color:tickc},afterFit:AL?larguraY:undefined},
       yb:{display:false,min:0,max:1},
-      yt:{display:!!B.bars,position:"right",min:0,max:B.tmax*1.7,grid:{display:false},ticks:{color:tickc,stepSize:10,callback:v=>v<=B.tmax?v:""},title:{display:!!B.bars,text:B.bars?BARRA_NOME[B.bv]+" (°C)":"",color:tickc}}},
-    plugins:{legend:{display:false},covid:{cov,inc,nc,sc},barras:B.bars?{vals:B.bars,nc:B.modoNC?B.ncs:null,lim:B.lim,cor0:mkCor(cz,.30),cor1:mkCor(la,.62),corL:la,linhas:B.linhas}:null,
+      yt:AL?{display:false,min:0,max:1}:{display:!!B.bars,position:"right",min:0,max:B.tmax*1.7,grid:{display:false},ticks:{color:tickc,stepSize:10,callback:v=>v<=B.tmax?v:""},title:{display:!!B.bars,text:B.bars?BARRA_NOME[B.bv]+" (°C)":"",color:tickc}}},
+    plugins:{legend:{display:false},covid:{cov,inc,nc,sc},barras:B.bars&&!AL?{vals:B.bars,nc:B.modoNC?B.ncs:null,lim:B.lim,cor0:mkCor(cz,.30),cor1:mkCor(la,.62),corL:la,linhas:B.linhas}:null,
       tooltip:{filter:i=>["Observado","Esperado sem calor",FAIXA].includes(i.dataset.label),
         callbacks:{label:c=>c.dataset.label===FAIXA?`${FAIXA}: ${lo[c.dataIndex]==null?"–":fn(lo[c.dataIndex])+" a "+fn(up[c.dataIndex])}`:`${c.dataset.label}: ${fn(c.parsed.y,c.dataset.label==="Observado"?0:1)}`,
           afterBody:it=>{const i=idx[it[0].dataIndex], q=it[0].dataIndex, L=[`Início da semana: ${dBR(sem.ini[i])}`,`Índice de calor máximo: ${sem.mxh[i]==null?"–":fn(sem.mxh[i],1)} °C · dias com máximo ≥ 36 °C: ${sem.nb[i]} · dias em NC2 a NC5: ${sem.nn[i]}`,`Temperatura média: ${sem.mt[i]==null?"–":fn(sem.mt[i],1)} °C`];
             if(ob[q]!=null&&es[q]!=null) L.push(`Observado ÷ esperado sem calor: ${fr(ob[q]/es[q])}`);
-            if(B.bars){const v=B.bars[q].filter(z=>z!=null);if(v.length){ let t=`${BARRA_NOME[B.bv]}: ${fn(Math.min(...v),1)} a ${fn(Math.max(...v),1)} °C na semana; `;
-              if(B.modoNC&&B.ncs){const c={};B.ncs[q].forEach(n=>{if(n!=null&&n>1)c[n]=(c[n]||0)+1});const l=Object.keys(c).map(n=>`${c[n]} dia(s) em NC${n}`);t+=l.length?l.join(", "):"nenhum dia acima de NC1"}
-              else t+=`${v.filter(z=>z>B.lim).length} dia(s) acima de ${fn(B.lim,1)} °C`; L.push(t)}}
+            if(B.bars){ const t=infoClimaSemana(B,q); if(t) L.push(t) }
             if(!sem.cl[i]) L.push("Sem dados de clima nesta semana (exposição não observada)");
             if(cov[q]) L.push(linhaCov());
             if(inc[q]) L.push("Sem registro de óbitos no SIM (fora do ajuste)");
             if(nc[q]) L.push(linhaNC("semana"));
             return L}}}}},
     plugins:[covPlugin,barPlugin]});
+  if(AL) painelClima(B,labels,chS.options.scales.x.ticks.callback,{titulo:q=>`SE ${sem.se[idx[q]]}/${sem.ano[idx[q]]} (início em ${dBR(sem.ini[idx[q]])})`,rotulo:"Maior valor da semana",extra:q=>infoClimaSemana(B,q)});
   $("s-leg").innerHTML=`<span><i class="ln" style="background:${cz}"></i>Observado</span><span><i class="ln" style="background:${az};height:3px"></i>Esperado sem calor</span><span><i style="background:${mkCor(az,.17)}"></i>${FAIXA}</span><span><i class="dt" style="background:${ink}"></i>Observado acima da faixa</span>`+
    (crit==="ic"?`<span><i style="background:${mkCor(la,.40)}"></i>≥ 3 dias com índice de calor máximo ≥ 36 °C</span><span><i style="background:${mkCor(la,.16)}"></i>1 a 2 dias</span>`:"")+(crit==="nc"?`<span><i style="background:${mkCor(la,.40)}"></i>Semana com dia em NC2 a NC5</span>`:"")+
-   legendaBarras(B,cz,la,mkCor)+`<span><i style="background:${cz}"></i>${rotCov()}</span>`+(inc.some(Boolean)?`<span><i style="background:${cz};opacity:.3"></i>Sem registro no SIM (fora do ajuste)</span>`:"")+(nc.some(Boolean)?`<span><i style="background:repeating-linear-gradient(135deg,${cz} 0 1.3px,transparent 1.3px 4px)"></i>${rotNC()}</span>`:"")+(sc.some(Boolean)?`<span><i style="background:repeating-linear-gradient(90deg,${az} 0 1px,transparent 1px 4px);opacity:.7"></i>Sem dado de clima (exposição não observada)</span>`:"");
+   (AL?"":legendaBarras(B,cz,la,mkCor,false))+`<span><i style="background:${cz}"></i>${rotCov()}</span>`+(inc.some(Boolean)?`<span><i style="background:${cz};opacity:.3"></i>Sem registro no SIM (fora do ajuste)</span>`:"")+(nc.some(Boolean)?`<span><i style="background:repeating-linear-gradient(135deg,${cz} 0 1.3px,transparent 1.3px 4px)"></i>${rotNC()}</span>`:"")+(sc.some(Boolean)?`<span><i style="background:repeating-linear-gradient(90deg,${az} 0 1px,transparent 1px 4px);opacity:.7"></i>Sem dado de clima (exposição não observada)</span>`:"");
   // indicadores: sem COVID, sem semanas sem registro e sem semanas sem clima (semanas de registro não consolidado entram)
   const ok=idx.map((_,q)=>!(cov[q]||inc[q]||!sem.cl[idx[q]]||es[q]==null));
   const grp=f=>{let Oo=0,E=0,n=0,ab=0;ob.forEach((v,q)=>{if(ok[q]&&f(q)){Oo+=v;E+=es[q];n++;ab+=v>up[q]?1:0}});return {n,O:Oo,E,raz:E?Oo/E:NaN,ac:n?100*ab/n:NaN}};
@@ -387,15 +415,15 @@ function desenharSemana(k){
   $("s-kpis").innerHTML=kpiHtml([
     [fn(tot),"óbitos no período exibido"+(nc.some(Boolean)?` (inclui ${fn(nc.filter(Boolean).length)} semana(s) com registro não consolidado${modo().nc?", fora do ajuste":""})`:""),TAG_PER],
     ...rrDoModelo(k,ex),
-    [isFinite(H.raz)?fr(H.raz):"–","observado ÷ esperado sem calor nas "+H.n+" semanas de calor (soma dos óbitos observados ÷ soma dos esperados sem calor)",TAG_PER],
-    [isFinite(N.raz)?fr(N.raz):"–","observado ÷ esperado sem calor nas "+N.n+" demais semanas",TAG_PER],
-    [isFinite(H.ac)?fn(H.ac)+"%":"–","das semanas de calor com óbitos acima do limite superior da faixa aproximada de variação de 95%",TAG_PER],
-    [isFinite(N.ac)?fn(N.ac)+"%":"–","das demais semanas acima do limite superior da faixa (a cobertura por período e grupo está no Quadro 5, abaixo da figura)",TAG_PER]
+    [isFinite(H.raz)?fr(H.raz):"–","razão observado/esperado sem calor (O/E) nas "+H.n+" semanas de calor: soma dos óbitos observados ÷ soma dos esperados sem calor pelo modelo",TAG_PER,"desc"],
+    [isFinite(N.raz)?fr(N.raz):"–","O/E nas "+N.n+" demais semanas",TAG_PER,"desc"],
+    [isFinite(H.ac)?fn(H.ac)+"%":"–","das semanas de calor com óbitos acima do limite superior da faixa aproximada de variação de 95%",TAG_PER,"desc"],
+    [isFinite(N.ac)?fn(N.ac)+"%":"–","das demais semanas acima do limite superior da faixa (a cobertura por período e grupo está no Quadro 5, abaixo da figura)",TAG_PER,"desc"]
   ].concat(B.ncs&&B.bars?[[fn(B.nNC[2]+B.nNC[3]+B.nNC[4]+B.nNC[5]),`dias em nível de calor 2 a 5 do protocolo (NC4: ${fn(B.nNC[4])}; NC5: ${fn(B.nNC[5])})`,TAG_PER]]:[]));
   const critTxt=crit==="ic"?"semanas com pelo menos 3 dias de índice de calor máximo ≥ 36 °C":"semanas com ao menos um dia em NC2 a NC5";
   $("i-serie").innerHTML=`<span class="t">Interpretação</span>`+(crit==="no"?`A linha azul indica o número de óbitos esperado sem calor segundo o modelo deste recorte (${compExp()}, com o efeito do calor retirado), e a faixa sombreada é a faixa aproximada de variação de 95% do número de óbitos de uma semana. Pontos escuros marcam as semanas em que o observado superou o limite superior. Para comparar semanas com e sem calor, selecione um critério de calor em Sombrear semanas com.`:
    (H.n&&N.n?`Nas ${H.n} ${critTxt}, foram observados ${fn(H.O)} óbitos, contra ${fn(H.E,0)} esperados sem calor (observado ÷ esperado = ${fr(H.raz)}, ou ${fp(pct(H.raz))}). Nas demais ${N.n} semanas, foram ${fn(N.O)} óbitos contra ${fn(N.E,0)} esperados (razão ${fr(N.raz)}). Os óbitos superaram o limite superior da faixa aproximada de variação de 95% em ${fn(H.ac)}% das semanas de calor e em ${fn(N.ac)}% das demais. Esses percentuais descrevem a frequência de semanas acima da faixa no período exibido. A faixa é uma aproximação sem validação como intervalo preditivo, e a cobertura nas demais semanas varia entre períodos (Quadro 5). A fração de óbitos atribuível ao calor é outra medida. ${H.raz>N.raz?"A razão é maior nas semanas de calor.":"A razão não é maior nas semanas de calor."} O esperado provém de um modelo ajustado apenas a este recorte, de modo que a razão varia conforme o recorte. A comparação é descritiva e não inclui intervalo de confiança; a medida de associação é o RR acumulado do modelo, apresentado nos indicadores de RR acima da figura.`:`Há poucas semanas de calor no recorte selecionado para realizar a comparação.`));
-  $("s-note").textContent=notaModelo(k,ex)+(modo().covid?" O período da COVID-19 (barra cinza na base) foi retirado do ajuste: nele, o esperado não é traçado e a semana fica fora dos indicadores. As semanas sem nenhum óbito registrado no SIM (faixa cinza clara) também ficam sem esperado.":" Os indicadores excluem o período da COVID-19 (barra cinza na base; o modelo tem um termo próprio para ele) e as semanas sem nenhum óbito registrado no SIM (faixa cinza clara), nas quais o esperado não é traçado.")+(modo().nc?" As semanas de meses com registro não consolidado (hachuradas) foram retiradas do ajuste e ficam sem esperado.":" As semanas de meses com registro não consolidado (hachuradas) entram no modelo e nos indicadores, e o registro nelas pode estar abaixo do real.")+notaClima()+notaAjuste(kd)+notaCausa()+" Semanas de calor: sombreadas em tom escuro. Faixa aproximada de variação de 95%: esperado semanal ± 1,96 × √(φ × soma das variâncias diárias do modelo), com dispersão semanal φ = "+fr(S.phi)+" (estimada nos resíduos semanais). Ela não é o intervalo de confiança do esperado nem um intervalo preditivo completo: deixa de fora a incerteza dos coeficientes e depende de uma aproximação normal (Quadro 5)."+(S.phi>3?" Atenção: φ elevado indica que o modelo não acompanha bem a tendência de longo prazo desta série (por exemplo, por mudança na forma de registrar o local do óbito), o que alarga a faixa.":"")+" A série começa em 2006 (SIM); há dados de clima a partir de abril de 2007, e as semanas sem clima não entram na comparação entre semanas de calor e as demais."+NOTA_BARRAS(B);
+  $("s-note").textContent=notaModelo(k,ex)+(modo().covid?" O período da COVID-19 (barra cinza na base) foi retirado do ajuste: nele, o esperado não é traçado e a semana fica fora dos indicadores. As semanas sem nenhum óbito registrado no SIM (faixa cinza clara) também ficam sem esperado.":" Os indicadores excluem o período da COVID-19 (barra cinza na base; o modelo tem um termo próprio para ele) e as semanas sem nenhum óbito registrado no SIM (faixa cinza clara), nas quais o esperado não é traçado.")+(modo().nc?" As semanas de meses com registro não consolidado (hachuradas) foram retiradas do ajuste e ficam sem esperado.":" As semanas de meses com registro não consolidado (hachuradas) entram no modelo e nos indicadores, e o registro nelas pode estar abaixo do real.")+notaClima()+notaAjuste(kd)+notaCausa()+" Semanas de calor: sombreadas em tom escuro. Faixa aproximada de variação de 95%: esperado semanal ± 1,96 × √(φ × soma das variâncias diárias do modelo), com dispersão semanal φ = "+fr(S.phi)+" (estimada nos resíduos semanais). Ela não é o intervalo de confiança do esperado nem um intervalo preditivo completo: deixa de fora a incerteza dos coeficientes e depende de uma aproximação normal (Quadro 5)."+(S.phi>3?" Atenção: φ elevado indica que o modelo não acompanha bem a tendência de longo prazo desta série (por exemplo, por mudança na forma de registrar o local do óbito), o que alarga a faixa.":"")+" A série começa em 2006 (SIM); há dados de clima a partir de abril de 2007, e as semanas sem clima não entram na comparação entre semanas de calor e as demais."+NOTA_BARRAS(B,AL);
   $("s-csv").onclick=()=>{let t="semana_inicio;ano_epidemiologico;semana_epidemiologica;observado;esperado_sem_calor;limite_inferior_95;limite_superior_95;dias_indice_calor_max_36;dias_nc2_a_nc5;registro_sim\n";const c1=v=>v==null?"":v.toFixed(1).replace(".",",");
     idx.forEach((i,q)=>{t+=[sem.ini[i],sem.ano[i],sem.se[i],ob[q]??"",c1(es[q]),c1(lo[q]),c1(up[q]),nb[q],nn[q],inc[q]?"sem_registro":nc[q]?"nao_consolidado":""].join(";")+"\n"});
     baixar(`serie_semanal_${ex}_${key.replace(/[^a-z0-9]+/gi,"_")}${sufixoArq()}.csv`,"﻿"+t)};
@@ -418,7 +446,7 @@ function desenharDia(k){
   const inc=idx.map(j=>!!fl.inc[j]), nc=idx.map(j=>!!fl.nc[j]), cov=idx.map(j=>!!fl.cov[j]), sc=idx.map(j=>!!(fl.sc&&fl.sc[j])), exp_=idx.map(j=>!!XW[j]);
   const acima=ob.map((v,i)=>v!=null&&es[i]!=null&&v>es[i]?v:null), abaixo=ob.map((v,i)=>v!=null&&es[i]!=null&&v<=es[i]?v:null);
   const tickc=css("--mut"), gridc=css("--grid"), ink=css("--ink"), cz=css("--cinza"), la=css("--laranja"), ac=COR_ACIMA(), ab=COR_ABAIXO(), card=css("--card");
-  const B=barrasClima(idx, false);
+  const B=barrasClima(idx, false), AL=alinhado(B);
   const vals=ob.concat(es).filter(v=>v!=null), ymin=vals.length?Math.max(0,Math.floor(Math.min(...vals)*0.9/10)*10):0;   // eixo sem valores negativos
   const r=n<=450?3.2:n<=1100?2.4:n<=2200?1.7:1.2, lw=n<=450?1.5:n<=1100?1.1:n<=2200?.8:.6, curto=n<=1100;
   const bordaC=c=>exp_[c.dataIndex]?ink:card, bordaW=c=>exp_[c.dataIndex]?(curto?1.8:1):(curto?.8:0);
@@ -429,11 +457,11 @@ function desenharDia(k){
     {label:"Abaixo do esperado",data:abaixo,showLine:false,pointRadius:r,pointHoverRadius:r+2,pointBackgroundColor:ab,pointBorderColor:bordaC,pointBorderWidth:bordaW,order:1},
     {label:"_eixo_t",data:idx.map(()=>null),yAxisID:"yt",borderWidth:0,pointRadius:0}
   ]},options:{responsive:true,maintainAspectRatio:false,animation:false,interaction:{mode:"index",intersect:false},
-    scales:{x:{grid:{display:false},ticks:{color:tickc,autoSkip:false,maxRotation:0,callback:function(v){const d=idx[v]==null?"":dias[idx[v]];
+    scales:{x:{grid:{display:false},afterFit:AL?eixoX:undefined,ticks:{color:tickc,autoSkip:false,maxRotation:0,callback:function(v){const d=idx[v]==null?"":dias[idx[v]];
         if(!d) return ""; if(d.slice(5)==="01-01") return d.slice(0,4); return (n<=1100&&d.slice(8)==="01")?MESES[+d.slice(5,7)-1]:"" }}},
-      y:{beginAtZero:false,min:ymin,grace:"6%",grid:{color:gridc},ticks:{color:tickc},title:{display:true,text:"Óbitos por dia",color:tickc}},
-      yt:{display:!!B.bars,position:"right",min:0,max:B.tmax*1.7,grid:{display:false},ticks:{color:tickc,stepSize:10,callback:v=>v<=B.tmax?v:""},title:{display:!!B.bars,text:B.bars?BARRA_NOME[B.bv]+" (°C)":"",color:tickc}}},
-    plugins:{legend:{display:false},covid:{cov,inc,nc,sc},barras:B.bars?{vals:B.bars,nc:B.modoNC?B.ncs:null,lim:B.lim,cor0:mkCor(cz,.30),cor1:mkCor(la,.62),corL:la,linhas:B.linhas}:null,
+      y:{beginAtZero:false,min:ymin,grace:"6%",grid:{color:gridc},ticks:{color:tickc},title:{display:true,text:"Óbitos por dia",color:tickc},afterFit:AL?larguraY:undefined},
+      yt:AL?{display:false,min:0,max:1}:{display:!!B.bars,position:"right",min:0,max:B.tmax*1.7,grid:{display:false},ticks:{color:tickc,stepSize:10,callback:v=>v<=B.tmax?v:""},title:{display:!!B.bars,text:B.bars?BARRA_NOME[B.bv]+" (°C)":"",color:tickc}}},
+    plugins:{legend:{display:false},covid:{cov,inc,nc,sc},barras:B.bars&&!AL?{vals:B.bars,nc:B.modoNC?B.ncs:null,lim:B.lim,cor0:mkCor(cz,.30),cor1:mkCor(la,.62),corL:la,linhas:B.linhas}:null,
       traco:{ob,es,acima:ac,abaixo:ab,lw,al:curto?.85:.6},
       tooltip:{filter:i=>["Observado","Esperado"].includes(i.dataset.label),
         callbacks:{title:it=>{const d=dias[idx[it[0].dataIndex]]; return `${SEMANA[new Date(d+"T12:00:00").getDay()]}, ${dBR(d)}`},
@@ -447,9 +475,10 @@ function desenharDia(k){
             const h=cd.hi_max[j], hm=cd.hi_med.o[j], tm=cd.t_med.o[j]; if(h!=null) L.push(`Índice de calor: máximo ${fn(h,1)} °C · médio ${hm==null?"–":fn(hm,1)} °C · temperatura média ${tm==null?"–":fn(tm,1)} °C`);
             if(cd.nc[j]!=null) L.push(`Nível de calor do protocolo: NC${cd.nc[j]}`); return L}}}}},
     plugins:[covPlugin,barPlugin,pontoPlugin]});
+  if(AL) painelClima(B,idx.map(j=>dias[j]),chS.options.scales.x.ticks.callback,{titulo:q=>{const d=dias[idx[q]]; return `${SEMANA[new Date(d+"T12:00:00").getDay()]}, ${dBR(d)}`},rotulo:"Valor do dia",extra:q=>cd.nc[idx[q]]!=null&&B.modoNC?`Nível de calor estimado retrospectivamente: NC${cd.nc[idx[q]]}`:null});
   $("s-leg").innerHTML=`<span><i class="dt" style="background:${ac}"></i>Observado acima do esperado</span><span><i class="dt" style="background:${ab}"></i>Observado abaixo do esperado</span><span><i class="ln" style="background:${ink};height:3px"></i>Esperado sem calor</span><span><i class="ln" style="background:${cz}"></i>Linha do observado</span>`+
    `<span><i class="dt" style="background:transparent;border:2px solid ${ink};width:9px;height:9px"></i>Dia exposto (dia de calor no próprio dia ou em um dos 3 dias anteriores)</span>`+
-   legendaBarras(B,cz,la,mkCor)+`<span><i style="background:${cz}"></i>${rotCov()}</span>`+(inc.some(Boolean)?`<span><i style="background:${cz};opacity:.3"></i>Sem registro no SIM (fora do ajuste)</span>`:"")+(nc.some(Boolean)?`<span><i style="background:repeating-linear-gradient(135deg,${cz} 0 1.3px,transparent 1.3px 4px)"></i>${rotNC()}</span>`:"")+(sc.some(Boolean)?`<span><i style="background:repeating-linear-gradient(90deg,${css("--azul")} 0 1px,transparent 1px 4px);opacity:.7"></i>Sem dado de clima (exposição não observada)</span>`:"");
+   (AL?"":legendaBarras(B,cz,la,mkCor,false))+`<span><i style="background:${cz}"></i>${rotCov()}</span>`+(inc.some(Boolean)?`<span><i style="background:${cz};opacity:.3"></i>Sem registro no SIM (fora do ajuste)</span>`:"")+(nc.some(Boolean)?`<span><i style="background:repeating-linear-gradient(135deg,${cz} 0 1.3px,transparent 1.3px 4px)"></i>${rotNC()}</span>`:"")+(sc.some(Boolean)?`<span><i style="background:repeating-linear-gradient(90deg,${css("--azul")} 0 1px,transparent 1px 4px);opacity:.7"></i>Sem dado de clima (exposição não observada)</span>`:"");
   // indicadores: dias com esperado, com clima e fora de COVID; dias de mês não consolidado entram
   const ok=ob.map((v,i)=>v!=null&&es[i]!=null&&!!cl.ok[idx[i]]&&!cov[i]);
   const grp=f=>{let Oo=0,Ee=0,nn=0,ac_=0,sup=0;ob.forEach((v,i)=>{if(ok[i]&&f(i)){Oo+=v;Ee+=es[i];nn++;if(v>es[i])ac_++;if(v>up[i])sup++}});return {n:nn,O:Oo,E:Ee,raz:Ee?Oo/Ee:NaN,ac:nn?100*ac_/nn:NaN,sup:nn?100*sup/nn:NaN}};
@@ -457,12 +486,12 @@ function desenharDia(k){
   $("s-kpis").innerHTML=kpiHtml([
     [fn(ob.reduce((x,v)=>x+(v||0),0)),"óbitos no período exibido"+(nc.some(Boolean)?` (inclui ${fn(nc.filter(Boolean).length)} dia(s) de mês com registro não consolidado${modo().nc?", fora do ajuste":""})`:""),TAG_PER],
     ...rrDoModelo(k,ex),
-    [isFinite(H.raz)?fr(H.raz):"–","observado ÷ esperado sem calor nos "+fn(H.n)+" dias expostos (dia de calor no próprio dia ou em um dos 3 dias anteriores) do período mostrado",TAG_PER],
-    [isFinite(N.raz)?fr(N.raz):"–","observado ÷ esperado sem calor nos "+fn(N.n)+" demais dias",TAG_PER],
-    [isFinite(T.ac)?fn(T.ac)+"%":"–","dos "+fn(T.n)+" dias ficaram acima do esperado; "+(isFinite(T.sup)?fn(T.sup,1)+"% acima do limite superior da faixa aproximada de variação de 95%":""),TAG_PER]
+    [isFinite(H.raz)?fr(H.raz):"–","razão observado/esperado sem calor (O/E) nos "+fn(H.n)+" dias expostos (dia de calor no próprio dia ou em um dos 3 dias anteriores) do período mostrado",TAG_PER,"desc"],
+    [isFinite(N.raz)?fr(N.raz):"–","O/E nos "+fn(N.n)+" demais dias",TAG_PER,"desc"],
+    [isFinite(T.ac)?fn(T.ac)+"%":"–","dos "+fn(T.n)+" dias ficaram acima do esperado; "+(isFinite(T.sup)?fn(T.sup,1)+"% acima do limite superior da faixa aproximada de variação de 95%":""),TAG_PER,"desc"]
   ]);
   $("i-serie").innerHTML=`<span class="t">Interpretação</span>`+(H.n&&N.n?`Cada ponto é um dia: <span style="color:${ac}">vermelho</span> quando o número de óbitos ficou acima do esperado e <span style="color:${ab}">azul</span> quando ficou abaixo; o traço vertical liga o ponto ao esperado do dia. O esperado é o número de óbitos previsto pelo modelo sem calor (${compExp()}), com o efeito do calor (do dia e dos 10 dias anteriores) estimado e depois retirado. Nos dias expostos (contorno escuro), o observado fica acima do esperado na medida do efeito estimado para este recorte: ${fn(H.O)} óbitos contra ${fn(H.E,0)} esperados no período mostrado (observado ÷ esperado = ${fr(H.raz)}, ou ${fp(pct(H.raz))}); nos demais ${fn(N.n)} dias, ${fn(N.O)} contra ${fn(N.E,0)} (razão ${fr(N.raz)}). Como o modelo usa defasagens de até 10 dias e o contorno marca apenas 4, parte do efeito também aparece nos dias não expostos, e a razão destes pode ficar um pouco acima de 1. A contagem de um dia isolado varia ao acaso; a interpretação apoia-se na diferença sistemática entre grupos de dias. A exposição inclui o próprio dia e os três anteriores, de modo que um dia de calor aparece ligado a até quatro pontos com contorno escuro.`:`Há poucos dias expostos no período mostrado para realizar a comparação.`);
-  $("s-note").textContent="Escala diária desde 2006 (há dados de clima a partir de abril de 2007; antes disso, o calor é tratado como ausente). O eixo vertical não parte de zero, para tornar visíveis as diferenças. "+notaModelo(k,ex)+" Faixa aproximada de variação de 95% de um dia: esperado ± 1,96 × raiz da variância do modelo (a posição do observado em relação a ela é indicada ao passar o cursor; a faixa deixa de fora a incerteza dos coeficientes e não foi avaliada quanto à cobertura). "+(modo().covid?"O período da COVID-19 (barra cinza na base) foi retirado do ajuste e fica sem esperado; os dias sem nenhum óbito registrado no SIM (faixa cinza clara) também ficam sem esperado.":"Os indicadores excluem o período da COVID-19 (barra cinza na base) e os dias sem nenhum óbito registrado no SIM (faixa cinza clara), nos quais o esperado não é traçado.")+(modo().nc?" Dias de meses com registro não consolidado (hachurados) foram retirados do ajuste e ficam sem esperado.":" Dias de meses com registro não consolidado (hachurados) entram no modelo e nos indicadores.")+notaClima()+notaAjuste(kd)+notaCausa()+NOTA_BARRAS(B)+
+  $("s-note").textContent="Escala diária desde 2006 (há dados de clima a partir de abril de 2007; antes disso, o calor é tratado como ausente). O eixo vertical não parte de zero, para tornar visíveis as diferenças. "+notaModelo(k,ex)+" Faixa aproximada de variação de 95% de um dia: esperado ± 1,96 × raiz da variância do modelo (a posição do observado em relação a ela é indicada ao passar o cursor; a faixa deixa de fora a incerteza dos coeficientes e não foi avaliada quanto à cobertura). "+(modo().covid?"O período da COVID-19 (barra cinza na base) foi retirado do ajuste e fica sem esperado; os dias sem nenhum óbito registrado no SIM (faixa cinza clara) também ficam sem esperado.":"Os indicadores excluem o período da COVID-19 (barra cinza na base) e os dias sem nenhum óbito registrado no SIM (faixa cinza clara), nos quais o esperado não é traçado.")+(modo().nc?" Dias de meses com registro não consolidado (hachurados) foram retirados do ajuste e ficam sem esperado.":" Dias de meses com registro não consolidado (hachurados) entram no modelo e nos indicadores.")+notaClima()+notaAjuste(kd)+notaCausa()+NOTA_BARRAS(B,AL)+
     (n>2200?" Período longo: reduzir o período exibido (ano inicial e ano final) melhora a visualização dos pontos.":"");
   $("s-csv").onclick=()=>{let t="dia;observado;esperado_sem_calor;limite_inferior_95;limite_superior_95;horas_indice_calor_36;dia_de_calor;dia_exposto;indice_calor_maximo;indice_calor_medio;temperatura_media;nivel_calor;registro_sim\n";const c1=v=>v==null?"":v.toFixed(1).replace(".",",");
     idx.forEach((j,i)=>{t+=[dias[j],ob[i]??"",c1(es[i]),c1(lo[i]),c1(up[i]),cl.h36[j]??"",EV[j],XW[j],cd.hi_max[j]??"",cd.hi_med.o[j]??"",cd.t_med.o[j]??"",cd.nc[j]??"",inc[i]?"sem_registro":nc[i]?"nao_consolidado":""].join(";")+"\n"});

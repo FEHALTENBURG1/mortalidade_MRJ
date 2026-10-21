@@ -28,7 +28,13 @@ select,input[type=number]{font:inherit;font-size:13.5px;padding:5px 8px;border:1
 .kpi{background:var(--card);border:1px solid var(--line);border-left:3px solid var(--sec);border-radius:4px;padding:9px 14px}
 .kpi .tg{font-size:10px;text-transform:uppercase;letter-spacing:.5px;color:var(--mut);font-weight:700;margin-bottom:2px}
 .kpi .v{font-size:22px;font-weight:600;line-height:1.25}.kpi .l{font-size:12px;color:var(--mut)}
+.kpi.mod{border-left-color:var(--azul)}
+.kpi.desc{border-left:3px dashed var(--mut);background:transparent}
+.kpi .tp{display:inline-block;padding:1px 7px;margin-right:6px;border-radius:9px;font-size:10px;letter-spacing:.4px}
+.kpi.mod .tp{background:var(--azul);color:var(--card)}
+.kpi.desc .tp{border:1px solid var(--mut)}
 .chartbox{position:relative;height:430px}
+.chartbox.curto{height:340px}.chartbox.clima{height:170px}
 .note{font-size:12px;color:var(--mut);margin:10px 0 0}
 .interp{background:var(--faixa);border-left:3px solid var(--sec);padding:9px 13px;margin:12px 0 4px;font-size:13.5px}
 .interp b{font-weight:650}.interp .t{display:block;font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--mut);font-weight:700;margin-bottom:2px}
@@ -40,10 +46,11 @@ select,input[type=number]{font:inherit;font-size:13.5px;padding:5px 8px;border:1
 table.hm{border-collapse:separate;border-spacing:1px;width:100%;font-size:12.5px}
 table.hm th{font-weight:600;color:var(--mut);padding:4px 6px;font-size:11px}
 table.hm td{text-align:center;padding:6px 4px;border-radius:2px;cursor:default}
+table.hm td .sub{display:block;font-size:9.5px;font-weight:400;color:var(--mut);line-height:1.2;margin-top:1px;white-space:nowrap}
 table.hm td.rl{text-align:right;color:var(--ink);cursor:pointer;padding-right:8px;background:none}
 table.hm tr.sel td.rl{font-weight:700;color:var(--azul)}
 .grid2{display:grid;grid-template-columns:1fr 1fr;gap:14px}
-@media(max-width:860px){.grid2{grid-template-columns:1fr}.chartbox{height:360px}}
+@media(max-width:860px){.grid2{grid-template-columns:1fr}.chartbox{height:360px}.chartbox.curto{height:300px}.chartbox.clima{height:170px}}
 h2{font-size:15.5px;margin:0 0 8px;font-weight:650}
 .sobre h3{font-size:14.5px;margin:20px 0 6px;color:var(--azul)}.sobre p,.sobre li{max-width:80ch}
 .sobre table{border-collapse:collapse;font-size:13px;margin:6px 0}.sobre td,.sobre th{border-bottom:1px solid var(--line);padding:5px 10px;text-align:left;vertical-align:top}
@@ -75,7 +82,7 @@ header#title-block-header{display:none}
 .cmp.dois>[data-sec=sub]{grid-row:1}.cmp.dois>[data-sec=k]{grid-row:2}.cmp.dois>[data-sec=f2]{grid-row:3}.cmp.dois>[data-sec=f3]{grid-row:4}
 .cmp.dois>[data-sec=fx]{grid-row:5}.cmp.dois>[data-sec=sq]{grid-row:6}.cmp.dois>[data-sec=i]{grid-row:7}.cmp.dois>.cmpb{grid-row:8}.cmp.dois>[data-sec=hm]{grid-row:9}
 .cmp.dois .kpi{padding:8px 10px}.cmp.dois .kpi .v{font-size:16px}.cmp.dois .kpi .l{font-size:11px}
-.cmp.dois table.hm{font-size:11px}.cmp.dois table.hm th{padding:3px 1px}.cmp.dois table.hm td{padding:5px 1px}
+.cmp.dois table.hm td .sub{display:none}.cmp.dois table.hm{font-size:11px}.cmp.dois table.hm th{padding:3px 1px}.cmp.dois table.hm td{padding:5px 1px}
 .cmp>.cmpb{margin-top:0}
 .forestbox{position:relative}
 .forestbox svg{display:block;width:100%;height:auto}

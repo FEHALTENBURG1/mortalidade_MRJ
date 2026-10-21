@@ -103,6 +103,15 @@ ok(all(mp$nd == c(sum(h >= 1), sum(h >= 2), sum(h >= 4), sum(h >= 8), 0)), "mapa
 ok(is.na(mp$rr[5]) && !anyNA(mp$rr[1:3]) && all(mp$lo[1:3] > 1), sprintf("mapa: com efeito verdadeiro, RR acima de 1 com IC acima de 1 (%.3f, %.3f, %.3f); sem dias expostos, sem estimativa", mp$rr[1], mp$rr[2], mp$rr[3]))
 mp0 <- ajustar_mapa_limiar(y0, b, h, cx$sem_registro, kt, 36, horas = c(1, 2, 4))
 ok(all(mp0$lo < 1 & mp0$hi > 1), sprintf("mapa: sem efeito verdadeiro, os IC cobrem 1 (%.3f a %.3f com H = 1)", mp0$lo[1], mp0$hi[1]))
+# eventos independentes de cada célula do mapa: o laço independente (sup_ref) dá a mesma contagem, e um caso montado à mão tem a resposta conhecida
+ev_ref <- vapply(c(1, 2, 4, 8, 100), function(H) sup_ref(h, dias, cx$sem_registro, H)$eventos[1], 1L)
+ok(identical(as.integer(mp$ev), ev_ref) && all(mp$ev <= mp$nd), sprintf("mapa: eventos independentes de cada célula (%s) batem com o laço independente e não superam os dias expostos", paste(mp$ev, collapse = "/")))
+xe <- numeric(100); xe[c(5, 6, 7, 15, 16, 40, 60, 71)] <- 1; fe <- rep(FALSE, 100)
+ok(eventos_independentes(xe, fe) == 4L, "eventos independentes: 5 a 7 e 15 e 16 (distam 8 dias) formam 1 evento; 40, 60 e 71 (distam mais de 10 dias) formam 1 cada, total 4")
+fe[40] <- TRUE
+ok(eventos_independentes(xe, fe) == 3L && eventos_independentes(numeric(100), fe) == 0L, "eventos independentes: um evento com todos os dias fora do ajuste não conta, e sem dia exposto não há evento")
+fe2 <- fe; fe2[c(5, 6, 7)] <- TRUE
+ok(eventos_independentes(xe, fe2) == 3L, "eventos independentes: um evento com parte dos dias fora do ajuste ainda conta se algum dia dele está no ajuste")
 ok(identical(limiar_do_id("mapa36"), 36L) && is.na(limiar_do_id("mapa31")) && is.na(limiar_do_id("horas")) && is.na(limiar_do_id("mapa036")), "mapa: id do pedido -> limiar (32 a 44)")
 fora_m <- rep(FALSE, n); fora_m[which(h >= 4)] <- TRUE                    # todos os dias expostos fora do ajuste
 ok(is.na(ajustar_mapa_limiar(y, b, h, fora_m, kt, 36, horas = 4)$rr), "mapa: dias expostos fora do ajuste não contam (célula sem estimativa)")

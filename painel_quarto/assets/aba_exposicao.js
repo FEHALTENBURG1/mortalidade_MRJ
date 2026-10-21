@@ -54,7 +54,7 @@ function limpar(p){
   $(p+"-fx").innerHTML = ""; $(p+"-fx-interp").innerHTML = ""; $(p+"-fx-note").textContent = ""; $(p+"-fx-prog").textContent = ""; $(p+"-supnote").textContent = ""; $(p+"-supbox").style.display = "none";
   $(p+"-note").textContent = ""; $(p+"-note2").textContent = "";
 }
-const kpiHtml = lista => lista.map(([v,l])=>`<div class="kpi"><div class="v">${v}</div><div class="l">${l}</div></div>`).join("");
+const kpiHtml = lista => lista.map(([v,l])=>`<div class="kpi mod"><div class="tg"><span class="tp">RR do modelo</span></div><div class="v">${v}</div><div class="l">${l}</div></div>`).join("");   // todos os cartões desta aba são RR estimados pelo modelo
 const ic = (rr,lo,hi,d=2) => `${fn(rr,d)} (IC 95%: ${fn(lo,d)} a ${fn(hi,d)})`;
 
 // ---------------------------------------------------------------- eixos e gráfico de floresta (Figura 3)
@@ -377,7 +377,7 @@ function mapaSlot(p){
   const curvasProntas = !!P.cv(e.kd,e.ex);
   if(curvasProntas) bombear(e);                                    // o mapa só começa depois das Figuras 2 e 3 do mesmo recorte, para que o servidor as atenda primeiro
   const col = P.mapa(e.kd), feitas = LIM_ORD.filter(K=>col[K]).length, erros = LIM_ORD.filter(K=>falhou.has(idM(e.kd,K)));
-  const so = $("x-hm-sig").checked;
+  const so = $("x-hm-sig").checked, mostraN = !$("x-hm-n") || $("x-hm-n").checked;
   prog.innerHTML = erros.length && [...falhou.values()].includes("dados_mudaram")
     ? 'Os dados foram atualizados no servidor. <a href="">Recarregue a página</a> para ver a versão nova.'
     : !curvasProntas && feitas<LIM.length
@@ -392,11 +392,14 @@ function mapaSlot(p){
     LIM_ORD.forEach(K=>{
       const c = col[K];
       if(!c){ const f = falhou.has(idM(e.kd,K)); s += `<td style="color:var(--mut)" title="${f?"não foi possível estimar esta coluna":"calculando"}">${f?"×":"…"}</td>`; return }
-      const rr=c.rr[i], lo=c.lo[i], hi=c.hi[i], nd=c.nd[i];
-      if(rr==null){ s += `<td style="color:var(--mut)" title="${nd<15?"menos de 15 dias expostos no ajuste":"célula não estimada (poucos dias sem exposição ou falha do ajuste)"}">–</td>`; return }
+      const rr=c.rr[i], lo=c.lo[i], hi=c.hi[i], nd=c.nd[i], ev=c.ev?c.ev[i]:null;
+      const sub = mostraN ? `<span class="sub">${fn(nd)} d · ${ev==null?"–":fn(ev)} ev.</span>` : "";
+      const suporte = `${fn(nd)} dias expostos em ${ev==null?"número não disponível de":fn(ev)} evento(s) independente(s)`;
+      const refc = K===36 && h===4 ? "outline:2px solid var(--azul);outline-offset:-2px;" : "";                 // definição de dia de calor do protocolo (≥ 4 h com IC ≥ 36 °C)
+      if(rr==null){ s += `<td style="${refc}color:var(--mut)" title="${nd<15?"menos de 15 dias expostos no ajuste":"célula não estimada (poucos dias sem exposição ou falha do ajuste)"}\n${suporte}">–${sub}</td>`; return }
       const sig = lo>1 || hi<1, v = pctRR(rr), al = Math.min(Math.abs(v)/25,1)*.75;
       const cor = (so&&!sig) ? "transparent" : (v>=0 ? `rgba(181,84,28,${al})` : `rgba(22,65,145,${al})`);
-      s += `<td style="background:${cor};${sig?"font-weight:700":"color:var(--mut)"}" title="Índice de calor ≥ ${K} °C por ≥ ${h} h/dia\nRR ${fr(rr)} (IC 95%: ${fr(lo)} a ${fr(hi)})\n${fn(nd)} dias expostos">${fr(rr)}</td>`;
+      s += `<td style="${refc}background:${cor};${sig?"font-weight:700":"color:var(--mut)"}" title="Índice de calor ≥ ${K} °C por ≥ ${h} h/dia\nRR ${fr(rr)} (IC 95%: ${fr(lo)} a ${fr(hi)})\n${suporte}">${fr(rr)}${sub}</td>`;
     });
     s += "</tr>";
   });
@@ -405,17 +408,20 @@ function mapaSlot(p){
     `(binomial negativa, spline do tempo, ciclo anual e termo do período COVID, defasagem de 0 a ${M.lag} dias pela cross-basis do dlnm), em que a exposição é o dia ter pelo menos H horas com índice de calor ≥ K. `+
     `O RR é o acumulado em 0 a ${M.lag} dias para a condição mantida em todos os ${M.lag+1} dias, em relação a nenhum dia com a condição, com IC 95% a partir da matriz de covariância dos coeficientes. `+
     `Células com menos de 15 dias expostos, ou com menos de 30 dias sem exposição, no ajuste não são estimadas (–). Em negrito, RR com IC 95% que não inclui 1. `+
+    `Em cada célula, d é o número de dias expostos no ajuste e ev. é o número de eventos independentes, isto é, de conjuntos de dias expostos separados por mais de ${M.lag} dias sem exposição (as janelas de defasagem de eventos diferentes não se tocam). Contorno azul: a definição de dia de calor do protocolo (pelo menos 4 h com índice de calor ≥ 36 °C). `+
     P.texto.notaClima(e.m)+P.texto.notaCausa(e.m);
   if(feitas<LIM.length){ it.innerHTML = `<span class="t">Interpretação</span>O texto fica disponível quando as ${LIM.length} colunas estiverem calculadas.`; return }
   const cel = [];
   LIM_ORD.forEach(K=>{ const c=col[K]; c.h.forEach((h,i)=>{ if(c.rr[i]!=null) cel.push({K,h,rr:c.rr[i],lo:c.lo[i],hi:c.hi[i],nd:c.nd[i]}) }) });
   if(!cel.length){ it.innerHTML = `<span class="t">Interpretação</span>Nenhuma combinação tem dias expostos suficientes neste recorte.`; return }
-  const sg = cel.filter(c=>c.lo>1), dn = cel.filter(c=>c.hi<1), mx = cel.reduce((a,b)=>b.rr>a.rr?b:a);
-  const base = cel.find(c=>c.K===36&&c.h===1), a = cel.find(c=>c.K===32&&c.h===1), b = cel.find(c=>c.K===40&&c.h===1);
-  const icc = c => `${fr(c.rr)} (IC 95%: ${fr(c.lo)} a ${fr(c.hi)}; ${fn(c.nd)} dias expostos)`;
-  it.innerHTML = `<span class="t">Interpretação</span>Das <b>${cel.length}</b> combinações estimadas, <b>${sg.length}</b> têm RR acima de 1 com IC 95% que não inclui 1 e <b>${dn.length}</b> têm RR abaixo de 1 com IC 95% que não inclui 1. `+
-    (base?`Com o limiar usual de 36 °C e pelo menos 1 hora no dia, RR = <b>${icc(base)}</b>. `:"")+
-    `O maior valor da tabela é RR = <b>${icc(mx)}</b>, com índice de calor ≥ ${mx.K} °C por ≥ ${mx.h} h. O máximo de muitas células tende a superestimar o efeito, e as células com poucos dias expostos têm intervalos largos. `+
+  const sg = cel.filter(c=>c.lo>1), dn = cel.filter(c=>c.hi<1), mx = cel.reduce((a,b)=>b.rr>a.rr?b:a), mi = cel.reduce((a,b)=>b.rr<a.rr?b:a);
+  const ordem = cel.map(c=>c.rr).sort((x,y)=>x-y), med = ordem.length%2 ? ordem[(ordem.length-1)/2] : (ordem[ordem.length/2-1]+ordem[ordem.length/2])/2;
+  const ref = cel.find(c=>c.K===36&&c.h===4), a = cel.find(c=>c.K===32&&c.h===1), b = cel.find(c=>c.K===40&&c.h===1);
+  const evt = c => c.ev==null ? "" : ` em ${fn(c.ev)} evento(s) independente(s)`;
+  const icc = c => `${fr(c.rr)} (IC 95%: ${fr(c.lo)} a ${fr(c.hi)}; ${fn(c.nd)} dias expostos${evt(c)})`;
+  it.innerHTML = `<span class="t">Interpretação</span>Das ${cel.length} combinações estimadas, ${sg.length} têm RR acima de 1 com IC 95% que não inclui 1 e ${dn.length} têm RR abaixo de 1 com IC 95% que não inclui 1. `+
+    (ref?`Na definição de dia de calor do protocolo (pelo menos 4 h com índice de calor ≥ 36 °C), RR = <b>${icc(ref)}</b>. `:"")+
+    `Os RR das células estimadas vão de ${fr(mi.rr)} a ${fr(mx.rr)}, com mediana de ${fr(med)}. O maior valor (índice de calor ≥ ${mx.K} °C por ≥ ${mx.h} h, ${fn(mx.nd)} dias expostos${evt(mx)}) é o máximo entre ${cel.length} modelos correlacionados e tende a superestimar o efeito, de modo que não indica o melhor limiar. Células com poucos dias expostos ou poucos eventos têm intervalos largos. `+
     (a&&b?`Ao subir o limiar de 32 para 40 °C (≥ 1 h), o RR passa de ${fr(a.rr)} para ${fr(b.rr)}${b.rr>a.rr?", no sentido de risco maior com calor mais intenso; esse gradiente favorece a associação, e os dados agregados não permitem inferir causalidade. ":", sem gradiente crescente. "}`:"")+
     `As células são aninhadas, pois um dia com mais horas também entra nas definições com menos horas, e não passaram por correção para comparações múltiplas. O padrão geral da tabela é mais informativo do que uma célula isolada. `+
     `O RR de cada célula descreve a associação em dados agregados, sem controle de fatores individuais.`;
@@ -464,6 +470,6 @@ P.ouvir.erro.push(msg=>{
   });
 });
 P.ouvir.base.push(()=>{ voo.clear(); falhou.clear(); flexVoo.clear(); flexFalhou.clear(); supVoo.clear(); supFalhou.clear(); desenhar() });
-["x-local","x-local2","x-faixa","x-raca","x-exp","x-causa","x-r-covid","x-r-nc","x-r-clima","x-hm-sig"].forEach(i=>{ const el=$(i); if(el) el.onchange=desenhar });
+["x-local","x-local2","x-faixa","x-raca","x-exp","x-causa","x-r-covid","x-r-nc","x-r-clima","x-hm-sig","x-hm-n"].forEach(i=>{ const el=$(i); if(el) el.onchange=desenhar });
 P.abas.exp = desenhar;
 });

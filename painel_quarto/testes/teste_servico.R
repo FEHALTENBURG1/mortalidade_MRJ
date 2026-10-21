@@ -140,6 +140,13 @@ checar("poucos óbitos depois da retirada: erro recorte_invalido", {
   el <- unlist(b$meta$elegiveis$naturais[["000"]]); sem111 <- setdiff(el, unlist(b$meta$elegiveis$naturais[["111"]]))
   length(sem111) == 0 || identical(cod(executar_ajuste(pasta, "res", chave, sem111[1], "horas", "naturais", "111")), "recorte_invalido") })
 
+# contagem independente (laços explícitos) de dias expostos, janelas e eventos, usada no mapa e no suporte
+sup_ref <- function(x, fora, r, lag = LAG, dur = DURACOES) {
+  n <- length(x); e <- x >= r; jan <- integer(length(dur)); ev <- integer(length(dur)); id_ev <- integer(n); atual <- 0L; ult <- -Inf
+  for (t in seq_len(n)) if (e[t]) { if (t - ult > lag) atual <- atual + 1L; id_ev[t] <- atual; ult <- t }
+  for (i in seq_along(dur)) { d <- dur[i]; ok <- logical(n); for (t in seq_len(n)) ok[t] <- t >= d && !fora[t] && all(e[(t - d + 1):t]); jan[i] <- sum(ok); ev[i] <- length(unique(id_ev[ok])) }
+  list(janelas = jan, eventos = ev, dias = sum(e & !fora))
+}
 # mapa de horas por dia x limiar (Figura 4): uma coluna por pedido, "mapa<K>"
 KM <- "Via pública|60-69"                                                     # recorte pequeno (cerca de 400 óbitos no ajuste principal), para o teste ser rápido
 rm1 <- executar_ajuste(pasta, "res", chave, KM, "mapa36")
@@ -150,6 +157,10 @@ checar("mapa: o intervalo envolve a estimativa em toda célula estimada", any(es
 checar("mapa: as células são aninhadas (mais horas, menos dias expostos)", all(diff(num(pm$nd)) <= 0))
 checar("mapa: célula com menos de 15 dias expostos fica sem estimativa", all(is.na(num(pm$rr))[num(pm$nd) < MIN_DIAS_EXPOSTOS]) && all(!is.na(num(pm$rr))[num(pm$nd) >= MIN_DIAS_EXPOSTOS & num(pm$nd) <= pm$n]))
 checar("mapa: o segundo pedido sai do disco", executar_ajuste(pasta, "res", chave, KM, "mapa36")$do_cache && identical(executar_ajuste(pasta, "res", chave, KM, "mapa36")$payload, rm1$payload))
+# dias expostos e eventos independentes de cada célula, conferidos pelo laço independente (sup_ref) sobre as horas do cache
+nh36 <- cx$clima$num_hr_36; nh36[is.na(nh36)] <- 0; fora36 <- fora_ajuste(cx, opc_de_codigo(COD_PADRAO))
+checar("mapa: dias expostos e eventos independentes de cada célula batem com a contagem independente por laço explícito",
+       length(pm$ev) == 8 && identical(as.integer(num(pm$nd)), vapply(pm$h, function(H) sup_ref(nh36, fora36, H)$dias, 1L)) && identical(as.integer(num(pm$ev)), vapply(pm$h, function(H) sup_ref(nh36, fora36, H)$eventos[1], 1L)) && all(num(pm$ev) <= num(pm$nd)))
 # a célula (36 °C, 4 h) refeita à mão com o mesmo GAM deve dar o mesmo RR
 h4 <- match(4, pm$h)
 if (!is.na(num(pm$rr)[h4])) {
@@ -246,12 +257,6 @@ checar("principal: o payload traz as colunas da base cruzada e os graus de liber
 checar("principal HAAT: base cruzada de 45 colunas com gl efetivos menores (penalização)", { ah <- json_de(executar_ajuste(pasta, "res", chave, K, "haat")$payload); ah$cb$k == 45 && ah$cb$edf > 5 && ah$cb$edf < 45 })
 
 # suporte dos contrastes acumulados: "sup_<medida>", conferido contra uma contagem independente (laços explícitos) sobre as séries do cache
-sup_ref <- function(x, fora, r, lag = LAG, dur = DURACOES) {
-  n <- length(x); e <- x >= r; jan <- integer(length(dur)); ev <- integer(length(dur)); id_ev <- integer(n); atual <- 0L; ult <- -Inf
-  for (t in seq_len(n)) if (e[t]) { if (t - ult > lag) atual <- atual + 1L; id_ev[t] <- atual; ult <- t }
-  for (i in seq_along(dur)) { d <- dur[i]; ok <- logical(n); for (t in seq_len(n)) ok[t] <- t >= d && !fora[t] && all(e[(t - d + 1):t]); jan[i] <- sum(ok); ev[i] <- length(unique(id_ev[ok])) }
-  list(janelas = jan, eventos = ev, dias = sum(e & !fora))
-}
 checar("sup: reconhece só sup_horas e sup_haat", identical(dg_do_id("sup_horas")$tipo, "sup") && identical(dg_do_id("sup_haat")$medida, "haat") && expo_valida("sup_haat") && !any(vapply(c("sup_", "sup", "sup_cid", "sup_horas2", "Sup_horas"), function(x) expo_valida(x), TRUE)))
 KS <- "Todos os locais|Todas as idades"
 for (m in c("horas", "haat")) {

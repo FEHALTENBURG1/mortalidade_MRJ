@@ -1,4 +1,6 @@
-/* Aba "Causas específicas (CID-10)" (app Shiny): RR em dias de calor para cada causa básica de 3 caracteres do recorte, com correção de Benjamini e Hochberg.
+/* Aba "Causas específicas (CID-10)" (app Shiny): RR em dias de calor para cada causa básica de 3 caracteres do recorte, com correção de Benjamini e Hochberg
+   dentro de duas famílias fixas (principal: grupos do referencial; exploratória: demais causas). Todas as estimativas ficam visíveis por padrão; os filtros de
+   capítulo e de significância só escolhem as linhas mostradas e não mudam o q.
    Cada causa é um modelo próprio (o modelo de referência, R/servico.R: ajustar_pedido_cid). O navegador pede primeiro a lista de causas do recorte ("cidlista")
    e depois uma causa por vez ("cid_<CID>_<medida>"), no máximo MAX_VOO ao mesmo tempo; a figura se completa causa a causa. A série semanal de uma causa
    ("cidsem_<CID>_<medida>") só é pedida quando o usuário a escolhe. */
@@ -33,6 +35,8 @@ const GRUPOS_REF = [
 ];
 const grupoRef = c => { const n = +c.slice(1,3); const g = GRUPOS_REF.find(([,fx])=>fx.some(([l,a,b])=>c[0]===l && n>=a && n<=b)); return g ? g[0] : null };
 const aPriori = c => grupoRef(c) !== null;
+// Famílias de testes do valor q. A principal é fixa: as causas avaliadas que pertencem aos grupos acima. A exploratória reúne as demais causas avaliadas.
+const FAMILIAS = [{id:"p", rot:"Família principal", sub:"grupos do referencial (Morais et al.)", f:aPriori}, {id:"e", rot:"Família exploratória", sub:"demais causas avaliadas", f:c=>!aPriori(c)}];
 const minus1 = t => t[0].toLowerCase()+t.slice(1);                // só a primeira letra: o °C da unidade não pode virar °c
 const NOME = c => ((M.cid_nomes||{})[c]) || "";
 const MAX_VOO = 2, ESPERA_MAX = 240000;
@@ -96,77 +100,113 @@ function desenhar(){
     if(!f) enviarUm(e,"cidlista",true);
     return;
   }
-  const conj = $("k-conj").value, cap = $("k-cap").value;
-  const fam = lista.cid.filter(c=>(conj==="todas"||aPriori(c)) && (cap==="all"||capOf(c)===cap));
+  const conj = $("k-conj").value, cap = $("k-cap").value, soSig = $("k-sig").checked;
+  // Famílias do valor q: a principal é fixa (as causas avaliadas que pertencem aos 15 grupos do referencial); a exploratória reúne as demais causas avaliadas.
+  // Capítulo e significância só escolhem as linhas mostradas e não entram nesta divisão. A escolha "só a família principal" deixa de calcular a exploratória e não muda o q da principal.
+  const fams = FAMILIAS.filter(F=>F.id==="p" || conj==="todas").map(F=>({...F, cids:lista.cid.filter(F.f)})).filter(F=>F.cids.length);
+  const pedir = fams.flatMap(F=>F.cids);                           // a família principal é pedida primeiro
   $("k-prog").textContent = "";
-  if(!fam.length){
-    $("k-fig").innerHTML = ""; $("k-interp").innerHTML = "";
-    $("k-note").textContent = `Nenhuma causa tem pelo menos ${fn(M.cid_min)} óbitos nos dias do ajuste com esta combinação de recorte, conjunto e capítulo.`;
+  if(!pedir.length){
+    $("k-fig").innerHTML = ""; $("k-interp").innerHTML = ""; $("k-filtro").textContent = ""; $("k-leg5").innerHTML = "";
+    $("k-note").textContent = `Nenhuma causa tem pelo menos ${fn(M.cid_min)} óbitos nos dias do ajuste com esta combinação de recorte e família.`;
     return;
   }
-  bombear(e, fam.map(c=>exCid(c,e.medida)));
-  const res = [], erros = [];
-  fam.forEach((c,i)=>{ const x = got[exCid(c,e.medida)]; if(x) res.push({c, n:x.n, rr:x.rr[e.nivel], lo:x.lo[e.nivel], hi:x.hi[e.nivel], p:x.p[e.nivel]}); else if(falhou.has(idK(e.kd,exCid(c,e.medida)))) erros.push(c) });
-  const completo = res.length + erros.length === fam.length;
-  if(completo && res.length){ const q = bh(res.map(x=>x.p)); res.forEach((x,i)=>x.q = q[i]) }
-  const dados = res.length;
-  const sg = completo ? res.filter(x=>x.q<0.05) : [];
-  const alvo = completo ? ($("k-todos").checked ? res : sg) : res;
+  bombear(e, pedir.map(c=>exCid(c,e.medida)));
+  const erros = [];
+  fams.forEach(F=>{
+    F.res = []; F.erros = [];
+    F.cids.forEach(c=>{ const x = got[exCid(c,e.medida)];
+      if(x) F.res.push({c, f:F.id, n:x.n, rr:x.rr[e.nivel], lo:x.lo[e.nivel], hi:x.hi[e.nivel], p:x.p[e.nivel]});
+      else if(falhou.has(idK(e.kd,exCid(c,e.medida)))) F.erros.push(c) });
+    F.completa = F.res.length + F.erros.length === F.cids.length;
+    if(F.completa && F.res.length){ const q = bh(F.res.map(x=>x.p)); F.res.forEach((x,i)=>x.q = q[i]) }       // q dentro da família, com todas as causas dela
+    F.vis = F.res.filter(x=>(cap==="all" || capOf(x.c)===cap) && (!soSig || !F.completa || x.q<0.05));            // só a exibição
+    erros.push(...F.erros);
+  });
+  const feitas = fams.reduce((a,F)=>a+F.res.length+F.erros.length,0), completo = feitas === pedir.length;
+  const dados = fams.reduce((a,F)=>a+F.res.length,0);
+  const sg = fams.flatMap(F=>F.completa ? F.res.filter(x=>x.q<0.05) : []);
   const nivelTxt = `${fn(E.ref[e.nivel])} ${E.unidade} por dia`;
   $("k-prog").textContent = completo
     ? (erros.length ? `${erros.length} causa(s) sem estimativa por erro do servidor: ${erros.join(", ")}.` : "")
-    : `Avaliando as causas: ${res.length+erros.length} de ${fam.length}. Na primeira vez cada causa leva de 3 a 10 segundos; depois o resultado fica guardado no servidor. A correção para comparações múltiplas e o filtro de significância aparecem quando todas estiverem calculadas.`;
-  $("k-h2").textContent = `Causas básicas (CID-10, 3 caracteres) com RR diferente de 1 com ${nivelTxt}`;
-  floresta(e, alvo, completo, fam.length);
+    : `Avaliando as causas: ${feitas} de ${pedir.length}. Na primeira vez cada causa leva de 3 a 10 segundos; depois o resultado fica guardado no servidor. O valor q de cada família aparece quando todas as causas dela estiverem calculadas.`;
+  $("k-h2").textContent = `Causas básicas (CID-10, 3 caracteres): RR com ${nivelTxt}`;
+  const mostradas = fams.reduce((a,F)=>a+F.vis.length,0);
+  const filtros = [cap!=="all" ? "capítulo "+(CAPS.find(([v])=>v===cap)||["",cap])[1] : null, soSig ? "só q < 0,05" : null].filter(Boolean);
+  $("k-filtro").textContent = `Mostrando ${fn(mostradas)} de ${fn(pedir.length)} causas avaliadas${filtros.length ? " (filtros de exibição: "+filtros.join("; ")+")" : ", sem filtro de exibição"}${completo ? "" : " (as causas ainda em cálculo entram quando chegam)"}. `+
+    `O valor q de cada causa é calculado dentro da sua família e não muda com esses filtros: ${fams.map(F=>`${F.rot.toLowerCase()}, ${fn(F.cids.length)} causa(s)`).join("; ")}.`;
+  floresta(e, fams);
 
   // nota e interpretação
   const nomeMedida = minus1(E.nome);
   $("k-note").textContent = `RR acumulado em 0 a ${M.lag} dias com a exposição (${nomeMedida}) mantida em ${nivelTxt} em todos os ${M.lag+1} dias, em relação a nenhuma exposição, estimado em um modelo próprio de cada causa `+
     `(binomial negativa, spline do tempo, ciclo anual e termo do período COVID, defasagem pela cross-basis do dlnm). O IC 95% e o valor de p vêm da matriz de covariância dos coeficientes. `+
-    `O valor q é o de Benjamini e Hochberg para a taxa de falsas descobertas, calculado entre as ${fam.length} causas do conjunto e do capítulo escolhidos; q < 0,05 define as causas destacadas. `+
-    `Causas com menos de ${fn(M.cid_min)} óbitos nos dias do ajuste não são avaliadas. Ordenação por RR.`+P.texto.notaClima(e.m)+P.texto.notaCausa(e.m);
+    `O valor q é o de Benjamini e Hochberg para a taxa de falsas descobertas e é calculado dentro de cada família de testes. A família principal reúne as causas avaliadas que pertencem aos ${GRUPOS_REF.length} grupos do referencial (lista fixa, definida antes dos resultados); `+
+    `a família exploratória reúne as demais causas avaliadas e serve para levantar hipóteses. Não há correção conjunta entre as duas famílias. O q não depende do capítulo nem da significância escolhidos para exibir a lista; `+
+    `muda com o recorte (local, faixa etária, raça/cor), a medida e o nível de exposição, as retiradas do ajuste e a população, que definem as causas com pelo menos ${fn(M.cid_min)} óbitos nos dias do ajuste e os valores de p. Ordenação por RR dentro de cada família.`+P.texto.notaClima(e.m)+P.texto.notaCausa(e.m);
   const ic = x => `${fr(x.rr)}; IC 95%: ${fr(x.lo)} a ${fr(x.hi)}`;
-  if(!completo){ $("k-interp").innerHTML = `<span class="t">Interpretação</span>O texto fica disponível quando as ${fam.length} causas estiverem calculadas.`; }
+  if(!completo){ $("k-interp").innerHTML = `<span class="t">Interpretação</span>O texto fica disponível quando as ${pedir.length} causas estiverem calculadas.`; }
   else if(!dados){ $("k-interp").innerHTML = `<span class="t">Interpretação</span>Nenhuma causa pôde ser estimada neste recorte.`; }
   else {
-    const up = sg.filter(x=>x.rr>1).sort((a,b)=>b.rr-a.rr), dw = sg.filter(x=>x.rr<1).sort((a,b)=>a.rr-b.rr);
     const item = x => `<b>${x.c}</b> ${NOME(x.c)} (RR ${ic(x)})`;
-    $("k-interp").innerHTML = `<span class="t">Interpretação</span>Com ${nivelTxt}, <b>${up.length}</b> das ${res.length} causas avaliadas têm RR acima de 1 e <b>${dw.length}</b> têm RR abaixo de 1 depois da correção de Benjamini e Hochberg (q < 0,05). `+
-      (up.length ? `As de maior RR são ${up.slice(0,4).map(item).join("; ")}. ` : "")+
-      (dw.length ? `RR abaixo de 1 (por exemplo ${dw.slice(0,2).map(x=>x.c).join(", ")}) pode refletir antecipação de óbitos, mudanças de classificação ou variação aleatória, e o modelo não separa essas explicações. ` : "")+
-      `As demais ${res.length-sg.length} causas não diferem de 1 após a correção${$("k-todos").checked ? " e aparecem em cinza" : " e ficam fora da figura"}. `+
-            `Os RR descrevem associação em dados agregados, sem controle de fatores individuais, e cada causa tem poucos óbitos por dia, de modo que os intervalos são largos nas causas menos frequentes.`;
+    const porFam = fams.filter(F=>F.res.length).map(F=>{
+      const s = F.res.filter(x=>x.q<0.05), up = s.filter(x=>x.rr>1).sort((a,b)=>b.rr-a.rr), dw = s.filter(x=>x.rr<1).sort((a,b)=>a.rr-b.rr);
+      return `Na ${F.rot.toLowerCase()} (${fn(F.res.length)} causas avaliadas), <b>${up.length}</b> têm RR acima de 1 e <b>${dw.length}</b> têm RR abaixo de 1 com q < 0,05 dentro da família`+
+        (up.length ? `; as de maior RR são ${up.slice(0,4).map(item).join("; ")}` : "")+
+        (F.id==="e" ? " (resultado exploratório, para levantar hipóteses)" : "")+". ";
+    });
+    const abaixo = sg.filter(x=>x.rr<1).sort((a,b)=>a.rr-b.rr);
+    $("k-interp").innerHTML = `<span class="t">Interpretação</span>Com ${nivelTxt}: `+porFam.join("")+
+      (abaixo.length ? `RR abaixo de 1 (por exemplo ${abaixo.slice(0,2).map(x=>x.c).join(", ")}) pode refletir antecipação de óbitos, mudanças de classificação ou variação aleatória, e o modelo não separa essas explicações. ` : "")+
+      `As causas sem q < 0,05 não diferem de 1 após a correção dentro da família e aparecem em cinza. `+
+      `Os RR descrevem associação em dados agregados, sem controle de fatores individuais, e cada causa tem poucos óbitos por dia, de modo que os intervalos são largos nas causas menos frequentes.`;
   }
   // série semanal da causa escolhida
-  if(sel && !fam.includes(sel)) sel = null;
+  if(sel && !pedir.includes(sel)) sel = null;
   serie(e, completo ? padrao(sg) : null);
 }
 // causa mostrada na Figura 5b quando o usuário ainda não escolheu: a de maior RR acima de 1 entre as destacadas, ou a de menor q
 const padrao = sg => { const a = sg.filter(x=>x.rr>1).sort((x,y)=>y.rr-x.rr)[0] || [...sg].sort((x,y)=>x.q-y.q)[0]; return a ? a.c : null };
 
-// ---------------------------------------------------------------- Figura 5: floresta
-function floresta(e, R, completo, total){
-  const rows = [...R].sort((a,b)=>b.rr-a.rr);
-  const W=1040, L=420, Rm=250, rh=26, H=40+Math.max(rows.length,1)*rh+30;
-  const vals = rows.flatMap(r=>[r.lo,r.hi]);
+// ---------------------------------------------------------------- Figura 5: floresta, um bloco por família
+function floresta(e, fams){
+  const blocos = fams.map(F=>({F, rows:[...F.vis].sort((a,b)=>b.rr-a.rr)}));
+  const itens = []; blocos.forEach(b=>{ itens.push({t:"cab", b}); if(b.rows.length) b.rows.forEach(r=>itens.push({t:"lin", r, b})); else itens.push({t:"vazio", b}) });
+  const nLin = blocos.reduce((a,b)=>a+b.rows.length,0), rh = nLin>70 ? 22 : 26;
+  const W=1040, L=420, Rm=250, H=40+itens.length*rh+30;
+  const vals = blocos.flatMap(b=>b.rows.flatMap(r=>[r.lo,r.hi]));
   const mn = Math.min(0.9,...vals)-.01, mx = Math.max(1.1,...vals)+.01, X = v=>L+(v-mn)/(mx-mn)*(W-L-Rm);
-  let s = `<svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="RR por causa básica">`;
+  let s = `<svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="RR por causa básica, por família de testes">`;
   const passo = (mx-mn)>1 ? .25 : (mx-mn)>.5 ? .1 : .05;
   for(let v=Math.ceil(mn/passo)*passo; v<=mx; v+=passo) s += `<line x1="${X(v)}" x2="${X(v)}" y1="26" y2="${H-26}" stroke="${css("--grid")}"/><text class="m" x="${X(v)}" y="${H-10}" text-anchor="middle">${fr(v)}</text>`;
   s += `<line x1="${X(1)}" x2="${X(1)}" y1="26" y2="${H-26}" stroke="${css("--mut")}"/>`;
-  s += `<text class="m" x="8" y="16" style="font-weight:700">Causa (CID-10)</text><text class="m" x="${W-Rm+12}" y="16" style="font-weight:700">RR (IC 95%)</text><text class="m" x="${W-62}" y="16" text-anchor="end" style="font-weight:700">q</text><text class="m" x="${W-8}" y="16" text-anchor="end" style="font-weight:700">Óbitos</text>`;
-  if(!rows.length) s += `<text class="m" x="${L}" y="60">${completo ? "Nenhuma causa difere do esperado com esta combinação." : "Aguardando as primeiras causas…"}</text>`;
-  rows.forEach((r,i)=>{
-    const y = 40+i*rh+rh/2, sig = completo && r.q<0.05, c = !sig ? css("--cinza") : r.rr>1 ? css("--laranja") : css("--azul"), nome = NOME(r.c).slice(0,62);
-    if(i%2===0) s += `<rect x="0" y="${y-rh/2}" width="${W}" height="${rh}" fill="${css("--faixa")}"/>`;
+  s += `<text class="m" x="8" y="16" style="font-weight:700">Causa (CID-10)</text><text class="m" x="${W-Rm+12}" y="16" style="font-weight:700">RR (IC 95%)</text><text class="m" x="${W-62}" y="16" text-anchor="end" style="font-weight:700">q (na família)</text><text class="m" x="${W-8}" y="16" text-anchor="end" style="font-weight:700">Óbitos</text>`;
+  let zebra = 0;
+  itens.forEach((it,i)=>{
+    const y = 40+i*rh+rh/2, F = it.b.F;
+    if(it.t==="cab"){
+      const m = it.b.rows.length, tot = F.res.length;
+      s += `<rect x="0" y="${y-rh/2}" width="${W}" height="${rh}" fill="${css("--grid")}" opacity=".55"/>`+
+        `<text x="8" y="${y+4}"><tspan style="font-weight:700">${F.rot}</tspan> <tspan class="m">${F.sub} · ${fn(m)} de ${fn(F.cids.length)} causas${F.res.length<F.cids.length?" (calculando)":""} · ${F.completa ? "q de Benjamini e Hochberg dentro da família" : "q aparece quando todas as causas da família estiverem calculadas"}</tspan></text>`;
+      return;
+    }
+    if(it.t==="vazio"){
+      s += `<text class="m" x="${L}" y="${y+4}">${F.completa ? "Nenhuma causa da família atende aos filtros de exibição." : "Aguardando as primeiras causas…"}</text>`;
+      return;
+    }
+    const r = it.r, sig = F.completa && r.q<0.05, c = !sig ? css("--cinza") : r.rr>1 ? css("--laranja") : css("--azul"), nome = NOME(r.c).slice(0,62), vaz = F.id==="e";
+    if(zebra++%2===0) s += `<rect x="0" y="${y-rh/2}" width="${W}" height="${rh}" fill="${css("--faixa")}"/>`;
     if(r.c===sel) s += `<rect x="1" y="${y-rh/2+1}" width="${W-2}" height="${rh-2}" fill="none" stroke="${css("--azul")}" stroke-width="1.5" rx="3"/>`;
     s += `<text x="8" y="${y+4}"><tspan style="font-weight:650">${r.c}</tspan> <tspan class="m">${nome}</tspan></text>`;
-    s += `<g data-c="${r.c}" style="cursor:pointer"><title>${r.c} ${NOME(r.c)}\n${grupoRef(r.c)?"Grupo do referencial: "+grupoRef(r.c)+"\n":""}RR ${fr(r.rr)} (IC 95%: ${fr(r.lo)} a ${fr(r.hi)})\n${completo?"q = "+fmtP(r.q)+" · ":""}p = ${fmtP(r.p)}\n${fn(r.n)} óbitos nos dias do ajuste · clique para ver a série semanal</title>`+
+    s += `<g data-c="${r.c}" data-f="${F.id}" style="cursor:pointer"><title>${r.c} ${NOME(r.c)}\n${F.id==="p" ? "Família principal"+(grupoRef(r.c)?" (grupo do referencial: "+grupoRef(r.c)+")":"") : "Família exploratória"}\nRR ${fr(r.rr)} (IC 95%: ${fr(r.lo)} a ${fr(r.hi)})\n${F.completa?"q = "+fmtP(r.q)+" (dentro da família) · ":""}p = ${fmtP(r.p)}\n${fn(r.n)} óbitos nos dias do ajuste · clique para ver a série semanal</title>`+
          `<rect x="${X(mn)}" y="${y-rh/2}" width="${W-L-Rm}" height="${rh}" fill="transparent"/><line x1="${X(r.lo)}" x2="${X(r.hi)}" y1="${y}" y2="${y}" stroke="${c}" stroke-width="2"/>`+
-         `<circle cx="${X(r.rr)}" cy="${y}" r="4.5" fill="${c}" stroke="${css("--card")}" stroke-width="1.5"/></g>`;
-    s += `<text x="${W-Rm+12}" y="${y+4}" style="${sig?"font-weight:650":""}">${fr(r.rr)} (${fr(r.lo)} a ${fr(r.hi)})</text><text class="m" x="${W-62}" y="${y+4}" text-anchor="end">${completo?fmtP(r.q):"…"}</text><text class="m" x="${W-8}" y="${y+4}" text-anchor="end">${fn(r.n)}</text>`;
+         `<circle cx="${X(r.rr)}" cy="${y}" r="4.5" fill="${vaz ? css("--card") : c}" stroke="${vaz ? c : css("--card")}" stroke-width="${vaz ? 2 : 1.5}"/></g>`;
+    s += `<text x="${W-Rm+12}" y="${y+4}" style="${sig?"font-weight:650":""}">${fr(r.rr)} (${fr(r.lo)} a ${fr(r.hi)})</text><text class="m" x="${W-62}" y="${y+4}" text-anchor="end">${F.completa?fmtP(r.q):"…"}</text><text class="m" x="${W-8}" y="${y+4}" text-anchor="end">${fn(r.n)}</text>`;
   });
   $("k-fig").innerHTML = s+"</svg>";
+  const lar = css("--laranja"), azl = css("--azul"), cin = css("--cinza"), ink = css("--ink");
+  $("k-leg5").innerHTML = `<span><i class="dt" style="background:${lar}"></i>RR acima de 1 com q < 0,05</span><span><i class="dt" style="background:${azl}"></i>RR abaixo de 1 com q < 0,05</span><span><i class="dt" style="background:${cin}"></i>q ≥ 0,05</span>`+
+    `<span><i class="dt" style="background:${ink}"></i>Família principal (marcador cheio)</span><span><i class="dt" style="background:transparent;border:2px solid ${ink};width:9px;height:9px"></i>Família exploratória (marcador vazado)</span>`;
   $("k-fig").querySelectorAll("g[data-c]").forEach(g=>{ g.onclick = () => { sel = g.dataset.c; desenhar() } });
 }
 
@@ -216,10 +256,12 @@ function serie(e, padrao){
   $("k-leg").innerHTML = `<span><i class="ln" style="background:${cz}"></i>Observado</span><span><i class="ln" style="background:${az};height:3px"></i>Esperado sem calor</span><span><i style="background:${mkCor(az,.17)}"></i>${FAIXA}</span><span><i class="dt" style="background:${ink}"></i>Acima da faixa</span>`;
   $("k-note2").textContent = `Mesmo modelo da Figura 1, ajustado a esta causa (${minus1(EXP[e.medida].nome)}). O esperado semanal é a soma dos esperados diários sem calor, e a faixa aproximada de variação de 95% usa a variância do modelo corrigida pela dispersão semanal (φ = ${fr(p.S.phi)}) e deixa de fora a incerteza dos coeficientes. `+
     `Sombreado cinza: semanas com dias sem registro no SIM. Barra cinza na base: semanas do período COVID-19.`+P.texto.notaClima(e.m)+P.texto.notaCausa(e.m);
-  let so = 0, se = 0, nAcima = 0, nSem = 0;
-  idx.forEach(i=>{ if(ob[i]!=null && es[i]!=null && !sm.cov[i]){ so += ob[i]; se += es[i]; nSem++; if(acima[i]!=null) nAcima++ } });
-  $("k-interp2").innerHTML = nSem ? `<span class="t">Interpretação</span>Nas ${fn(nSem)} semanas com esperado estimado e fora do período COVID-19, o observado ficou acima do limite superior da faixa aproximada de variação de 95% em torno do esperado sem calor em <b>${fn(nAcima)}</b> (${fn(100*nAcima/nSem,1)}%). `+
-    `O total observado é ${fr(so/se)} vezes o esperado sem calor, o que resume o excesso atribuído ao calor pelo modelo nesta causa. Semanas acima da faixa têm explicações possíveis além do calor (epidemias, mudanças de registro), e a figura mostra a coincidência com o calor apenas por associação.` : "";
+  // razão observado/esperado sem calor (O/E), descritiva: semanas de calor (pelo menos 3 dias com índice de calor máximo ≥ 36 °C, como na Figura 1) e demais semanas
+  const g = f => { let O = 0, Ee = 0, n = 0, ac = 0; idx.forEach(i=>{ if(ob[i]!=null && es[i]!=null && !sm.cov[i] && sm.cl[i] && f(i)){ O += ob[i]; Ee += es[i]; n++; if(acima[i]!=null) ac++ } }); return {O, E:Ee, n, ac, raz:Ee ? O/Ee : NaN} };
+  const H = g(i=>sm.nb[i]>=3), Nn = g(i=>sm.nb[i]<3), T = g(()=>true);
+  $("k-interp2").innerHTML = T.n ? `<span class="t">Interpretação</span>Medida descritiva, que não é o RR do modelo: nas ${fn(H.n)} semanas de calor (pelo menos 3 dias com índice de calor máximo ≥ 36 °C), foram observados ${fn(H.O)} óbitos contra ${fn(H.E,0)} esperados sem calor pelo modelo, razão observado/esperado sem calor (O/E) = <b>${isFinite(H.raz)?fr(H.raz):"–"}</b>; `+
+    `nas demais ${fn(Nn.n)} semanas, ${fn(Nn.O)} contra ${fn(Nn.E,0)}, O/E = <b>${isFinite(Nn.raz)?fr(Nn.raz):"–"}</b>. Em ${fn(T.ac)} das ${fn(T.n)} semanas (${fn(100*T.ac/T.n,1)}%), o observado ficou acima do limite superior da faixa aproximada de variação de 95% em torno do esperado sem calor. `+
+    `A O/E compara somas de óbitos e não tem intervalo de confiança; semanas acima da faixa têm explicações possíveis além do calor (epidemias, mudanças de registro), e a figura mostra a coincidência com o calor apenas por associação.` : "";
 }
 
 P.ouvir.seg.push((kd,ex)=>{ if(!eCid(ex)) return; voo.delete(idK(kd,ex)); agendar() });
@@ -230,7 +272,7 @@ P.ouvir.erro.push(msg=>{
   agendar();
 });
 P.ouvir.base.push(()=>{ voo.clear(); falhou.clear(); sel = null; desenhar() });
-["k-local","k-faixa","k-raca","k-nivel","k-conj","k-cap","k-todos","k-causa","k-r-covid","k-r-nc","k-r-clima"].forEach(i=>{ const el=$(i); if(el) el.onchange = desenhar });
+["k-local","k-faixa","k-raca","k-nivel","k-conj","k-cap","k-sig","k-causa","k-r-covid","k-r-nc","k-r-clima"].forEach(i=>{ const el=$(i); if(el) el.onchange = desenhar });
 $("k-exp").onchange = () => { niveis(); desenhar() };
 P.abas.cid = desenhar;
 });

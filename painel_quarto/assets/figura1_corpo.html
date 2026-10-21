@@ -20,11 +20,14 @@
       <option value="no">Sem sombreamento</option></select></label>
     <label title="A seleção de anos altera só o que é mostrado. O modelo é ajustado com a série completa.">Período exibido: ano inicial<select id="s-ini"></select></label>
     <label title="A seleção de anos altera só o que é mostrado. O modelo é ajustado com a série completa.">Período exibido: ano final<select id="s-fim"></select></label>
-    <label>Colunas ao fundo (valores diários)<select id="s-bar">
+    <label>Clima no gráfico (valores diários)<select id="s-bar">
       <option value="hi_med">Índice de calor médio do dia</option>
       <option value="hi_max">Índice de calor máximo do dia</option>
       <option value="t_med">Temperatura média do dia</option>
       <option value="no">Sem colunas</option></select></label>
+    <label title="Alinhados: o gráfico de óbitos fica sozinho e o clima vai para um painel logo abaixo, com o mesmo eixo de tempo. Sobrepostos: as colunas de clima ficam ao fundo do gráfico de óbitos, em um segundo eixo.">Disposição<select id="s-disp">
+      <option value="alinhado">Gráficos alinhados (óbitos e clima)</option>
+      <option value="sobreposto">Sobrepostos (clima ao fundo)</option></select></label>
     <label>Cor das colunas<select id="s-cor">
       <option value="nc">Nível de calor do protocolo (NC1 a NC5)</option>
       <option value="lim">Laranja acima de um limiar (°C)</option></select></label>
@@ -42,7 +45,9 @@
   <div class="card">
     <div class="fn">Figura 1</div><h2 id="s-h2">Óbitos semanais por causas naturais: observados, esperados sem calor e semanas de calor</h2>
     <div class="legend" id="s-leg"></div>
-    <div class="chartbox"><canvas id="s-chart"></canvas></div>
+    <div class="chartbox" id="s-box1"><canvas id="s-chart"></canvas></div>
+    <div class="legend hide" id="s-leg2" style="margin:10px 0 4px"></div>
+    <div class="chartbox clima hide" id="s-box2"><canvas id="s-chart2"></canvas></div>
     <p class="note" id="s-note">Carregando a série…</p>
     <div class="interp" id="i-serie"></div>
   </div>
