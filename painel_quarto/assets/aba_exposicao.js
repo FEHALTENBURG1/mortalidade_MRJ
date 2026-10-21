@@ -70,8 +70,9 @@ const lagsAcum = () => [1,3,7,M.lag].filter((v,i,a)=>v<=M.lag && a.indexOf(v)===
 const rotLag = l => l===0 ? "Lag 0 (mesmo dia)" : `Lag ${l}`;
 const rotAcum = l => `Lag 0 a ${l}`;
 // Linhas de cada bloco, uma por defasagem (bloco A) ou por acúmulo (bloco B); cada linha traz um intervalo por nível de referência.
-const linhasA = L => [...Array(M.lag+1).keys()].map(l=>({rot:rotLag(l), neg:false, v:L.map(x=>({rr:x.rr[l],lo:x.lo[l],hi:x.hi[l]}))}));
-const linhasB = L => lagsAcum().map(l=>({rot:rotAcum(l), neg:true, tt:`Acumulado, lag 0 a ${l}`, v:L.map(x=>({rr:x.ac[l],lo:x.aclo[l],hi:x.achi[l]}))}));
+// Bloco A: exposição em um único dia, l dias antes do óbito (os demais dias da janela sem exposição). Bloco B: exposição mantida em todos os dias de 0 a l.
+const linhasA = L => [...Array(M.lag+1).keys()].map(l=>({rot:rotLag(l), neg:false, tt:l===0 ? "Exposição só no dia do óbito (lag 0)" : `Exposição só ${l} ${l===1?"dia":"dias"} antes do óbito (lag ${l})`, v:L.map(x=>({rr:x.rr[l],lo:x.lo[l],hi:x.hi[l]}))}));
+const linhasB = L => lagsAcum().map(l=>({rot:rotAcum(l), neg:true, tt:`Acumulado, exposição mantida nos lags 0 a ${l}`, v:L.map(x=>({rr:x.ac[l],lo:x.aclo[l],hi:x.achi[l]}))}));
 function dominioForesta(slots){
   const v = f => slots.flatMap(s=>f(s.cv.lag).flatMap(r=>r.v.flatMap(z=>[z.lo,z.hi])));
   const A = v(linhasA), B = v(linhasB);
@@ -100,9 +101,9 @@ function floresta(s, dom, C){
     });
     y0 = yb+14+16;
   };
-  bloco("RR em cada defasagem", linhasA(L), dom.A);
-  bloco("RR acumulado de 0 até a defasagem", linhasB(L), dom.B);
-  return `<svg viewBox="0 0 ${W} ${y0}" width="100%" role="img" aria-label="RR por defasagem e RR acumulado, nos dois níveis de exposição de referência">${g}</svg>`;
+  bloco("RR em cada defasagem: exposição em um único dia", linhasA(L), dom.A);
+  bloco("RR acumulado: exposição mantida de 0 até a defasagem", linhasB(L), dom.B);
+  return `<svg viewBox="0 0 ${W} ${y0}" width="100%" role="img" aria-label="RR por defasagem, para a exposição em um único dia, e RR acumulado, para a exposição mantida de 0 até a defasagem, nos dois níveis de exposição de referência">${g}</svg>`;
 }
 
 // ---------------------------------------------------------------- Figuras 2 e 3 e quadros
@@ -315,8 +316,8 @@ function desenharSlot(s, dom, comp, C){
     ? "A linha azul é uma reta imposta: com 1 grau de liberdade na exposição (spline natural), o logaritmo do RR cresce em linha reta com as horas por construção, de modo que ela não detecta limiar nem curvatura. A curva tracejada, de 3 graus de liberdade, é a alternativa flexível pré-definida (Quadro 3)."
     : "A curva do HAAT é estimada por spline penalizado com 15 graus de liberdade na exposição, o que permite curvatura (Quadro 3 traz os graus de liberdade efetivos), mas as extremidades têm poucos dias e intervalos largos.";
   $(p+"-note").textContent = `RR acumulado em 0 a ${M.lag} dias para uma exposição constante, mantida em todos os ${M.lag+1} dias, em relação a nenhuma exposição. A faixa é o intervalo de confiança de 95% a partir dos coeficientes da cross-basis e da sua matriz de covariância. A grade vai até ${fn(xmax)} ${u} por dia, o percentil 99 dos dias com exposição; acima disso há poucos dias. ${curvaTxt}`;
-  $(p+"-note2").textContent = `Parte superior: RR da exposição ocorrida l dias antes do óbito, para cada defasagem l de 0 a ${M.lag}. Parte inferior: RR acumulado das defasagens de 0 até l, que é o produto dos RR por defasagem de 0 a l e corresponde a manter a exposição em todos esses dias. `+
-    `Os dois níveis de exposição de referência são mantidos nos ${M.lag+1} dias. As duas partes têm escalas horizontais diferentes, e as barras são intervalos de confiança de 95% a partir da matriz de covariância dos coeficientes. Marcador cheio: intervalo que não inclui 1 (valores em negrito). A resposta à defasagem é um spline natural com 3 graus de liberdade. `+
+  $(p+"-note2").textContent = `Parte superior: RR de uma exposição que ocorreu em um único dia, l dias antes do óbito, para cada defasagem l de 0 a ${M.lag}; os demais dias da janela ficam sem exposição. Parte inferior: RR acumulado das defasagens de 0 até l, que é o produto dos RR por defasagem de 0 a l e só vale para a exposição mantida em todos os dias de 0 a l (por exemplo, o nível de referência repetido em 4 dias seguidos, no acumulado de 0 a 3). `+
+    `Cada parte mostra os dois níveis de exposição de referência, mas só a parte inferior os mantém ao longo da janela de ${M.lag+1} dias. As duas partes têm escalas horizontais diferentes, e as barras são intervalos de confiança de 95% a partir da matriz de covariância dos coeficientes. Marcador cheio: intervalo que não inclui 1 (valores em negrito). A resposta à defasagem é um spline natural com 3 graus de liberdade. `+
     P.notaModelo(e.kd,e.ex,e.m)+P.texto.notaClima(e.m)+P.texto.notaCausa(e.m);
 
   // interpretação
@@ -324,7 +325,7 @@ function desenharSlot(s, dom, comp, C){
   const partes = L.map(l=>{
     const k = ate(l), a = M.lag, sig = l.aclo[a]>1 ? "o intervalo fica acima de 1" : l.achi[a]<1 ? "o intervalo fica abaixo de 1" : "o intervalo inclui 1";
     const seq = k<0 ? "sem defasagem inicial com intervalo acima de 1" : k>=a ? "com intervalo acima de 1 em todas as defasagens" : `com intervalo acima de 1 até o lag ${k}`;
-    return `com ${fn(l.ref)} ${u} por dia, o RR no mesmo dia (lag 0) é ${ic(l.rr[0],l.lo[0],l.hi[0])}, ${seq}; o RR acumulado em 0 a ${i3} dias é ${ic(l.ac[i3],l.aclo[i3],l.achi[i3])} e em 0 a ${a} dias é ${ic(l.ac[a],l.aclo[a],l.achi[a])}, isto é, ${P.fp((l.ac[a]-1)*100)} na contagem diária de óbitos (${sig})` });
+    return `com ${fn(l.ref)} ${u} por dia, o RR no mesmo dia (lag 0), para a exposição ocorrida só nesse dia, é ${ic(l.rr[0],l.lo[0],l.hi[0])}, ${seq}; o RR acumulado em 0 a ${i3} dias, com a exposição mantida em todos os ${i3+1} dias, é ${ic(l.ac[i3],l.aclo[i3],l.achi[i3])} e em 0 a ${a} dias, com a exposição mantida em todos os ${a+1} dias, é ${ic(l.ac[a],l.aclo[a],l.achi[a])}, isto é, ${P.fp((l.ac[a]-1)*100)} na contagem diária de óbitos (${sig})` });
   const tardio = L.some(l=>l.hi.some(v=>v<1));
   $(p+"-interp").innerHTML = `<span class="t">Interpretação</span>Neste recorte, ${partes.join(". Já ")}. `+
     (tardio?`Há defasagens em que o intervalo de confiança fica inteiro abaixo de 1. Isso pode refletir antecipação de óbitos de pessoas frágeis ou variação aleatória, e o modelo não separa as duas explicações. `:"")+

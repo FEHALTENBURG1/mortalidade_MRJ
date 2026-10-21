@@ -93,7 +93,8 @@ cross_exposicao <- function(b, e, lag = LAG) {
 
 # Curvas do modelo para a aba de exposição-resposta, a partir dos coeficientes da cross-basis (beta) e da sua matriz de covariância (V):
 #   x, rr, lo, hi: RR acumulado em 0 a LAG dias para uma exposição x mantida em todos os dias, em relação a x = 0 (grade de 41 pontos até o percentil 99 dos dias com exposição, porque acima disso há poucos dias);
-#   lag: para cada nível de referência, o RR em cada defasagem (rr, lo, hi) e o RR acumulado até cada defasagem (ac, aclo, achi).
+#   lag: para cada nível de referência, o RR em cada defasagem (rr, lo, hi: exposição em um único dia, l dias antes do óbito, e nenhuma exposição nos
+#        demais dias da janela) e o RR acumulado até cada defasagem (ac, aclo, achi: exposição mantida em todos os dias de 0 a l).
 curvas_modelo <- function(cbi, beta, V, x_max) {
   e <- cbi$e
   grade <- seq(0, x_max, length.out = 41)

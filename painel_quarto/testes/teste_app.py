@@ -271,6 +271,18 @@ try:
         checar("aba de exposição-resposta abre e desenha as duas figuras (curva e floresta de defasagens)", len(xk_ini) == 6 and xpix("x-chart") > 1500 and n_circ("x") == 60, (xk_ini, n_circ("x")))
         rot_f = pg.evaluate("()=>[...document.querySelectorAll('#x-forest svg g > text:first-of-type')].map(t=>t.textContent)")
         checar("Figura 3: 11 defasagens (lag 0 a 10) e 4 acúmulos (0 a 1, 0 a 3, 0 a 7, 0 a 10)", rot_f == ["Lag 0 (mesmo dia)"] + [f"Lag {i}" for i in range(1, 11)] + ["Lag 0 a 1", "Lag 0 a 3", "Lag 0 a 7", "Lag 0 a 10"], rot_f)
+        # Figura 3: a parte superior é a exposição em um único dia; só a inferior (e os cartões) supõe a exposição mantida na janela
+        tit_f = pg.eval_on_selector_all("#x-forest svg > text:not(.m)", "els=>els.map(e=>e.textContent)")
+        dicas_f = pg.eval_on_selector_all("#x-forest svg title", "els=>els.map(e=>e.textContent)")
+        nota_f, interp_f = pg.inner_text("#x-note2"), pg.inner_text("#x-interp")
+        checar("Figura 3: partes rotuladas como exposição em um único dia e exposição mantida, com dicas coerentes",
+               tit_f == ["RR em cada defasagem: exposição em um único dia", "RR acumulado: exposição mantida de 0 até a defasagem"] and len(dicas_f) == 15
+               and dicas_f[0].startswith("Exposição só no dia do óbito (lag 0)") and dicas_f[1].startswith("Exposição só 1 dia antes do óbito (lag 1)") and dicas_f[3].startswith("Exposição só 3 dias antes do óbito (lag 3)")
+               and dicas_f[11].startswith("Acumulado, exposição mantida nos lags 0 a 1,") and dicas_f[14].startswith("Acumulado, exposição mantida nos lags 0 a 10,"), (tit_f, dicas_f[:2], dicas_f[-1:]))
+        checar("Figura 3: a nota diz que a parte superior é um único dia e que só a inferior mantém a exposição, sem afirmar que os níveis são mantidos nos 11 dias para as duas partes",
+               "uma exposição que ocorreu em um único dia" in nota_f and "os demais dias da janela ficam sem exposição" in nota_f and "só a parte inferior os mantém ao longo da janela de 11 dias" in nota_f and "são mantidos nos 11 dias" not in nota_f, nota_f[:500])
+        checar("a interpretação separa a exposição ocorrida só no dia (lag 0) da exposição mantida nos acumulados",
+               "para a exposição ocorrida só nesse dia" in interp_f and "com a exposição mantida em todos os 4 dias" in interp_f and "com a exposição mantida em todos os 11 dias" in interp_f, interp_f[:500])
         checar("quadros: RR no lag 0 e acumulados em 0 a 3 e 0 a 10 dias, para os dois níveis de referência",
                all(k.split(" | ")[1].startswith(pre) for k, pre in zip(xk_ini, ["RR no mesmo dia (lag 0), para exposição", "RR acumulado nas defasagens de 0 a 3 dias", "RR acumulado nas defasagens de 0 a 10 dias"] * 2)), xk_ini)
         leg_ini = pg.inner_text("#x-leg2")
@@ -720,6 +732,8 @@ try:
                all(c in sobre for c in ["exposição é uma série municipal agregada", "rede de estações", "confundimento residual", "ecológico", "decisão de modelagem"]), [c for c in ["exposição é uma série municipal agregada", "rede de estações", "confundimento residual", "ecológico", "decisão de modelagem"] if c not in sobre])
         varrer("Métodos e fontes", todos_("tab-sobre"))
         checar("métodos explicam a causa do óbito e as retiradas do ajuste", "Causa do óbito" in sobre and "Retirar períodos do ajuste" in sobre and "Curvas de exposição-resposta e de defasagem" in sobre and "sem taxas por população" in sobre, sobre[:300])
+        checar("métodos: a Figura 3 distingue a exposição em um único dia (parte superior) da exposição mantida (parte inferior)",
+               "efeito de uma exposição ocorrida em um único dia, l dias antes do óbito" in sobre and "Só a parte inferior descreve exposição mantida; a parte superior descreve um dia isolado" in sobre, sobre[:300])
         checar("métodos mostram a fonte e a data da extração dos dados", "Fonte e data da extração" in sobre and "UTC" in sobre, sobre[-400:])
         tab_rec = pg.evaluate("""()=>{const t=[...document.querySelectorAll('#tab-sobre table')].find(t=>t.innerText.includes('Total de óbitos elegíveis'));
           return t?[...t.querySelectorAll('tbody tr')].map(tr=>[...tr.children].map(td=>td.innerText)):null}""")
