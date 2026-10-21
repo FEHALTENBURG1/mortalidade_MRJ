@@ -233,6 +233,41 @@ comparar_flex <- function(y, b, cbl, cbf, fora, k_time) {
   list(lin = um(rl, cbl), flex = um(rf, cbf), comp = comp)
 }
 
+# ---------------------------------------------------------------- suporte dos contrastes acumulados (aba Exposição-resposta)
+# O RR acumulado de 0 a LAG dias descreve a exposição r mantida em todos os LAG+1 dias, mas a série pode quase não ter essa sequência. Para cada nível de
+# referência r, conta quantas vezes a série tem exposição x >= r em todos os d dias seguidos até o dia do óbito (para as durações d de DURACOES), em quantos
+# eventos independentes isso ocorre, a duração observada das sequências de dias expostos e a distribuição por ano.
+#   dia exposto           x >= r (dia sem dado de clima conta como não exposto: a exposição é desconhecida)
+#   sequência             dias expostos seguidos
+#   janela de d dias      dia t do ajuste em que os d dias t-d+1, ..., t são todos expostos (a sequência que termina em t tem pelo menos d dias)
+#   evento independente   conjunto de dias expostos em que dois dias expostos consecutivos distam no máximo `lag` dias: eventos distintos têm pelo menos `lag` dias
+#                         sem exposição entre eles, de modo que as janelas de defasagem de eventos diferentes não se tocam
+#   janela de média       dia t do ajuste em que a média de x nos lag+1 dias t-lag, ..., t é pelo menos r (exposição total comparável, com dias acima e abaixo de r)
+# x = exposição diária do calendário (dia sem clima = 0), fora = dias fora do ajuste (como desfecho), ref = níveis de referência.
+DURACOES <- c(1, 2, 4, 8, 11)
+CLASSES_DURACAO <- c("1 dia", "2 a 3 dias", "4 a 7 dias", "8 a 10 dias", "11 dias ou mais")
+suporte_exposicao <- function(x, dias, fora, ref, lag = LAG, dur = DURACOES) {
+  n <- length(x); ano <- as.integer(format(dias, "%Y")); anos <- sort(unique(ano[!fora]))
+  por_ano <- function(v) { r <- as.integer(tapply(v, factor(ano, levels = anos), sum)); r[is.na(r)] <- 0L; r }
+  cs <- c(0, cumsum(x)); tt <- seq_len(n); soma_lag <- ifelse(tt >= lag + 1, cs[tt + 1] - cs[pmax(tt - lag, 1)], NA_real_)      # soma de x nos lag+1 dias terminados em t
+  niveis <- lapply(ref, function(r) {
+    e <- x >= r
+    rl <- rle(e); fim <- cumsum(rl$lengths); ini <- fim - rl$lengths + 1
+    L <- integer(n)                                                   # dias expostos seguidos que terminam em t
+    for (k in which(rl$values)) L[ini[k]:fim[k]] <- seq_len(rl$lengths[k])
+    ie <- which(e); grp <- cumsum(c(TRUE, diff(ie) > lag))            # evento independente de cada dia exposto
+    janelas <- vapply(dur, function(d) as.integer(sum(L >= d & !fora)), 1L)
+    eventos <- vapply(dur, function(d) length(unique(grp[L[ie] >= d & !fora[ie]])), 1L)
+    seqs <- which(rl$values); com_dia_no_ajuste <- vapply(seqs, function(k) any(!fora[ini[k]:fim[k]]), TRUE)
+    classe <- cut(rl$lengths[seqs][com_dia_no_ajuste], c(0, 1, 3, 7, 10, Inf), labels = CLASSES_DURACAO)
+    seq4 <- por_ano(L == 4 & !fora)                                   # a sequência entra no ano em que completa o 4º dia exposto, com esse dia no ajuste
+    list(ref = r, dias = sum(e & !fora), janelas = I(janelas), eventos = I(eventos), janelas_media = sum(soma_lag >= r * (lag + 1) - 1e-9 & !fora, na.rm = TRUE),
+         duracao = list(classe = I(CLASSES_DURACAO), n = I(as.integer(table(classe)))),
+         anual = list(ano = I(anos), dias = I(por_ano(e & !fora)), seq4 = I(seq4), jan11 = I(por_ano(L >= lag + 1 & !fora))))
+  })
+  list(ref = I(ref), dur = I(dur), lag = lag, nd = sum(!fora), niveis = niveis)
+}
+
 # ---------------------------------------------------------------- análises de sensibilidade (aba Diagnósticos e sensibilidades)
 # Cada uma refaz o ajuste do recorte com uma só mudança em relação ao ajuste principal pedido (causa, retiradas e medida de calor iguais).
 #   esp   especificação alternativa do GAM (ver ajustar_gam);  kmult  fator sobre o número de nós do spline do tempo;  lag  defasagem máxima (dias);

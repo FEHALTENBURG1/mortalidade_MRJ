@@ -245,6 +245,26 @@ checar("flex: recorte com poucos óbitos dá recorte_invalido", identical(cod(ex
 checar("principal: o payload traz as colunas da base cruzada e os graus de liberdade efetivos", { a <- json_de(r_nat); a$cb$k == 3 && a$cb$edf == 3 })
 checar("principal HAAT: base cruzada de 45 colunas com gl efetivos menores (penalização)", { ah <- json_de(executar_ajuste(pasta, "res", chave, K, "haat")$payload); ah$cb$k == 45 && ah$cb$edf > 5 && ah$cb$edf < 45 })
 
+# suporte dos contrastes acumulados: "sup_<medida>", conferido contra uma contagem independente (laços explícitos) sobre as séries do cache
+sup_ref <- function(x, fora, r, lag = LAG, dur = DURACOES) {
+  n <- length(x); e <- x >= r; jan <- integer(length(dur)); ev <- integer(length(dur)); id_ev <- integer(n); atual <- 0L; ult <- -Inf
+  for (t in seq_len(n)) if (e[t]) { if (t - ult > lag) atual <- atual + 1L; id_ev[t] <- atual; ult <- t }
+  for (i in seq_along(dur)) { d <- dur[i]; ok <- logical(n); for (t in seq_len(n)) ok[t] <- t >= d && !fora[t] && all(e[(t - d + 1):t]); jan[i] <- sum(ok); ev[i] <- length(unique(id_ev[ok])) }
+  list(janelas = jan, eventos = ev, dias = sum(e & !fora))
+}
+checar("sup: reconhece só sup_horas e sup_haat", identical(dg_do_id("sup_horas")$tipo, "sup") && identical(dg_do_id("sup_haat")$medida, "haat") && expo_valida("sup_haat") && !any(vapply(c("sup_", "sup", "sup_cid", "sup_horas2", "Sup_horas"), function(x) expo_valida(x), TRUE)))
+KS <- "Todos os locais|Todas as idades"
+for (m in c("horas", "haat")) {
+  spr <- executar_ajuste(pasta, "res", chave, KS, paste0("sup_", m)); sp <- json_de(spr$payload); E <- EXPOSICOES[[m]]
+  fo <- fora_ajuste(cx, opc_de_codigo(COD_PADRAO)); xx <- P$b[[E$var]]
+  checar(sprintf("sup %s: janelas, eventos e dias expostos batem com a contagem independente nos dois níveis (%s)", m, paste(E$ref, collapse = " e ")),
+         identical(sp$tipo, "sup") && sp$nd == sum(!fo) && all(unlist(sp$ref) == E$ref) && all(vapply(1:2, function(j) { b <- sup_ref(xx, fo, E$ref[j]); q <- sp$niveis[[j]]
+           identical(as.integer(unlist(q$janelas)), b$janelas) && identical(as.integer(unlist(q$eventos)), b$eventos) && q$dias == b$dias }, TRUE)))
+  checar(sprintf("sup %s: soma por ano e sequências por duração fecham com os totais", m), all(vapply(sp$niveis, function(q) sum(unlist(q$anual$dias)) == q$dias && sum(unlist(q$anual$jan11)) == unlist(q$janelas)[5] && length(unlist(q$duracao$n)) == 5, TRUE)))
+}
+checar("sup: o segundo pedido sai do disco, e o suporte muda com as retiradas (ajuste sem tirar dias sem clima tem mais janelas ou o mesmo número)",
+       executar_ajuste(pasta, "res", chave, KS, "sup_horas")$do_cache && { s0 <- json_de(executar_ajuste(pasta, "res", chave, KS, "sup_horas", "naturais", "000")$payload); s1 <- json_de(executar_ajuste(pasta, "res", chave, KS, "sup_horas")$payload); s0$nd > s1$nd && s0$niveis[[1]]$dias >= s1$niveis[[1]]$dias })
+
 # pedidos assíncronos pelo future: pedidos iguais compartilham a promessa e o resultado é o mesmo
 suppressWarnings(future::plan("multisession", workers = 1))
 p1 <- pedir_ajuste(raiz, pasta, "res", chave, "Via pública|60-69", "horas")                 # a primeira chamada sobe o trabalhador e cria o pedido

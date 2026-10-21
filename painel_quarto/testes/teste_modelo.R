@@ -66,6 +66,36 @@ yp <- rnbinom(n, mu = mu_pat, size = 80)
 cmpp <- comparar_flex(yp, b, cbi, cbf, cx$sem_registro, kt)
 ok(cmpp$flex$rr[2] < 1.1 * cmpp$flex$rr[1] && cmpp$lin$rr[2] > 1.15 * cmpp$flex$rr[2], sprintf("com patamar verdadeiro, a curva flexível dá RR(8 h) = %.3f perto de RR(4 h) = %.3f e a reta superestima RR(8 h) (%.3f)", cmpp$flex$rr[2], cmpp$flex$rr[1], cmpp$lin$rr[2]))
 ok(!is.null(cmpp$comp$p) && cmpp$comp$p < 0.01 && cmpp$comp$d_aic < 0 && cmpp$comp$razao < 1.3, sprintf("com patamar verdadeiro, o teste aproximado (p = %.2g) e o AIC (%.1f) preferem a curva flexível", cmpp$comp$p, cmpp$comp$d_aic))
+# suporte dos contrastes acumulados: contagens conferidas por laço explícito, dia a dia, numa série pequena e numa simulada
+sup_ref <- function(x, dias, fora, r, lag = LAG, dur = DURACOES) {          # implementação independente: sem rle, sem tapply, com laços
+  n <- length(x); e <- x >= r; jan <- integer(length(dur)); ev <- integer(length(dur)); id_ev <- integer(n); atual <- 0L; ult <- -Inf
+  for (t in seq_len(n)) if (e[t]) { if (t - ult > lag) atual <- atual + 1L; id_ev[t] <- atual; ult <- t }     # dia exposto a mais de `lag` dias do exposto anterior (pelo menos `lag` dias sem exposição entre eles) abre novo evento
+  for (i in seq_along(dur)) { d <- dur[i]; ok <- logical(n)
+    for (t in seq_len(n)) ok[t] <- t >= d && !fora[t] && all(e[(t - d + 1):t])
+    jan[i] <- sum(ok); ev[i] <- length(unique(id_ev[ok])) }
+  m <- sapply(seq_len(n), function(t) if (t >= lag + 1) mean(x[(t - lag):t]) else NA)
+  list(janelas = jan, eventos = ev, dias = sum(e & !fora), media = sum(m >= r & !fora, na.rm = TRUE))
+}
+xs <- c(0,5,5,5,0,0,0,0,0,0,0,0,6,9,9,4,4,4,4,4,4,4,4,4,4,4,0,0,8,0,0,0,0,0,0,0,0,0,0,0,0,7,7,0)
+ds <- as.Date("2020-01-01") + seq_along(xs) - 1; fs <- rep(FALSE, length(xs)); fs[c(1:3, 20)] <- TRUE
+for (r in c(4, 8)) {
+  a1 <- suporte_exposicao(xs, ds, fs, r)$niveis[[1]]; b1 <- sup_ref(xs, ds, fs, r)
+  ok(identical(as.integer(a1$janelas), b1$janelas) && identical(as.integer(a1$eventos), b1$eventos) && a1$dias == b1$dias && a1$janelas_media == b1$media,
+     sprintf("suporte (série pequena, r = %g): janelas %s e eventos %s batem com a contagem por laço", r, paste(a1$janelas, collapse = "/"), paste(a1$eventos, collapse = "/")))
+}
+sp_pequena <- suporte_exposicao(xs, ds, fs, 4)$niveis[[1]]
+ok(sp_pequena$janelas[5] == 4 && sp_pequena$eventos[5] == 1 && identical(as.integer(sp_pequena$duracao$n), c(1L, 2L, 0L, 0L, 1L)),
+   "suporte: a sequência de 14 dias (dias 13 a 26) dá 4 janelas de 11 dias (dias do óbito 23 a 26), 1 evento e 1 sequência longa; as outras sequências têm 1 dia (dia 29) e 2 a 3 dias (dias 2 a 4 e 42 e 43)")
+sp_haat <- suporte_exposicao(xs, ds, fs, c(4, 8))
+ok(length(sp_haat$niveis) == 2 && sp_haat$nd == sum(!fs) && sp_haat$niveis[[2]]$janelas[5] == 0 && sp_haat$niveis[[2]]$eventos[5] == 0, "suporte: sem sequência de 11 dias a 8 unidades, janelas e eventos são 0")
+sup_sim <- suporte_exposicao(h, dias, cx$sem_registro, c(2, 4)); fs2 <- cx$sem_registro
+for (j in 1:2) { r <- c(2, 4)[j]; a2 <- sup_sim$niveis[[j]]; b2 <- sup_ref(h, dias, fs2, r)
+  ok(identical(as.integer(a2$janelas), b2$janelas) && identical(as.integer(a2$eventos), b2$eventos) && a2$dias == b2$dias && a2$janelas_media == b2$media, sprintf("suporte (série simulada de %d dias, r = %g): contagens batem com o laço independente", n, r)) }
+ok(all(sapply(sup_sim$niveis, function(q) sum(q$anual$dias) == q$dias && sum(q$anual$jan11) == q$janelas[5] && all(diff(q$janelas) <= 0) && all(diff(q$eventos) <= 0) && all(q$eventos <= q$janelas))),
+   "suporte: a soma por ano fecha com o total; janelas e eventos não crescem com a duração; eventos <= janelas")
+fs3 <- fs2; fs3[dias >= as.Date("2014-01-01")] <- TRUE
+s3 <- suporte_exposicao(h, dias, fs3, 4)$niveis[[1]]
+ok(all(s3$anual$ano <= 2013) && s3$dias < sup_sim$niveis[[2]]$dias && sum(s3$anual$dias) == s3$dias, "suporte: dias fora do ajuste como desfecho não entram nas contagens nem nos anos")
 # mapa de horas por dia x limiar: com efeito verdadeiro, as células com dias suficientes têm RR acima de 1; sem efeito, o IC cobre 1
 mp <- ajustar_mapa_limiar(y, b, h, cx$sem_registro, kt, 36, horas = c(1, 2, 4, 8, 100))
 ok(identical(mp$tipo, "mapa") && mp$limiar == 36 && length(mp$rr) == 5, "mapa: a coluna traz o limiar e uma célula por nível de horas")

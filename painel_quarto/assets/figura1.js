@@ -175,7 +175,7 @@ function registrarShiny(){
     if(msg.pop!==POP || msg.chave!==CHAVE) return;                                // resposta de outra população ou de uma versão antiga dos dados
     const kd=msg.causa+"~"+msg.opc+"~"+msg.key;
     if(/^mapa\d+$/.test(msg.ex)){ const q=JSON.parse(msg.json); (D.mp[kd]||(D.mp[kd]={}))[q.limiar]=q; OUV.seg.forEach(f=>f(kd,msg.ex)); return }     // coluna do mapa de horas por limiar (Figura 4)
-    if(/^(diag|sens|flex)_/.test(msg.ex)){ (D.dg[kd]||(D.dg[kd]={}))[msg.ex]=JSON.parse(msg.json); OUV.seg.forEach(f=>f(kd,msg.ex)); return }     // aba de diagnósticos (ajuste principal com diagnósticos e análises de sensibilidade) e aba de exposição-resposta (reta imposta contra curva flexível)
+    if(/^(diag|sens|flex|sup)_/.test(msg.ex)){ (D.dg[kd]||(D.dg[kd]={}))[msg.ex]=JSON.parse(msg.json); OUV.seg.forEach(f=>f(kd,msg.ex)); return }     // aba de diagnósticos (ajuste principal com diagnósticos e análises de sensibilidade) e aba de exposição-resposta (reta imposta contra curva flexível)
     if(/^cid/.test(msg.ex)){ (D.cd[kd]||(D.cd[kd]={}))[msg.ex]=JSON.parse(msg.json); OUV.seg.forEach(f=>f(kd,msg.ex)); return }     // aba de causas específicas: lista de causas, RR e série semanal de cada causa
     mesclar(kd,msg.ex,JSON.parse(msg.json));
     if(kd===keyD() && msg.ex===$("s-exp").value) desenhar();

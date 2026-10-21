@@ -25,6 +25,15 @@ if($("x-r-covid-t") && M.covid) $("x-r-covid-t").textContent = `Período COVID (
 const c1 = {x:null, y:null}, c2 = {x:null, y:null};                // Figura 2 e gráfico de suporte (dias por hora)
 const flexVoo = new Map(), flexFalhou = new Map();                    // kd -> instante do pedido | kd -> mensagem de erro (comparação com a curva flexível)
 const flexDe = s => s.e.ex==="horas" ? (P.dg(s.e.kd)["flex_horas"]||null) : null;
+// Suporte dos contrastes acumulados (pedido "sup_<medida>"): vale para qualquer recorte, então o navegador pede sempre com o recorte de todos os óbitos
+const KEY_SUP = "Todos os locais|Todas as idades";
+const supVoo = new Map(), supFalhou = new Map();
+const supDe = s => P.dg(P.kd(s.e.causa,s.e.cod,KEY_SUP))["sup_"+s.e.ex] || null;
+function pedirSup(e){
+  const kd = P.kd(e.causa,e.cod,KEY_SUP), id = kd+"|"+e.ex, agora = Date.now(); supVoo.forEach((t,i)=>{ if(agora-t>180000) supVoo.delete(i) });
+  if(supVoo.has(id) || supFalhou.has(id)) return;
+  supVoo.set(id,agora); P.enviar(KEY_SUP,"sup_"+e.ex,e.causa,e.cod);
+}
 function pedirFlex(e){
   const agora = Date.now(); flexVoo.forEach((t,id)=>{ if(agora-t>180000) flexVoo.delete(id) });
   if(flexVoo.has(e.kd) || flexFalhou.has(e.kd)) return;
@@ -41,6 +50,7 @@ function limpar(p){
   [p+"-kpis",p+"-leg",p+"-leg2",p+"-forest",p+"-interp"].forEach(i=>$(i).innerHTML="");
   if(c1[p]){ c1[p].destroy(); c1[p]=null }
   if(c2[p]){ c2[p].destroy(); c2[p]=null }
+  ["-sq","-sq-dur","-sq-an","-sq-interp"].forEach(i=>$(p+i).innerHTML=""); ["-sq-note","-sq-note2","-sq-prog"].forEach(i=>$(p+i).textContent="");
   $(p+"-fx").innerHTML = ""; $(p+"-fx-interp").innerHTML = ""; $(p+"-fx-note").textContent = ""; $(p+"-fx-prog").textContent = ""; $(p+"-supnote").textContent = ""; $(p+"-supbox").style.display = "none";
   $(p+"-note").textContent = ""; $(p+"-note2").textContent = "";
 }
@@ -200,6 +210,54 @@ function flexQuadro(s, fx){
     `O IC da curva flexível alarga ao se afastar da região com mais dias, e o IC estreito da reta nessa região vem da forma imposta, e não de mais dados.`;
 }
 
+// ---------------------------------------------------------------- suporte dos contrastes acumulados (Quadro 4)
+// Quantas vezes a série tem a exposição de referência em todos os d dias seguidos até o dia do óbito: sem isso, o RR de 8 h (ou do HAAT alto) por 11 dias
+// seria extrapolação do modelo. Cada linha traz o RR acumulado do mesmo contraste, tirado do ajuste do recorte (lag 0 a d-1).
+const DUR_SQ = [1,2,4,8,11];
+const leituraSq = n => n>=30 ? "frequente" : n>=5 ? "poucos eventos" : "extrapolação";
+function sqQuadro(s, sp){
+  const p = s.p, e = s.e, E = s.E, u = E.unidade, L = s.cv.lag, prog = $(p+"-sq-prog");
+  ["-sq","-sq-dur","-sq-an","-sq-interp"].forEach(i=>$(p+i).innerHTML=""); ["-sq-note","-sq-note2"].forEach(i=>$(p+i).textContent="");
+  if(!sp){
+    const f = supFalhou.get(P.kd(e.causa,e.cod,KEY_SUP)+"|"+e.ex);
+    prog.textContent = f ? "Não foi possível calcular o suporte dos contrastes: "+String(f).replace(/[<>&]/g,"") : "Calculando o suporte dos contrastes (poucos segundos)…";
+    return;
+  }
+  prog.textContent = "";
+  const nv = sp.niveis, ref = sp.ref, d11 = sp.dur.indexOf(M.lag+1);
+  let h = `<thead><tr><th>Exposição de referência</th><th class="n">Dias seguidos com exposição até o dia do óbito</th><th class="n">Contraste (defasagens)</th><th class="n">RR acumulado (IC 95%)</th><th class="n">Janelas no ajuste</th><th class="n">Eventos independentes</th><th>Leitura</th></tr></thead><tbody>`;
+  nv.forEach((q,j)=>sp.dur.forEach((d,i)=>{
+    const l = L[j], a = d-1, ex = q.eventos[i]<5, rot = i===0 ? `${fn(ref[j])} ${u} por dia ou mais` : "";
+    h += `<tr class="${ex?"ext":""}"><td>${rot}</td><td class="n">${fn(d)}${d===M.lag+1?" (cenário dos cartões de RR)":""}</td><td class="n">0 a ${fn(a)}</td><td class="n">${a<l.ac.length?`${fn(l.ac[a],2)} (${fn(l.aclo[a],2)} a ${fn(l.achi[a],2)})`:"–"}</td><td class="n">${fn(q.janelas[i])}</td><td class="n">${fn(q.eventos[i])}</td><td>${leituraSq(q.eventos[i])}</td></tr>`;
+  }));
+  $(p+"-sq").innerHTML = h+"</tbody>";
+  $(p+"-sq-note").textContent = `Dia exposto: exposição de pelo menos o nível de referência (${ref.map(r=>fn(r)+" "+u).join(" ou ")}; dia sem dado de clima conta como não exposto). Janela: dia do óbito no ajuste (${fn(sp.nd)} dias) em que os d dias terminados nele são todos expostos; a janela de ${M.lag+1} dias é o cenário do cartão de RR. `+
+    `Evento independente: conjunto de dias expostos separado de outros por pelo menos ${M.lag} dias sem exposição, de modo que as janelas de defasagem de eventos diferentes não se tocam; o quadro conta os eventos que têm pelo menos uma janela de d dias. `+
+    `O RR de cada linha é o acumulado nas defasagens de 0 a d-1 do recorte escolhido (exposição mantida nos d últimos dias e ausente antes), e o suporte (janelas e eventos) vale para qualquer recorte porque só depende da exposição e dos dias do ajuste. `+
+    `Leitura: menos de 5 eventos independentes = extrapolação; 5 a 29 = poucos eventos; 30 ou mais = frequente. Esses limiares são uma convenção do painel para leitura rápida, e não um critério estatístico.`;
+  // duração observada e distribuição por ano
+  let hd = `<thead><tr><th>Exposição de referência</th>${sp.niveis[0].duracao.classe.map(c=>`<th class="n">${c}</th>`).join("")}<th class="n">Sequências</th></tr></thead><tbody>`;
+  nv.forEach((q,j)=>{ const t = q.duracao.n.reduce((a,b)=>a+b,0); hd += `<tr><td>${fn(ref[j])} ${u} por dia ou mais</td>${q.duracao.n.map(v=>`<td class="n">${fn(v)}</td>`).join("")}<td class="n">${fn(t)}</td></tr>` });
+  $(p+"-sq-dur").innerHTML = hd+"</tbody>";
+  const anos = nv[0].anual.ano; let ha = `<thead><tr><th rowspan="2">Ano</th>${nv.map((q,j)=>`<th class="n gr2" colspan="3">${fn(ref[j])} ${u} por dia ou mais</th>`).join("")}</tr><tr>${nv.map(()=>`<th class="n gr2">Dias expostos</th><th class="n">Sequências de 4 dias ou mais</th><th class="n">Janelas de ${M.lag+1} dias</th>`).join("")}</tr></thead><tbody>`;
+  anos.forEach((a,i)=>{ ha += `<tr><td>${a}</td>${nv.map(q=>`<td class="n gr2">${fn(q.anual.dias[i])}</td><td class="n">${fn(q.anual.seq4[i])}</td><td class="n">${fn(q.anual.jan11[i])}</td>`).join("")}</tr>` });
+  const som = v => v.reduce((a,b)=>a+b,0);
+  ha += `<tr class="ext"><td>Total</td>${nv.map(q=>`<td class="n gr2">${fn(som(q.anual.dias))}</td><td class="n">${fn(som(q.anual.seq4))}</td><td class="n">${fn(som(q.anual.jan11))}</td>`).join("")}</tr>`;
+  $(p+"-sq-an").innerHTML = ha+"</tbody>";
+  $(p+"-sq-note2").textContent = `Sequência: dias expostos seguidos, contada se tem pelo menos um dia no ajuste. Na tabela por ano, a sequência de 4 dias ou mais entra no ano em que completa o quarto dia exposto dentro do ajuste, e a janela de ${M.lag+1} dias no ano do dia do óbito. Os anos são os do ajuste: 2007 começa com o clima disponível em abril e o último ano está incompleto.`;
+  // interpretação
+  const f = j => { const q = nv[j]; return `a exposição de ${fn(ref[j])} ${u} por dia em todos os ${M.lag+1} dias ocorre em ${fn(q.janelas[d11])} ${q.janelas[d11]===1?"janela":"janelas"} (${fn(q.eventos[d11])} ${q.eventos[d11]===1?"evento independente":"eventos independentes"})` };
+  const maior = j => { const q = nv[j]; let k = -1; sp.dur.forEach((d,i)=>{ if(q.eventos[i]>=5) k = i }); return k<0 ? null : sp.dur[k] };
+  const rara = nv.map((q,j)=>j).filter(j=>nv[j].eventos[d11]<5);
+  const frases = nv.map((q,j)=>{ const m = maior(j); return `${f(j)}${m!=null&&m<M.lag+1?`; o maior contraste com pelo menos 5 eventos independentes é o de ${fn(m)} ${m===1?"dia":"dias"} seguidos`:""}` });
+  $(p+"-sq-interp").innerHTML = `<span class="t">Interpretação</span>`+
+    `No ajuste de ${fn(sp.nd)} dias, ${frases.join(". Já ")}. `+
+    (rara.length ? `O RR acumulado de 0 a ${M.lag} dias para ${rara.map(j=>fn(ref[j])+" "+u+" por dia").join(" e para ")} descreve uma sequência que quase não ocorre na série: ele vem do modelo${e.ex==="horas"?" (reta imposta de 1 grau de liberdade)":""} aplicado a uma combinação de exposições que os dados mal cobrem, e deve ser lido como extrapolação. `+
+                    `Há ${rara.map(j=>fn(nv[j].janelas_media)+" janelas de "+(M.lag+1)+" dias em que a média diária é de pelo menos "+fn(ref[j])+" "+u+" (com dias acima e abaixo)").join(" e ")}, o que dá algum suporte à dose total de exposição, mas não ao padrão constante que o cartão descreve. Os contrastes de menor duração, com mais eventos, são os que os dados sustentam melhor. `
+                  : `Os cenários dos cartões de RR têm eventos suficientes para que a estimativa descreva exposições que de fato ocorreram, embora em poucos episódios independentes. `)+
+    `Os eventos independentes são o número que mais se aproxima do tamanho efetivo da amostra de exposições: várias janelas seguidas dentro do mesmo evento não trazem informação independente.`;
+}
+
 function desenharSlot(s, dom, comp, C){
   const p = s.p, e = s.e, E = s.E, u = E.unidade, cv = s.cv, L = cv.lag, cor = [C.az, C.la], xmax = dom.xmax;
   const rotulo = `local do óbito: ${nm(local(p)).toLowerCase()}; faixa etária: ${$("x-faixa").value==="Todas as idades"?"todas as idades":$("x-faixa").value+" anos"}${$("x-raca").value!=="Todas"?"; raça/cor: "+(({PPI:"pretos, pardos e indígenas"})[$("x-raca").value]||$("x-raca").value.toLowerCase()):""}`;
@@ -272,7 +330,8 @@ function desenharSlot(s, dom, comp, C){
   $(p+"-interp").innerHTML = `<span class="t">Interpretação</span>Neste recorte, ${partes.join(". Já ")}. `+
     (tardio?`Há defasagens em que o intervalo de confiança fica inteiro abaixo de 1. Isso pode refletir antecipação de óbitos de pessoas frágeis ou variação aleatória, e o modelo não separa as duas explicações. `:"")+
     `As estimativas descrevem associação em dados agregados, sem controle de fatores individuais.`;
-  flexQuadro(s, fx);
+  const sp = supDe(s); if(!sp) pedirSup(e);
+  flexQuadro(s, fx); sqQuadro(s, sp);
 }
 
 // Texto que põe lado a lado o RR acumulado dos dois locais (só com dois recortes prontos)
@@ -369,11 +428,19 @@ function mapa(){
 function desenhar(){ desenharCurvas(); mapa() }                    // as Figuras 2 e 3 são pedidas primeiro: o servidor as atende antes das colunas do mapa
 
 P.ouvir.seg.push((kd,ex)=>{
+  if(/^sup_/.test(ex)){ supVoo.delete(kd+"|"+ex.slice(4)); if($("tab-exp").classList.contains("hide")) return; desenharCurvas(); return }
   if(ex==="flex_horas"){ flexVoo.delete(kd); if($("tab-exp").classList.contains("hide")) return; if(ativos().some(p=>estado(p).kd===kd)) desenharCurvas(); return }
   if(eMapa(ex)){ voo.delete(idM(kd,+ex.slice(4))); mapa(); return }
   if(ativos().some(p=>{ const e=estado(p); return kd===e.kd && ex===e.ex })){ desenharCurvas(); mapa() }
 });
 P.ouvir.erro.push(msg=>{
+  if(/^sup_/.test(msg.ex)){
+    if(msg.pop!==P.pop()) return;
+    const id = P.kd(msg.causa,msg.opc,msg.key)+"|"+msg.ex.slice(4); supVoo.delete(id);
+    supFalhou.set(id, msg.codigo==="dados_mudaram" ? "os dados foram atualizados no servidor; recarregue a página" : String(msg.mensagem||"erro"));
+    if(!$("tab-exp").classList.contains("hide")) desenharCurvas();
+    return;
+  }
   if(msg.ex==="flex_horas"){
     if(msg.pop!==P.pop()) return;
     const kd = P.kd(msg.causa,msg.opc,msg.key); flexVoo.delete(kd);
@@ -396,7 +463,7 @@ P.ouvir.erro.push(msg=>{
       : "Não foi possível ajustar o modelo deste recorte: "+String(msg.mensagem||"erro desconhecido").replace(/[<>&]/g,"");
   });
 });
-P.ouvir.base.push(()=>{ voo.clear(); falhou.clear(); flexVoo.clear(); flexFalhou.clear(); desenhar() });
+P.ouvir.base.push(()=>{ voo.clear(); falhou.clear(); flexVoo.clear(); flexFalhou.clear(); supVoo.clear(); supFalhou.clear(); desenhar() });
 ["x-local","x-local2","x-faixa","x-raca","x-exp","x-causa","x-r-covid","x-r-nc","x-r-clima","x-hm-sig"].forEach(i=>{ const el=$(i); if(el) el.onchange=desenhar });
 P.abas.exp = desenhar;
 });

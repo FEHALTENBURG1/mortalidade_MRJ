@@ -169,8 +169,28 @@ try:
         checar("Figura 2: a nota explica que a linha azul é uma reta imposta", "reta imposta" in pg.inner_text("#x-note"))
         checar("os cartões de RR de 8 h dizem que, na reta, o RR é o de 4 h ao quadrado", "elevado ao quadrado" in xk_ini[5] and "elevado ao quadrado" in k_ini[2], (xk_ini[5], k_ini[2]))
         checar("Quadro 3: RR com no máximo duas casas e sem travessão", not re.search(r"\d,\d{3}", pg.inner_text("#x-fx") + pg.inner_text("#x-fx-interp")) and not re.search("[—–]", pg.inner_text("#x-fx") + pg.inner_text("#x-fx-note") + pg.inner_text("#x-fx-interp") + pg.inner_text("#x-supnote")))
+        # Quadro 4: suporte dos contrastes acumulados (janelas e eventos independentes por duração, duração observada e distribuição por ano)
+        num = lambda t: int(t.replace(".", ""))
+        def quadro4(unid):
+            pg.wait_for_function("document.querySelectorAll('#x-sq tbody tr').length===10", timeout=120000)
+            L4 = pg.eval_on_selector_all("#x-sq tbody tr", "trs=>trs.map(tr=>[...tr.children].map(td=>td.innerText))")
+            leit = lambda ev: "frequente" if ev >= 30 else "poucos eventos" if ev >= 5 else "extrapolação"
+            return L4, all(r[6] == leit(num(r[5])) for r in L4) and all(num(r[5]) <= num(r[4]) for r in L4) and all(num(L4[k][4]) >= num(L4[k + 1][4]) for k in (0, 1, 2, 3, 5, 6, 7, 8)) and L4[0][0].endswith(f"{unid} por dia ou mais") and L4[5][0].endswith(f"{unid} por dia ou mais")
+        L4, ok4 = quadro4("h")
+        checar("Quadro 4: 5 durações para cada nível de referência, com janelas e eventos que não crescem com a duração e leitura pela regra de eventos", len(L4) == 10 and ok4 and [r[1] for r in L4[:5]] == ["1", "2", "4", "8", "11 (cenário dos cartões de RR)"], L4)
+        checar("Quadro 4: o RR da linha de 11 dias é o RR acumulado dos cartões (mesmo modelo)", L4[4][3].split(" ")[0] == xk_ini[2].split(" | ")[0].split(" ")[0] and L4[9][3].split(" ")[0] == xk_ini[5].split(" | ")[0].split(" ")[0], (L4[4], L4[9], xk_ini[2], xk_ini[5]))
+        dur4 = pg.eval_on_selector_all("#x-sq-dur tbody tr", "trs=>trs.map(tr=>[...tr.children].map(td=>td.innerText))")
+        an4 = pg.eval_on_selector_all("#x-sq-an tbody tr", "trs=>trs.map(tr=>[...tr.children].map(td=>td.innerText))")
+        checar("Quadro 4: a duração observada soma as sequências e a tabela por ano fecha com o total e com a linha de 11 dias do quadro",
+               len(dur4) == 2 and all(sum(num(v) for v in r[1:6]) == num(r[6]) for r in dur4) and an4[-1][0] == "Total" and len(an4) >= 15
+               and all(sum(num(r[c]) for r in an4[:-1]) == num(an4[-1][c]) for c in range(1, 7)) and num(an4[-1][3]) == num(L4[4][4]) and num(an4[-1][6]) == num(L4[9][4]) and num(an4[-1][1]) == num(L4[0][4]), (dur4, an4[-1]))
+        checar("Quadro 4: nota define dia exposto, janela e evento independente, e diz que os limiares da leitura são uma convenção; a interpretação aponta o que é extrapolação",
+               all(t in pg.inner_text("#x-sq-note").lower() for t in ("dia exposto", "janela", "evento independente", "convenção do painel")) and "interpretação" in pg.inner_text("#x-sq-interp").lower() and ("extrapolação" in pg.inner_text("#x-sq-interp").lower() or all(num(r[5]) >= 5 for r in (L4[4], L4[9]))), (pg.inner_text("#x-sq-note")[:400], pg.inner_text("#x-sq-interp")[:300]))
+        checar("Quadro 4: sem travessão nas notas e na interpretação", not re.search("[—–]", pg.inner_text("#x-sq-note") + pg.inner_text("#x-sq-interp") + pg.inner_text("#x-sq-note2")))
         if capturas: pg.screenshot(path=os.path.join(capturas, "app_02c_exposicao.png"), full_page=True)
         sel("x-exp", "haat"); xpronto(); xk_haat = xk()
+        L4h, ok4h = quadro4("°C·h")
+        checar("HAAT: o Quadro 4 é refeito com os níveis do HAAT e mantém as regras de leitura", ok4h and L4h != L4 and num(L4h[9][4]) <= num(L4h[4][4]) + 1000, L4h)
         pg.wait_for_function("document.querySelectorAll('#x-fx tbody tr').length===1", timeout=5000)
         checar("HAAT: o Quadro 3 informa a dimensão da base (k' = 45) e os gl efetivos; sem barras de suporte nem curva flexível",
                "45" in pg.inner_text("#x-fx") and re.search(r"\d+,\d", pg.inner_text("#x-fx tbody")) and "Spline penalizado" in pg.inner_text("#x-fx") and not visivel("x-supbox") and "Curva flexível" not in pg.inner_text("#x-leg") and "estimada e não imposta" in pg.inner_text("#x-fx-note"), pg.inner_text("#x-fx"))
