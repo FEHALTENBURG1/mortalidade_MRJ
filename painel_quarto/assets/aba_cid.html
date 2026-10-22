@@ -1,0 +1,29 @@
+<section id="tab-cid" class="hide">
+  <div class="ctl">
+    <label>Local do óbito<select id="k-local"></select></label>
+    <label>Faixa etária (anos)<select id="k-faixa"></select></label>
+    <label>Raça/cor<select id="k-raca"></select></label>
+    <label>Medida de calor do modelo<select id="k-exp"></select></label>
+    <label>Nível de exposição<select id="k-nivel"></select></label>
+    <label>Conjunto de causas<select id="k-conj"><option value="todas">Todas as causas avaliadas</option><option value="apriori">Causas selecionadas do referencial (Morais et al.)</option></select></label>
+    <label>Capítulo do CID-10<select id="k-cap"></select></label>
+    <!--FILTROS-->
+    <label class="chk"><input type="checkbox" id="k-todos"> Incluir causas sem diferença do esperado</label>
+  </div>
+  <p class="note" id="k-sub" style="margin:12px 2px 14px"></p>
+  <div class="card">
+    <div class="fn">Figura 5</div><h2 id="k-h2">Causas básicas (CID-10, 3 caracteres) com RR diferente de 1 em dias de calor</h2>
+    <p class="note" id="k-prog" style="margin:0 0 8px"></p>
+    <div id="k-fig"></div>
+    <p class="note" id="k-note"></p>
+    <div class="interp" id="k-interp"></div>
+  </div>
+  <div class="card" style="margin-top:16px">
+    <div class="fn">Figura 5b</div><h2 id="k-h2b">Óbitos semanais por causa: observados e esperados sem calor</h2>
+    <p class="note" id="k-selnote" style="margin:0 0 8px">Clique em uma causa da Figura 5 para ver a série semanal dela.</p>
+    <div class="legend" id="k-leg"></div>
+    <div class="chartbox" style="height:340px"><canvas id="k-chart"></canvas></div>
+    <p class="note" id="k-note2"></p>
+    <div class="interp" id="k-interp2"></div>
+  </div>
+</section>

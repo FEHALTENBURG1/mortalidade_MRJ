@@ -20,6 +20,7 @@ n_trab <- max(1L, suppressWarnings(as.integer(Sys.getenv("PAINEL_TRABALHADORES",
 source(file.path(raiz, "R", "utf8.R"))
 for (f in c("funcoes.R", "modelo_joao.R", "exportar.R", "metodos.R", "fontes_remotas.R", "servico.R")) fonte_utf8(file.path(raiz, "R", f))
 
+CID_NOMES <- ler_cid_nomes(raiz)                                                       # nomes das causas básicas (CID-10, 3 caracteres) da aba de causas específicas
 future::plan("multisession", workers = n_trab)
 addResourcePath("painel", file.path(raiz, "assets"))
 
@@ -39,7 +40,7 @@ base_info <- function(pop) {
   P <- obter_P(pasta, pop)
   if (is.null(P)) return(NULL)
   elig <- obter_elegibilidade(pasta, pop, P)
-  base <- base_sob_demanda(P, elig)
+  base <- base_sob_demanda(P, elig, CID_NOMES)
   M <- jsonlite::fromJSON(json_utf8(base$meta), simplifyVector = TRUE)             # mesma forma que o Quarto lê do resumo
   b <- list(chave = P$chave, elegiveis = elig,
             json_base = json_utf8(base), json_troca = json_utf8(list(meta = base$meta, rc = base$rc, rcs = base$rcs)),
@@ -54,7 +55,8 @@ corpo_html <- paste(readLines(file.path(raiz, "assets", "figura1_corpo.html"), e
 
 # Abas além da Figura 1: cada uma tem o seu HTML (assets/aba_*.html), o seu script (assets/aba_*.js) e um prefixo para os ids dos seus filtros.
 ABAS <- list(
-  list(id = "exp", rotulo = "Exposição-resposta e defasagem", arquivo = "aba_exposicao", prefixo = "x"))
+  list(id = "exp", rotulo = "Exposição-resposta e defasagem", arquivo = "aba_exposicao", prefixo = "x"),
+  list(id = "cid", rotulo = "Causas específicas (CID-10)", arquivo = "aba_cid", prefixo = "k"))
 ler_texto <- function(f) paste(readLines(f, encoding = "UTF-8", warn = FALSE), collapse = "\n")
 for (i in seq_along(ABAS)) ABAS[[i]]$html <- ler_texto(file.path(raiz, "assets", paste0(ABAS[[i]]$arquivo, ".html")))
 
@@ -159,7 +161,7 @@ server <- function(input, output, session) {
     b <- if (q$pop %in% names(ROTULO_POP)) base_info(q$pop) else NULL
     if (is.null(b)) return(erro("recorte_invalido", "população não reconhecida"))
     if (!identical(b$chave, q$chave)) return(erro("dados_mudaram", "os dados foram atualizados no servidor"))
-    if (!q$causa %in% names(CAUSAS) || !codigo_valido(q$opc) || !q$ex %in% names(EXPOSICOES)) return(erro("recorte_invalido", "causa do óbito, retiradas do ajuste ou medida de calor não reconhecidas"))
+    if (!q$causa %in% names(CAUSAS) || !codigo_valido(q$opc) || !expo_valida(q$ex)) return(erro("recorte_invalido", "causa do óbito, retiradas do ajuste ou medida de calor não reconhecidas"))
     if (!q$key %in% b$elegiveis[[q$causa]][[q$opc]]) return(erro("recorte_invalido", "recorte inexistente ou com óbitos insuficientes no ajuste"))
 
     pedir_ajuste(raiz, pasta, q$pop, q$chave, q$key, q$ex, q$causa, q$opc) |>

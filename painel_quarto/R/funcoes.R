@@ -175,12 +175,12 @@ series_segmentos <- function(d, dias) {
 COLUNAS_SERIE <- c("dia", "idade_anos", "raca", "local", "faixa")      # o que series_segmentos() e a tabela de raça/cor usam
 
 # Versão do contexto que vai para o cache: mantém os óbitos naturais em cx$d e guarda os de outras causas, só com as colunas necessárias, em cx$d_extra
-# (com a marca covid). Descarta as tabelas que o painel não usa.
+# (com a marca covid e a causa básica). Descarta as tabelas que o painel não usa.
 enxugar_contexto <- function(cx) {
   d <- cx$d_todas_causas
   if (!is.null(d)) {
-    ex <- d[!d$natural, c(COLUNAS_SERIE, "cid")]
-    ex$covid <- eh_covid(ex$cid); ex$cid <- NULL
+    ex <- d[!d$natural, c(COLUNAS_SERIE, "cid")]                       # a causa básica (3 caracteres) fica, para a aba de causas específicas
+    ex$covid <- eh_covid(ex$cid)
     rownames(ex) <- NULL
     cx$d_extra <- ex
   }
