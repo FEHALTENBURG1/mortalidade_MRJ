@@ -1,4 +1,4 @@
-# Teste do modelo do João com dados simulados de efeito conhecido. Uso: Rscript testes/teste_modelo.R (a partir da pasta do projeto)
+# Teste do modelo de referência (R/modelo_joao.R) com dados simulados de efeito conhecido. Uso: Rscript testes/teste_modelo.R (a partir da pasta do projeto)
 # Os rótulos têm acento: garante locale UTF-8 antes de ler o resto do script (em sessões com locale "C" os literais seriam lidos como bytes soltos)
 if (!l10n_info()[["UTF-8"]]) suppressWarnings(try(Sys.setlocale("LC_ALL", "C.UTF-8"), silent = TRUE))
 raiz <- if (file.exists("R/funcoes.R")) "." else ".."
@@ -20,7 +20,7 @@ y <- rnbinom(n, mu = mu_verd, size = 80)
 
 b <- base_modelo(cx); kt <- k_tempo(n)
 cbi <- cross_exposicao(b, EXPOSICOES$horas)
-ok(all(cbi$c0 == 0), "cross-basis da exposição zero é zero para horas (ns de 1 gl)")
+ok(EXPOSICOES$horas$fun == "ps" && EXPOSICOES$horas$df > 3 && !is.null(cbi$pen), "horas: resposta à exposição por spline penalizado (não é reta por construção)")
 r <- ajustar_segmento(y, b, cbi, cx$sem_registro, kt)
 rr_verd <- exp(0.012 * 4 * 4)                       # RR acumulado com 4 h sustentadas em lags 0 a 3
 ok(r$fam == "nb", "binomial negativa converge")
@@ -71,4 +71,17 @@ ok(identical(which(fc & !cx3$sem_registro), c(100:111, 195:200)), "retiradas: di
 ok(identical(f(covid = TRUE, nc = TRUE, clima = TRUE), cx3$sem_registro | cx3$covid | cx3$nao_consolidado | fc), "retiradas: as três juntas somam os dias retirados")
 cx3$clima$hi_max <- 30
 ok(identical(fora_ajuste(cx3, list(clima = TRUE)), cx3$sem_registro), "retiradas: sem dia sem clima, a caixa não tira nada")
+set.seed(7)                                                                   # semente própria: não altera as séries simuladas dos testes acima
+# curva verdadeira convexa (sem efeito até cerca de 2 h): a curva estimada é suave, não é reta, e o IC cobre a verdade nos extremos e no meio
+f_cv <- function(x) 0.096 * (pmax(0, x - 2) / 6)^1.7
+y_cv <- rnbinom(n, mu = exp(log_mu0 + rowSums(sapply(0:3, function(l) c(rep(0, l), f_cv(h)[seq_len(n - l)])))), size = 80)
+r_cv <- ajustar_segmento(y_cv, b, cbi, cx$sem_registro, kt); cv <- r_cv$curvas
+tr <- 4 * f_cv(cv$x); j <- c(which.min(abs(cv$x - 4)), which.min(abs(cv$x - 8)))
+ok(all(log(cv$lo[j]) <= tr[j] & tr[j] <= log(cv$hi[j])), sprintf("curva convexa verdadeira: o IC cobre o log do RR verdadeiro em 4 h (%.3f) e 8 h (%.3f)", tr[j[1]], tr[j[2]]))
+m <- which.min(abs(cv$x - max(cv$x) / 2)); corda <- (log(cv$rr[1]) + log(cv$rr[length(cv$rr)])) / 2
+ok(log(cv$rr[m]) < corda - 0.02, sprintf("curva convexa verdadeira: a curva estimada fica abaixo da corda (log RR no meio %.3f, corda %.3f), isto é, não é reta", log(cv$rr[m]), corda))
+ok(all(diff(log(cv$rr)) > -0.01), "curva convexa verdadeira: a curva estimada é monótona crescente")
+# curva verdadeira reta (o caso do teste acima): o spline penalizado volta a ser quase reta
+cl <- r$curvas; ml <- which.min(abs(cl$x - max(cl$x) / 2)); cordal <- (log(cl$rr[1]) + log(cl$rr[length(cl$rr)])) / 2
+ok(abs(log(cl$rr[ml]) - cordal) < 0.03, sprintf("curva verdadeira reta: a curva estimada fica perto da corda (diferença %.3f)", log(cl$rr[ml]) - cordal))
 cat("\nTodos os testes do modelo passaram.\n")

@@ -53,42 +53,43 @@ base_info <- function(pop) {
 # ---------------------------------------------------------------- página
 corpo_html <- paste(readLines(file.path(raiz, "assets", "figura1_corpo.html"), encoding = "UTF-8", warn = FALSE), collapse = "\n")
 
-# Abas além da Figura 1: cada uma tem o seu HTML (assets/aba_*.html), o seu script (assets/aba_*.js) e um prefixo para os ids dos seus filtros.
+# Abas além da Figura 1: cada uma tem o seu HTML (assets/aba_*.html) e o seu script (assets/aba_*.js). Os controles que são só da aba (por exemplo
+# "Comparar com") ficam no HTML dela; os filtros de recorte são os da barra lateral e valem para todas as abas.
 ABAS <- list(
-  list(id = "exp", rotulo = "Exposição-resposta e defasagem", arquivo = "aba_exposicao", prefixo = "x"),
-  list(id = "cid", rotulo = "Causas específicas (CID-10)", arquivo = "aba_cid", prefixo = "k"))
+  list(id = "exp", rotulo = "Exposição-resposta e defasagem", arquivo = "aba_exposicao"),
+  list(id = "cid", rotulo = "Causas específicas (CID-10)", arquivo = "aba_cid"))
 ler_texto <- function(f) paste(readLines(f, encoding = "UTF-8", warn = FALSE), collapse = "\n")
 for (i in seq_along(ABAS)) ABAS[[i]]$html <- ler_texto(file.path(raiz, "assets", paste0(ABAS[[i]]$arquivo, ".html")))
 
-# Filtros que só existem no app e que cada aba repete com o seu prefixo: causa do óbito e o que retirar do ajuste do modelo.
-# O JavaScript os reconhece pelo id (<prefixo>-causa, <prefixo>-r-covid, <prefixo>-r-nc, <prefixo>-r-clima).
-filtros_modelo <- function(p) {
-  causas <- sprintf("\n    <label>Causa do óbito<select id=\"%s-causa\">%s</select></label>", p,
+# Filtros que só existem no app, na barra lateral e para todas as abas: causa do óbito e o que retirar do ajuste do modelo.
+# O JavaScript os reconhece pelo id (s-causa, s-r-covid, s-r-nc, s-r-clima).
+filtros_modelo <- function() {
+  causas <- sprintf("\n<label>Causa do óbito<select id=\"s-causa\">%s</select></label>",
                     paste0(sprintf("<option value=\"%s\">%s</option>", names(CAUSAS), CAUSAS), collapse = ""))
-  retirar <- gsub("@", p, paste0("\n    <fieldset class=\"ret\"><legend>Retirar do ajuste do modelo</legend>",
-    "<label class=\"chk\"><input type=\"checkbox\" id=\"@-r-covid\"> <span id=\"@-r-covid-t\">Período da COVID-19</span></label>",
-    "<label class=\"chk\"><input type=\"checkbox\" id=\"@-r-nc\"> Meses com registro não consolidado</label>",
-    "<label class=\"chk\"><input type=\"checkbox\" id=\"@-r-clima\"> Dias sem dados de clima (e os 10 seguintes)</label></fieldset>"), fixed = TRUE)
+  retirar <- paste0("\n<details class=\"adv\"><summary>Retirar do ajuste do modelo</summary>",
+    "<label class=\"chk\"><input type=\"checkbox\" id=\"s-r-covid\"> <span id=\"s-r-covid-t\">Período da COVID-19</span></label>",
+    "<label class=\"chk\"><input type=\"checkbox\" id=\"s-r-nc\"> Meses com registro não consolidado</label>",
+    "<label class=\"chk\"><input type=\"checkbox\" id=\"s-r-clima\"> Dias sem dados de clima (e os 10 seguintes)</label></details>")
   paste0(causas, retirar)
 }
 
-# Corpo da página: a Figura 1, as abas novas e a população, que vale para todas as abas e por isso fica acima delas.
+# Corpo da página: a barra lateral com os filtros (a população, que vale para todas as abas, e os filtros de recorte), a Figura 1 e as abas.
 corpo_pagina <- function(pops, pop) {
-  barra_pop <- if (length(pops) < 2) "" else sprintf("\n<div class=\"ctl glob\"><label>População<select id=\"s-pop\">%s</select></label></div>",
+  filtro_pop <- if (length(pops) < 2) "" else sprintf("<label>População<select id=\"s-pop\">%s</select></label>",
     paste0(sprintf("<option value=\"%s\"%s>%s</option>", pops, ifelse(pops == pop, " selected", ""), ROTULO_POP[pops]), collapse = ""))
   nav <- paste0(vapply(ABAS, function(a) sprintf("<button role=\"tab\" aria-selected=\"false\" data-tab=\"%s\">%s</button>", a$id, a$rotulo), ""), collapse = "\n  ")
-  secoes <- paste0(vapply(ABAS, function(a) sub("<!--FILTROS-->", filtros_modelo(a$prefixo), a$html, fixed = TRUE), ""), collapse = "\n")
-  x <- sub("<div class=\"ctl\">", paste0("<div class=\"ctl\">", filtros_modelo("s")), corpo_html, fixed = TRUE)
+  secoes <- paste0(vapply(ABAS, function(a) a$html, ""), collapse = "\n")
+  x <- sub("<!--POP-->", filtro_pop, corpo_html, fixed = TRUE)
+  x <- sub("<!--FILTROS-->", filtros_modelo(), x, fixed = TRUE)
   x <- sub("<!--ABAS_NAV-->", nav, x, fixed = TRUE)
-  x <- sub("<!--ABAS_SECOES-->", secoes, x, fixed = TRUE)
-  sub("</nav>", paste0("</nav>", barra_pop), x, fixed = TRUE)
+  sub("<!--ABAS_SECOES-->", secoes, x, fixed = TRUE)
 }
 scripts_abas <- paste0(vapply(ABAS, function(a) sprintf("<script src=\"painel/%s.js\"></script>", a$arquivo), ""), collapse = "\n")
 
 modelo_pagina <- paste0(
   "<!DOCTYPE html>\n<html lang=\"pt-BR\">\n<head>\n<meta charset=\"utf-8\">\n<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n",
   "<title>Mortalidade e calor no município do Rio de Janeiro</title>\n{{ headContent() }}\n<link rel=\"stylesheet\" href=\"painel/figura1.css\">\n</head>\n<body>\n",
-  "{{ corpo }}\n<div id=\"tab-sobre\" class=\"sobre hide\">{{ metodos }}</div>\n</div>\n",
+  "{{ corpo }}\n<div id=\"tab-sobre\" class=\"sobre hide\">{{ metodos }}</div>\n</div>\n</div>\n<footer class=\"rodape\">Centro de Inteligência Epidemiológica · EpiRio</footer>\n",
   "<script id=\"dados-b64\" type=\"text/plain\">{{ dados }}</script>\n<script src=\"painel/chart.umd.js\"></script>\n{{ scripts_abas }}\n<script src=\"painel/figura1.js\"></script>\n</body>\n</html>")
 
 pagina_sem_cache <- function() {
@@ -151,20 +152,24 @@ server <- function(input, output, session) {
     req(b)
     HTML(commonmark::markdown_html(b$metodos, extensions = TRUE))
   })
+  outputOptions(output, "metodos", suspendWhenHidden = FALSE)      # a aba só troca uma classe CSS; sem isto o Shiny não renderiza o texto escondido
 
   observeEvent(input$pedido, {
     q <- input$pedido
     campos <- c("key", "ex", "pop", "chave", "causa", "opc")
     if (!is.list(q) || !all(campos %in% names(q)) || !all(vapply(q[campos], texto1, TRUE))) return()
-    eco <- list(pop = q$pop, key = q$key, ex = q$ex, chave = q$chave, causa = q$causa, opc = q$opc)
+    per <- if (is.null(q$per)) PERIODO_TODOS else q$per                                # período de análise ("todos" ou "AAAA-AAAA"); pedidos antigos não o trazem
+    if (!texto1(per)) return()
+    eco <- list(pop = q$pop, key = q$key, ex = q$ex, chave = q$chave, causa = q$causa, opc = q$opc, per = per)
     erro <- function(codigo, mensagem) session$sendCustomMessage("erro_segmento", c(eco, list(codigo = codigo, mensagem = mensagem)))
     b <- if (q$pop %in% names(ROTULO_POP)) base_info(q$pop) else NULL
     if (is.null(b)) return(erro("recorte_invalido", "população não reconhecida"))
     if (!identical(b$chave, q$chave)) return(erro("dados_mudaram", "os dados foram atualizados no servidor"))
     if (!q$causa %in% names(CAUSAS) || !codigo_valido(q$opc) || !expo_valida(q$ex)) return(erro("recorte_invalido", "causa do óbito, retiradas do ajuste ou medida de calor não reconhecidas"))
+    if (!periodo_valido(per)) return(erro("recorte_invalido", sprintf("período não reconhecido (use anos inteiros, com pelo menos %d anos)", PERIODO_MIN_ANOS)))
     if (!q$key %in% b$elegiveis[[q$causa]][[q$opc]]) return(erro("recorte_invalido", "recorte inexistente ou com óbitos insuficientes no ajuste"))
 
-    pedir_ajuste(raiz, pasta, q$pop, q$chave, q$key, q$ex, q$causa, q$opc) |>
+    pedir_ajuste(raiz, pasta, q$pop, q$chave, q$key, q$ex, q$causa, q$opc, per) |>
       promises::then(
         onFulfilled = function(r) if (!session$isClosed()) session$sendCustomMessage("segmento", c(eco, list(json = json_utf8(r$payload)))),
         onRejected = function(e) if (!session$isClosed()) { x <- erro_para_cliente(e); erro(x$codigo, x$mensagem) })

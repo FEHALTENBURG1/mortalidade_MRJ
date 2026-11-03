@@ -2,8 +2,9 @@
 #
 # Para cada série diária de óbitos por causas naturais (local x faixa etária, ou local x raça/cor):
 #   y_t ~ NB(mu_t),  log(mu_t) = cross-basis(calor, defasagem 0 a 10) + s(tempo) + s(dia do ano, cíclico) + s(período COVID, cíclico)
-# estimado com mgcv::gam (REML). A cross-basis é a do dlnm: função da exposição (ns com 1 gl para horas; spline penalizado com 15 gl para o HAAT)
-# x função da defasagem (ns com 3 gl). Os termos suaves e as dimensões seguem o script 02_model_fitting.R de Morais et al., com um ajuste: a série
+# estimado com mgcv::gam (REML). A cross-basis é a do dlnm: função da exposição (spline penalizado, até 8 gl para horas e até 15 gl para o HAAT)
+# x função da defasagem (ns com 3 gl). A exposição é penalizada para que a curva seja suave e só se afaste de uma reta onde os dados sustentam (com ns de 1 gl, o
+# log do RR seria uma reta por construção). Em séries simuladas com curva verdadeira reta, convexa e côncava, o spline penalizado recupera as três; a reta não. Os termos suaves e as dimensões seguem o script 02_model_fitting.R de Morais et al., com um ajuste: a série
 # aqui tem mais anos, então o número de nós do spline de tempo cresce na mesma proporção (12 nós para 12,5 anos).
 #
 # Esperado sem calor (contrafactual): o preditor linear do modelo com a cross-basis trocada pela exposição zero, em cada dia.
@@ -15,7 +16,7 @@ suppressPackageStartupMessages({ library(mgcv); library(dlnm) })
 LAG <- 10
 K_REF <- 12; ANOS_REF <- 12.5
 EXPOSICOES <- list(
-  horas = list(nome = "Horas por dia com índice de calor ≥ 36 °C", var = "num_hr_36", fun = "ns", df = 1,  ref = c(4, 8),  unidade = "h"),
+  horas = list(nome = "Horas por dia com índice de calor ≥ 36 °C", var = "num_hr_36", fun = "ps", df = 8,  ref = c(4, 8),  unidade = "h"),
   haat  = list(nome = "HAAT: graus-hora acima de 36 °C no dia",    var = "auc36",     fun = "ps", df = 15, ref = c(5, 20), unidade = "°C·h"))
 
 # Calendário do modelo: tempo, dia do ano, índice do período COVID e as exposições (dia sem dado de clima = dia sem calor)
@@ -77,8 +78,9 @@ curvas_modelo <- function(cbi, beta, V, x_max) {
 # Ajuste do modelo de referência (gam do mgcv, REML) para uma cross-basis `cb_i` (matriz do calendário) e os dados `dd` (colunas y, time_id, dia_ano, covid_id).
 # Usa a negativa binomial e, se ela não convergir (séries muito esparsas), a quase-Poisson (a dispersão entra no lugar de theta).
 # `pen` = list(cb_i = matriz de penalização) para o spline penalizado do HAAT, ou NULL. Devolve list(fit, fam) com fam "nb" ou "qp".
+MIN_DIAS_COVID <- 30                        # com menos dias de COVID no ajuste (período curto que só toca o início da COVID), o termo do período não é estimável e sai do modelo
 ajustar_gam <- function(dd, cb_i, pen, k_time) {
-  fm <- if (any(dd$covid_id[!is.na(dd$y)] > 0))
+  fm <- if (sum(dd$covid_id[!is.na(dd$y)] > 0) >= MIN_DIAS_COVID)
     y ~ cb_i + s(time_id, k = k_time, bs = "tp") + s(dia_ano, k = 6, bs = "cc") + s(covid_id, k = 8, bs = "cc")
   else                                                               # série sem dias de COVID no ajuste (só em dados de teste): sem o termo
     y ~ cb_i + s(time_id, k = k_time, bs = "tp") + s(dia_ano, k = 6, bs = "cc")

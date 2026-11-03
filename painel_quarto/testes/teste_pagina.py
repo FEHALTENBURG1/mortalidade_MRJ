@@ -1,6 +1,9 @@
 """Teste da página no navegador (Playwright). Uso: python3 testes/teste_pagina.py painel_figura1.html [pasta_de_capturas]
 Percorre todos os recortes (local x faixa etária e local x raça/cor), as duas escalas e as duas medidas de calor; confere que nada quebra,
-que o gráfico desenha e que o recorte muda os indicadores (a falha que motivou esta versão: razão igual a 1,00 para qualquer recorte)."""
+que o gráfico desenha e que o recorte muda os indicadores (a falha que motivou esta versão: razão igual a 1,00 para qualquer recorte).
+O intervalo de confiança não vem escrito nos indicadores: fica em data-ic e aparece ao passar o cursor. Por padrão o que não tem poder estatístico (IC 95% que inclui 1)
+fica oculto; o teste marca a caixa da barra lateral para percorrer tudo e confere o comportamento padrão no fim. Na página estática (sem servidor) o período
+de análise e o comparativo não existem, porque dependem de reajustar o modelo."""
 import sys, os, re, itertools
 from playwright.sync_api import sync_playwright
 
@@ -16,7 +19,7 @@ with sync_playwright() as p:
     pg.goto("file://" + html)
     pg.wait_for_function("document.querySelectorAll('#s-kpis .kpi').length>0", timeout=90000)
     sel = lambda i, v: pg.select_option("#" + i, v)
-    kpis = lambda: pg.eval_on_selector_all("#s-kpis .kpi", "els=>els.map(e=>e.innerText.replace(/\\n/g,' | '))")
+    kpis = lambda: pg.eval_on_selector_all("#s-kpis .kpi", "els=>els.map(e=>e.innerText.replace(/\\n/g,' | ') + (e.dataset.ic ? ' [' + e.dataset.ic + ']' : ''))")      # o IC 95% vem de data-ic
     pixels = lambda: pg.evaluate("""()=>{const c=document.getElementById('s-chart'),g=c.getContext('2d'),d=g.getImageData(0,0,c.width,c.height).data;let n=0;for(let i=3;i<d.length;i+=4) if(d[i]>0) n++;return n}""")
     opcoes = lambda i: pg.eval_on_selector_all(f"#{i} option", "os=>os.map(o=>o.value)")
     def razao(txt):                                         # primeiro número depois de "observado ÷ esperado" nos KPIs: "1,05 | observado ÷ esperado ..."
@@ -25,8 +28,10 @@ with sync_playwright() as p:
             if m: return float(m.group(1).replace(",", "."))
     def rr(txt):
         if len(txt) < 2: return None                         # recorte sem série (menos de 300 óbitos)
-        m = re.match(r"([\d,]+) \(IC 95%: ([\d,]+) a ([\d,]+)\)", txt[1]); return tuple(float(x.replace(",", ".")) for x in m.groups())
+        m = re.match(r"([\d,]+) \| RR acumulado.*\[IC 95%: ([\d,]+) a ([\d,]+)\]", txt[1]); return tuple(float(x.replace(",", ".")) for x in m.groups())
 
+    if pg.is_checked("#s-nsig"): falha("a caixa 'mostrar também o que não tem poder estatístico' devia começar desmarcada")
+    pg.check("#s-nsig")                                       # percorre tudo com todos os indicadores visíveis; o padrão (ocultar) é conferido no fim
     locais, faixas, exps = opcoes("s-local"), opcoes("s-faixa"), opcoes("s-exp")
     print("locais", len(locais), "| faixas", faixas, "| medidas", exps, flush=True)
     assert faixas[1:] == ["0-4", "5-9", "10-19", "20-29", "30-39", "40-49", "50-59", "60-69", "70-79", "80+"], "faixas da UNICEF"
@@ -95,6 +100,22 @@ with sync_playwright() as p:
     with pg.expect_download() as d: pg.click("#s-csv")
     txt = open(d.value.path(), encoding="utf-8-sig").read().splitlines(); print("CSV diário:", len(txt), "linhas;", txt[0][:90])
     if len(txt) < 300: falha("CSV diário curto")
+    # intervalo de confiança só em dica e poder estatístico por padrão
+    sel("s-esc", "sem"); sel("s-exp", exps[0]); sel("s-local", "Todos os locais"); sel("s-faixa", "Todas as idades"); sel("s-raca", "Todas")
+    sem_dicas = pg.evaluate("()=>{const c=document.body.cloneNode(true); c.querySelectorAll('title,script,style').forEach(n=>n.remove()); return c.textContent}")
+    if re.search(r"IC 95%:? ?-?[\d.,]+ a |\(IC 95%:? ?\d", sem_dicas): falha("o IC 95% aparece escrito na página (deveria estar só em dica)")
+    for i in ("lat-per", "lat-cmp"):
+        if pg.is_visible("#" + i): falha(f"#{i} (período e comparativo) não deveria aparecer na página estática")
+    n_todos = len(pg.query_selector_all("#s-kpis .kpi")); pg.uncheck("#s-nsig")
+    ics = pg.eval_on_selector_all("#s-kpis .kpi[data-ic]", "els=>els.map(e=>e.dataset.ic)")
+    for ic in ics:
+        lo, hi = (float(x.replace(".", "").replace(",", ".")) for x in re.match(r"IC 95%: (-?[\d.]*,\d+) a (-?[\d.]*,\d+)", ic).groups())
+        if not (lo >= 1.0 or hi <= 1.0): falha(f"padrão: indicador com IC 95% que inclui 1 ficou visível: {ic}")
+    if len(pg.query_selector_all("#s-kpis .kpi")) > n_todos: falha("desmarcar a caixa não pode aumentar o número de indicadores")
+    if ics:
+        pg.hover("#s-kpis .kpi[data-ic]")
+        if "IC 95%" not in pg.evaluate("()=>getComputedStyle(document.querySelector('#s-kpis .kpi[data-ic]'),'::after').content"): falha("o IC 95% não aparece como dica ao passar o cursor")
+    pg.check("#s-nsig")
     # métodos
     pg.click("button[data-tab=sobre]")
     mt = pg.inner_text("#tab-sobre")
