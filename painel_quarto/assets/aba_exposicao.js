@@ -165,9 +165,7 @@ function desenharSlot(s, dom, comp, C){
             rrM[j]];
   });
   $(p+"-kpis").innerHTML = P.kpiHtml(kp) || `<p class="status" style="grid-column:1/-1;margin:0">Nenhum indicador de RR com IC 95% fora de 1 neste recorte.</p>`;
-  const curvaTxt = e.ex==="horas"
-    ? "Com 1 grau de liberdade na exposição (spline natural), o logaritmo do RR cresce em linha reta com a exposição por construção, de modo que a curva não detecta limiar."
-    : "O HAAT usa spline penalizado com 15 graus de liberdade, o que permite curvatura, mas as extremidades têm poucos dias e intervalos largos.";
+  const curvaTxt = `A resposta à exposição é um ${P.spTxt(EXP[e.ex])}: a curvatura é estimada junto com o modelo, de modo que a curva é suave e só se afasta de uma reta onde os dados sustentam, e as extremidades têm poucos dias e intervalos largos.`;
   $(p+"-detalhe").textContent = `RR acumulado em 0 a ${M.lag} dias para uma exposição constante, mantida em todos os ${M.lag+1} dias, em relação a nenhuma exposição. A faixa é o intervalo de confiança de 95% a partir dos coeficientes da cross-basis e da sua matriz de covariância; o IC 95% aparece ao passar o cursor, e os trechos em que ele inclui 1 ficam ocultos (a caixa da barra lateral os mostra). A grade vai até ${fn(xmax)} ${u} por dia, o percentil 99 dos dias com exposição; acima disso há poucos dias. ${curvaTxt}`;
   $(p+"-note2").textContent = `Parte superior: RR da exposição ocorrida l dias antes do óbito, para cada defasagem l de 0 a ${M.lag}. Parte inferior: RR acumulado das defasagens de 0 até l, que é o produto dos RR por defasagem de 0 a l e corresponde a manter a exposição em todos esses dias. `+
     `Os dois níveis de exposição de referência são mantidos nos ${M.lag+1} dias. As duas partes têm escalas horizontais diferentes, e as barras são intervalos de confiança de 95% a partir da matriz de covariância dos coeficientes (valores na dica do cursor). Estimativas com IC que inclui 1 ficam ocultas, e a linha sem nenhuma estimativa visível sai da figura. A resposta à defasagem é um spline natural com 3 graus de liberdade. `+

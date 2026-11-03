@@ -14,7 +14,7 @@
 
 .servico <- new.env()                       # estado do processo: modelo preparado de cada população
 
-VERSAO_AJUSTE <- 3L                         # muda quando o conteúdo do payload muda (ajustes gravados com outra versão são refeitos)
+VERSAO_AJUSTE <- 4L                         # muda quando o conteúdo do payload muda (ajustes gravados com outra versão são refeitos)
 
 CODIGOS_OPC <- c("000", "001", "010", "011", "100", "101", "110", "111")
 opc_de_codigo <- function(cod) { v <- strsplit(cod, "")[[1]] == "1"; list(covid = v[1], nc = v[2], clima = v[3]) }

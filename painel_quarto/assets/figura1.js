@@ -114,6 +114,7 @@ const anosSerie = [...new Set(dias.map(d=>+d.slice(0,4)))].sort((a,b)=>a-b);    
 const EV = cl.h36.map(v=>v!=null&&v>=4?1:0);
 const XW = EV.map((_,i)=>{ for(let k=0;k<4;k++) if(i-k>=0&&EV[i-k]) return 1; return 0 });
 const EXP = M.exposicoes;
+const spTxt = e => e.fun==='ns' ? `spline natural com ${e.df} grau${e.df>1?'s':''} de liberdade` : `spline penalizado com até ${e.df} graus de liberdade`;     // função da exposição no modelo (ver EXPOSICOES em R/modelo_joao.R)
 const KEXP = Object.keys(EXP);
 const REF_TXT = {horas:(v,u)=>`${fn(v)} ${u} por dia com índice de calor ≥ 36 °C`, haat:(v,u)=>`${fn(v)} ${u} por dia acima de 36 °C`};
 const COR_ACIMA=()=>css("--acima"), COR_ABAIXO=()=>css("--abaixo");
@@ -417,7 +418,7 @@ function desenharSemana(k,lado,r){
 
 function notaModelo(k,ex,m=mo()){
   const e=EXP[ex];
-  return `O esperado sem calor é estimado por um modelo aditivo generalizado (GAM) com família ${modeloTxt(k,ex)}, ajustado apenas a este recorte, com uma base cruzada (cross-basis) do pacote dlnm para a medida de calor selecionada (${e.nome}; ${e.fun==="ns"?"spline natural com 1 grau de liberdade":"spline penalizado com 15 graus de liberdade"}) e defasagem de 0 a ${M.lag} dias (spline natural com 3 graus de liberdade), mais um spline de tempo (base de dimensão k = ${ktDe(k)}), um spline cíclico do dia do ano${m.covid?". O período da COVID-19 foi retirado do ajuste, de modo que o modelo não tem termo para ele.":" e um spline cíclico para o período da COVID-19."} O modelo não inclui termo de dia da semana. O esperado de cada dia é o preditor do modelo com a exposição ao calor igual a zero.${perDe(k)!=="todos"?` O modelo foi reajustado apenas com os dias de ${perRot(perDe(k))}, e as semanas que cruzam o limite do período ficam sem esperado.`:""}`
+  return `O esperado sem calor é estimado por um modelo aditivo generalizado (GAM) com família ${modeloTxt(k,ex)}, ajustado apenas a este recorte, com uma base cruzada (cross-basis) do pacote dlnm para a medida de calor selecionada (${e.nome}; ${spTxt(e)}) e defasagem de 0 a ${M.lag} dias (spline natural com 3 graus de liberdade), mais um spline de tempo (base de dimensão k = ${ktDe(k)}), um spline cíclico do dia do ano${m.covid?". O período da COVID-19 foi retirado do ajuste, de modo que o modelo não tem termo para ele.":" e um spline cíclico para o período da COVID-19."} O modelo não inclui termo de dia da semana. O esperado de cada dia é o preditor do modelo com a exposição ao calor igual a zero.${perDe(k)!=="todos"?` O modelo foi reajustado apenas com os dias de ${perRot(perDe(k))}, e as semanas que cruzam o limite do período ficam sem esperado.`:""}`
 }
 
 /* ---------- diária ---------- */
@@ -510,7 +511,7 @@ function clonarLado(cont, pa, pb, extra){                                       
     el.after(c);
   });
 }
-const P = {$, css, fn, fr, fp, dBR, fillSel, nm, mkCor, M, D, SH, EXP, KEXP, ix, modo, cod:codOpc, eleg, enviar, ouvir:OUV, abas:window.__abas,
+const P = {$, css, fn, fr, fp, dBR, fillSel, nm, mkCor, M, D, SH, EXP, KEXP, spTxt, ix, modo, cod:codOpc, eleg, enviar, ouvir:OUV, abas:window.__abas,
   kd:(c,o,k,per)=>kdDe(c,o,per,k), lados, titulo, cmp, cv:(kd,ex)=>(D.cv&&D.cv[ex]&&D.cv[ex][kd])||null, mapa:kd=>(D.mp&&D.mp[kd])||{}, cid:kd=>(D.cd&&D.cd[kd])||{}, pop:()=>POP,
   rrKpi:(kd,ex)=>rrDoModelo(ix.get(kd),ex), notaModelo:(kd,ex,m)=>notaModelo(ix.get(kd),ex,m), modeloTxt:(kd,ex)=>modeloTxt(ix.get(kd),ex),
   nsig, sigIC, mostrarIC, icTxt, icSpan, esc, kpiHtml, clonarLado, perRot, valRot, RACA_ROT, passoAno, alinhar,
