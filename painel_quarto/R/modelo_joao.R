@@ -77,8 +77,9 @@ curvas_modelo <- function(cbi, beta, V, x_max) {
 # Ajuste do modelo de referência (gam do mgcv, REML) para uma cross-basis `cb_i` (matriz do calendário) e os dados `dd` (colunas y, time_id, dia_ano, covid_id).
 # Usa a negativa binomial e, se ela não convergir (séries muito esparsas), a quase-Poisson (a dispersão entra no lugar de theta).
 # `pen` = list(cb_i = matriz de penalização) para o spline penalizado do HAAT, ou NULL. Devolve list(fit, fam) com fam "nb" ou "qp".
+MIN_DIAS_COVID <- 30                        # com menos dias de COVID no ajuste (período curto que só toca o início da COVID), o termo do período não é estimável e sai do modelo
 ajustar_gam <- function(dd, cb_i, pen, k_time) {
-  fm <- if (any(dd$covid_id[!is.na(dd$y)] > 0))
+  fm <- if (sum(dd$covid_id[!is.na(dd$y)] > 0) >= MIN_DIAS_COVID)
     y ~ cb_i + s(time_id, k = k_time, bs = "tp") + s(dia_ano, k = 6, bs = "cc") + s(covid_id, k = 8, bs = "cc")
   else                                                               # série sem dias de COVID no ajuste (só em dados de teste): sem o termo
     y ~ cb_i + s(time_id, k = k_time, bs = "tp") + s(dia_ano, k = 6, bs = "cc")

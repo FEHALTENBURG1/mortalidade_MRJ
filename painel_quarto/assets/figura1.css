@@ -38,6 +38,16 @@ header.top .note{color:#e6edf7;font-size:12.5px;max-width:100ch;margin:4px 0 2px
 #lateral label.chk input{margin-top:3px}
 #lateral details.adv{border:1px solid var(--line);border-radius:4px;padding:2px 12px 8px;margin:0 0 14px}
 #lateral details.adv>summary{cursor:pointer;padding:6px 0;font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:var(--mut);font-weight:600}
+#lateral .lat-s{font-size:11px;text-transform:uppercase;letter-spacing:.14em;color:var(--cinza);font-weight:700;margin:4px 0 10px}
+#lateral .lat-s span{display:block;text-transform:none;letter-spacing:0;font-weight:400;font-size:11.5px;margin-top:2px}
+#lateral .lat-bloco{border-top:1px solid var(--line);padding-top:12px;margin:0 0 14px}
+#lateral .par{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+#lateral .btn{width:100%;margin:0 0 12px}
+#lateral .btn[disabled]{opacity:.5;cursor:default}
+#lateral .btn.tg[aria-pressed=true]{background:var(--azul);border-color:var(--azul);color:#fff}
+#lateral .lat-n{margin:-4px 0 12px;font-size:11.5px;line-height:1.35;color:var(--mut)}
+#lateral .lat-n:empty{display:none}
+#lateral option:disabled{color:var(--cinza)}
 .lat-bt{display:none}
 .wrap{min-width:0;padding:18px 24px 48px}
 
@@ -59,7 +69,13 @@ select,input[type=number]{font:inherit;font-size:13px;padding:5px 8px;border:1px
 .kpi{background:var(--card);border:1px solid var(--line);border-top:4px solid var(--sec);border-radius:4px;padding:9px 14px;cursor:pointer}
 .kpi .v{font-size:20px;font-weight:700;line-height:1.25;color:var(--azul)}
 .kpi .l{font-size:12px;color:var(--mut);display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;line-clamp:2;overflow:hidden}
-.kpi.aberto .l{display:block;overflow:visible}                        /* clique no indicador para ler o texto completo */
+.kpi.aberto .l{display:block;overflow:visible}
+/* O intervalo de confiança não vem escrito na página: aparece ao passar o cursor (ou ao focar) sobre o valor. */
+.kpi[data-ic],.ic{position:relative;cursor:help}
+.ic{border-bottom:1px dotted currentColor}
+.kpi[data-ic]:hover::after,.kpi[data-ic]:focus-visible::after,.ic:hover::after,.ic:focus-visible::after{content:attr(data-ic);position:absolute;left:0;bottom:calc(100% + 6px);z-index:20;white-space:nowrap;
+  background:var(--ink);color:var(--card);font-size:12px;font-weight:600;line-height:1.3;padding:4px 9px;border-radius:3px;pointer-events:none}
+.kpi[data-ic]:hover::after{left:12px;bottom:auto;top:-4px;transform:translateY(-100%)}                        /* clique no indicador para ler o texto completo */
 .chartbox{position:relative;height:430px}
 .note{font-size:12px;color:var(--mut);margin:10px 0 0}
 .status{font-size:12.5px;color:var(--mut);margin:8px 0 0}
@@ -107,21 +123,25 @@ header#title-block-header{display:none}
 .sobre a{color:var(--azul)}
 
 .calc{opacity:.4;transition:opacity .15s}
-/* aba Exposição-resposta: um recorte (Figuras 2 e 3 lado a lado) ou dois recortes em colunas, uma figura por linha */
+/* Comparativo (todas as abas): um recorte, ou dois (lado A = filtros da barra lateral, lado B = grupo escolhido em Comparar) em duas colunas, uma figura por linha.
+   Os elementos da coluna A têm a classe la e são copiados pelo script para a coluna B (classe lb); a ordem no HTML (A, B, A, B...) alinha as linhas. */
 .cmp{display:grid;grid-template-columns:1fr 1fr;gap:14px;align-items:stretch}
 .cmp>.full{grid-column:1/-1}
 .cmp .card,.cmp .interp,.cmp .kpis,.cmp .note.sub{margin:0}
 .cmp .note.sub{padding:6px 2px 0}
 .cmp>details.txt{margin:0}
 .cmp .card .interp{margin:12px 0 4px}
-.cmp:not(.dois)>.y,.cmp:not(.dois)>.cmpb{display:none}
-.cmp>.kpis{grid-template-columns:repeat(3,1fr)}
+.cmp:not(.dois)>.lb,.cmp:not(.dois)>.cmpb{display:none}
+#x-cmp>.kpis{grid-template-columns:repeat(3,1fr)}
 .cmp.dois>.full{grid-column:auto}
 .cmp.dois>.cmpb{grid-column:1/-1}
-.cmp.dois>.x{grid-column:1}.cmp.dois>.y{grid-column:2}
-.cmp.dois>[data-sec=sub]{grid-row:1}.cmp.dois>[data-sec=k]{grid-row:2}.cmp.dois>[data-sec=f2]{grid-row:3}.cmp.dois>[data-sec=f3]{grid-row:4}
-.cmp.dois>[data-sec=i]{grid-row:5}.cmp.dois>.cmpb{grid-row:6}.cmp.dois>[data-sec=hm]{grid-row:7}
-.cmp.dois .kpi{padding:8px 10px}.cmp.dois .kpi .v{font-size:16px}.cmp.dois .kpi .l{font-size:11px}
+.cmp.dois>.la{grid-column:1}.cmp.dois>.lb{grid-column:2}
+.cmp>.card,.cmp>.card>*{min-width:0}
+.slot-t{display:flex;align-items:center;gap:8px;margin:0;font-size:13.5px;font-weight:700;color:var(--ink)}
+.slot-t:empty,.cmp:not(.dois) .slot-t{display:none}
+.slot-t b{display:inline-block;min-width:24px;text-align:center;border-radius:3px;padding:1px 7px;font-size:12px;color:#fff;background:var(--azul)}
+.slot-t.lb b{background:var(--laranja)}
+.cmp.dois .kpi{padding:8px 10px}.cmp.dois .kpi .v{font-size:16px}.cmp.dois .kpi .l{font-size:11px;-webkit-line-clamp:4;line-clamp:4}.cmp.dois>.kpis{align-content:start}
 .cmp.dois table.hm{font-size:11px}.cmp.dois table.hm th{padding:3px 1px}.cmp.dois table.hm td{padding:5px 1px}
 .cmp>.cmpb{margin-top:0}
 .forestbox{position:relative}
@@ -143,5 +163,5 @@ header#title-block-header{display:none}
   .grid2{grid-template-columns:1fr}.chartbox{height:360px}
   .cmp,.cmp.dois{grid-template-columns:1fr}
   .cmp.dois>*{grid-column:1!important;grid-row:auto!important}
-  .cmp>.kpis{grid-template-columns:repeat(auto-fit,minmax(210px,1fr))}
+  #x-cmp>.kpis{grid-template-columns:repeat(auto-fit,minmax(210px,1fr))}
 }

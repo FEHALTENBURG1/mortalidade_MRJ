@@ -2,7 +2,7 @@
 
 Versão em R e Quarto da Figura 1 do painel (óbitos por causas naturais contra o número esperado sem calor, Rio de Janeiro). O painel em Python permanece inalterado; esta pasta cobre apenas a Figura 1, e as demais abas serão migradas gradualmente.
 
-O resultado é um arquivo HTML único (`painel_figura1.html`), sem servidor: o R ajusta os modelos, grava os resultados em JSON e o Quarto embute tudo na página. Os filtros (local do óbito, faixa etária, raça/cor, escala semanal ou diária, medida de calor, período) só escolhem entre modelos já calculados.
+O resultado é um arquivo HTML único (`painel_figura1.html`), sem servidor: o R ajusta os modelos, grava os resultados em JSON e o Quarto embute tudo na página. Os filtros (local do óbito, faixa etária, raça/cor, escala semanal ou diária, medida de calor, anos exibidos) só escolhem entre modelos já calculados. Na página estática, o intervalo de confiança aparece só ao passar o cursor e o que não tem poder estatístico fica oculto por padrão, como no app.
 
 ## O que mudou
 
@@ -53,7 +53,7 @@ Como funciona:
 
 1. `shiny/atualizar_cache.R` (rodado por cron, fora das sessões) consulta a API de Releases e, se o SIM (`sim-mrj`) ou o HAAT (`clima-mrj`) mudaram, baixa os arquivos, monta o contexto de cada população e troca o cache em `shiny/cache/`. Sem versão nova, não baixa nada. Se o GitHub estiver fora do ar, mantém o cache.
 2. Ao abrir, a página recebe só o calendário e o clima (cerca de 90 KB compactados). Nenhum modelo é ajustado nessa hora.
-3. Ao escolher local, faixa etária, raça/cor, medida de calor, causa do óbito e retiradas do ajuste, o navegador pede o recorte ao servidor. Um trabalhador (processo separado do `future`) ajusta só esse modelo, em geral em 2 a 9 segundos nos testes locais (a interface informa de 3 a 15 segundos, para cobrir servidores mais lentos), e o resultado vai para `shiny/cache/ajustes/<versão dos dados>/`. O mesmo recorte, pedido de novo por qualquer pessoa, é lido do disco, sem novo ajuste. O navegador também guarda o que já recebeu.
+3. Ao escolher local, faixa etária, raça/cor, medida de calor, causa do óbito, retiradas do ajuste e período de análise, o navegador pede o recorte ao servidor. Um trabalhador (processo separado do `future`) ajusta só esse modelo, em geral em 2 a 9 segundos nos testes locais (a interface informa de 3 a 15 segundos, para cobrir servidores mais lentos), e o resultado vai para `shiny/cache/ajustes/<versão dos dados>/`. O mesmo recorte, pedido de novo por qualquer pessoa, é lido do disco, sem novo ajuste. O navegador também guarda o que já recebeu.
 4. Quando o cron traz uma versão nova dos dados, os ajustes da versão antiga são apagados. Quem estava com a página aberta vê o aviso para recarregar.
 
 ### Causa do óbito e retiradas do ajuste
@@ -68,9 +68,21 @@ Dois filtros existem só no app. O primeiro é a causa do óbito: causas naturai
 
 Sem nenhuma caixa marcada, o ajuste é o do modelo de referência. Os dias sem registro no SIM saem sempre. Cada combinação de causa e de caixas é um modelo diferente, guardado em disco como os demais (`<causa>`, o código de três dígitos 0/1 das caixas e o recorte entram no nome do arquivo). O mínimo de 300 óbitos conta só os dias que ficam no ajuste. O cache de dados passou a guardar também os óbitos de outras causas (cerca de 10 MB por população), então a primeira atualização depois desta versão refaz o cache: `Rscript shiny/atualizar_cache.R --forcar`.
 
+### Período de análise e comparativo
+
+Dois controles da barra lateral existem só no app e valem para todas as abas.
+
+**Período de análise.** "Ano inicial" e "Ano final" escolhem anos civis inteiros (no mínimo 2), e o botão "Aplicar período" reajusta o modelo só com os dias do período: o RR e o IC 95% são recalculados no servidor, não apenas o trecho exibido. O pedido leva o parâmetro `per` (`"todos"` ou `"AAAA-AAAA"`), validado por `periodo_valido()` em `R/servico.R`. Os dias fora do período saem do ajuste (`fora_periodo()`, somado às retiradas de `fora_ajuste()`), a base do spline de tempo é proporcional aos dias que ficam (`kt_pedido()`, no mínimo 6) e o termo do período COVID-19 só entra se houver pelo menos 30 dias dele no ajuste (`MIN_DIAS_COVID` em `R/modelo_joao.R`). A cross-basis usa o clima real dos 10 dias anteriores ao início do período. As semanas que cruzam o limite do período ficam sem esperado. O período entra no nome do arquivo de ajuste e em `VERSAO_AJUSTE` (agora 3), de modo que ajustes antigos são refeitos. A elegibilidade (mínimo de 300 óbitos) é calculada na série inteira; se o período escolhido tiver menos óbitos no ajuste, o servidor responde `recorte_invalido` e a figura mostra o aviso. Na primeira vez, a Figura 4 de um período pede de novo as 13 colunas (104 modelos).
+
+**Comparativo.** O botão "Comparar lado a lado" liga o modo em que o lado A é o recorte da barra lateral e o lado B é o mesmo recorte com uma dimensão trocada: local do óbito, faixa etária, raça/cor, medida de calor, causa do óbito, período de análise ou uma das três retiradas do ajuste (nesse caso o lado B usa a caixa oposta). Nas três abas as figuras ficam em duas colunas, A à esquerda e B à direita, começando na mesma altura. As Figuras 2 e 3 usam a mesma escala nos dois lados. Quando o comparativo é por raça/cor, a faixa etária fica em "todas as idades" nos dois lados, porque as séries por raça/cor só existem para todas as idades. A população não entra como dimensão. No HTML, os elementos com a classe `la` de cada aba são copiados para o lado B por `clonarLado()` em `figura1.js` (prefixos `s2-`, `y-` e `k2-`).
+
+### Poder estatístico e intervalo de confiança
+
+Por padrão, o painel só mostra o que tem poder estatístico: estimativas de RR cujo IC 95% inclui 1 ficam ocultas (indicadores, trechos das curvas e das florestas, células da Figura 4), e na aba de causas aparecem só as causas com q < 0,05 depois da correção de Benjamini e Hochberg. A caixa "Mostrar também o que não tem poder estatístico" (`s-nsig`), na barra lateral, mostra tudo, e o que não tem poder aparece em cinza. O intervalo de confiança nunca vem escrito na página: aparece como dica ao passar o cursor, no atributo `data-ic` dos indicadores e dos valores no texto (`P.icSpan()`), no `<title>` das linhas das florestas e das células da Figura 4 e nas dicas dos gráficos. As regras estão em `sigIC()`, `mostrarIC()` e `nsig()` de `figura1.js`.
+
 ### Abas do app
 
-O app tem uma aba por assunto, todas ajustadas pelo mesmo modelo (GAM com DLNM). Os filtros ficam numa barra lateral à esquerda e valem para todas as abas: população, local do óbito, faixa etária, raça/cor, medida de calor, causa do óbito e, recolhido, "Retirar do ajuste do modelo". Os ids deles são `s-pop`, `s-local`, `s-faixa`, `s-raca`, `s-exp`, `s-causa` e `s-r-covid`, `s-r-nc`, `s-r-clima`. Ao mudar um filtro, `figura1.js` redesenha só a aba aberta; as outras redesenham ao serem abertas. O que é só de uma aba (escala e período da Figura 1, "Comparar com", nível de exposição, conjunto de causas e capítulo CID-10) fica numa barra de opções dentro da própria aba. Cada aba é um par `assets/aba_<nome>.html` e `assets/aba_<nome>.js`, registrado em `ABAS` no `shiny/app.R`; o script recebe de `figura1.js` um objeto com os pedidos ao servidor, os filtros e os textos comuns.
+O app tem uma aba por assunto, todas ajustadas pelo mesmo modelo (GAM com DLNM). Os filtros ficam numa barra lateral à esquerda e valem para todas as abas: população, local do óbito, faixa etária, raça/cor, medida de calor, causa do óbito e, recolhido, "Retirar do ajuste do modelo". Os ids deles são `s-pop`, `s-local`, `s-faixa`, `s-raca`, `s-exp`, `s-causa`, `s-r-covid`, `s-r-nc`, `s-r-clima`, `s-p-ini`, `s-p-fim`, `s-nsig` e, no comparativo, `c-bt`, `c-dim`, `c-val`. Ao mudar um filtro, `figura1.js` redesenha só a aba aberta; as outras redesenham ao serem abertas. O que é só de uma aba (escala e anos exibidos da Figura 1, nível de exposição, conjunto de causas e capítulo CID-10) fica numa barra de opções dentro da própria aba; o período de análise e o comparativo ficam na barra lateral. Cada aba é um par `assets/aba_<nome>.html` e `assets/aba_<nome>.js`, registrado em `ABAS` no `shiny/app.R`; o script recebe de `figura1.js` um objeto com os pedidos ao servidor, os filtros e os textos comuns.
 
 Os textos longos (notas das figuras, interpretações, descrição do recorte, "Sobre este painel") ficam em blocos recolhidos (`<details class="txt">`) e abrem com um clique; o botão "Mostrar os textos", ao lado das abas, abre todos. Em cada figura, o aviso curto de status ("Calculando o modelo…", "Menos de 300 óbitos…") fica fora do bloco recolhido (`s-note`, `x-note`, `k-note`), e a nota longa vai para `s-detalhe`, `x-detalhe` e `k-detalhe`. Clicar num indicador mostra o texto completo dele.
 
@@ -79,8 +91,8 @@ A identidade visual (paleta, Montserrat, cabeçalho em gradiente com o logo do C
 | Aba | Conteúdo |
 |:--|:--|
 | Série de óbitos | Figura 1: observados e esperados sem calor, semanal e diária |
-| Exposição-resposta e defasagem | Figura 2: RR acumulado em 0 a 10 dias pela exposição; Figura 3: gráfico de floresta com o RR de cada defasagem (lag 0 a 10) e o RR acumulado (0 a 1, 0 a 3, 0 a 7 e 0 a 10), nos dois níveis de referência; Figura 4: mapa de RR por horas no dia (H) e limiar do índice de calor (K), um modelo por célula. O seletor Comparar com (local do óbito) põe dois locais lado a lado, com a mesma escala nas Figuras 2 e 3 |
-| Causas específicas (CID-10) | Figura 5: gráfico de floresta com o RR de cada causa básica de 3 caracteres (pelo menos 1.500 óbitos nos dias do ajuste), com valor q de Benjamini e Hochberg dentro do conjunto e do capítulo escolhidos; Figura 5b: série semanal da causa escolhida. A medida de calor e o nível de exposição são escolhidos na aba |
+| Exposição-resposta e defasagem | Figura 2: RR acumulado em 0 a 10 dias pela exposição; Figura 3: gráfico de floresta com o RR de cada defasagem (lag 0 a 10) e o RR acumulado (0 a 1, 0 a 3, 0 a 7 e 0 a 10), nos dois níveis de referência; Figura 4: mapa de RR por horas no dia (H) e limiar do índice de calor (K), um modelo por célula. O comparativo da barra lateral põe dois grupos lado a lado, com a mesma escala nas Figuras 2 e 3 |
+| Causas específicas (CID-10) | Figura 5: gráfico de floresta com o RR de cada causa básica de 3 caracteres (pelo menos 1.500 óbitos nos dias do ajuste), com valor q de Benjamini e Hochberg dentro do conjunto e do capítulo escolhidos; Figura 5b: série semanal da causa escolhida. A medida de calor vem da barra lateral e o nível de exposição é escolhido na aba. Por padrão só aparecem as causas com q < 0,05 |
 
 O mapa da Figura 4 tem 104 células (13 limiares, de 32 a 44 °C, e 8 níveis de horas). Cada célula é um GAM com DLNM próprio, com a exposição binária "pelo menos H horas com índice de calor ≥ K" (`ajustar_mapa_limiar()` em `R/modelo_joao.R`). O app pede uma coluna por limiar (medida `mapa32` a `mapa44`), no máximo duas ao mesmo tempo, e cada coluna leva cerca de 15 segundos na primeira vez; depois fica no cache em disco como qualquer outro ajuste. `Rscript shiny/atualizar_cache.R --aquecer` calcula de antemão as colunas do recorte inicial.
 
@@ -111,6 +123,7 @@ O download só é aceito com o tamanho igual ao que o GitHub informa, e a troca 
 ```
 Rscript testes/teste_funcoes.R
 Rscript testes/teste_modelo.R
+Rscript testes/teste_periodo.R
 python3 testes/teste_pagina.py painel_figura1.html capturas/
 PAINEL_TESTE_TAR=silver_sim_mrj.tar.gz PAINEL_TESTE_HAAT=haat_diario_municipal.csv Rscript testes/teste_fontes.R
 PAINEL_CACHE=pasta_do_cache PAINEL_TESTE_BASE=saida/figura1_res.json Rscript testes/teste_servico.R
@@ -119,13 +132,16 @@ PAINEL_CACHE=pasta_do_cache python3 testes/teste_app.py
 
 O teste do download e do cache sobe um servidor local que imita a API e os arquivos das Releases e confere: primeira carga, versão igual (não baixa de novo), versão nova (troca e apaga a antiga), tamanho errado, GitHub fora do ar e bloqueio de atualização simultânea. Sem as variáveis de ambiente roda só os testes que não precisam de dados.
 
-O teste do serviço compara o resultado de cada recorte ajustado sob demanda com o do `calcular_figura1.R` (referência gerada com os mesmos dados), confere o cache em disco, os códigos de erro e os pedidos assíncronos. O teste do app sobe o Shiny e percorre a página no navegador: barra lateral e textos recolhidos, figura inicial, troca de filtros (valem para todas as abas), causa do óbito e retiradas do ajuste, população, recorte sem óbitos suficientes, outra sessão lendo do disco e aviso de dados novos.
+O teste do serviço compara o resultado de cada recorte ajustado sob demanda com o do `calcular_figura1.R` (referência gerada com os mesmos dados), confere o cache em disco, os códigos de erro e os pedidos assíncronos. O teste do app sobe o Shiny e percorre a página no navegador: barra lateral e textos recolhidos, figura inicial, troca de filtros (valem para todas as abas), causa do óbito e retiradas do ajuste, período de análise, comparativo por local, raça/cor e período nas três abas, o que não tem poder estatístico oculto por padrão, o IC 95% fora do texto e em dica, população, recorte sem óbitos suficientes, pedidos malformados (inclusive período inválido), outra sessão lendo do disco e aviso de dados novos. Ele marca a caixa `s-nsig` na abertura para que as contagens valham com tudo visível, e a desmarca onde confere o padrão.
 
-O teste do modelo simula uma série com efeito do calor conhecido e confere que o RR e o excesso de óbitos são recuperados. O teste da página percorre todos os recortes nas duas escalas e confere que o recorte muda o resultado.
+O teste do modelo simula uma série com efeito do calor conhecido e confere que o RR e o excesso de óbitos são recuperados. O teste do período (`teste_periodo.R`) usa oito anos simulados e confere a validação do texto do período, os dias que saem do ajuste, a base do spline de tempo, o payload com `per` e `kt`, o esperado ausente fora do período, o nome do arquivo de cache, os códigos de erro e o termo COVID com poucos dias, tanto no recorte da Figura 1 quanto no mapa e nas causas específicas. O teste da página percorre todos os recortes nas duas escalas e confere que o recorte muda o resultado.
 
 ## Limitações
 
-- Estudo ecológico, descritivo e exploratório; um modelo por recorte, sem correção para comparações múltiplas.
+- Estudo ecológico, descritivo e exploratório; um modelo por recorte, sem correção para comparações múltiplas (só a aba de causas aplica Benjamini e Hochberg, dentro do conjunto escolhido).
+- Ocultar o que tem IC 95% que inclui 1 é um filtro de exibição, não uma conclusão: ausência de poder estatístico não prova ausência de efeito, e o máximo de muitas estimativas tende a superestimar o efeito.
+- O comparativo compara intervalos de modo informal. Os dois lados usam, em geral, os mesmos óbitos ou dias com especificações diferentes, então as estimativas não são independentes e a sobreposição dos intervalos não substitui um teste da diferença.
+- Períodos curtos têm menos dias no ajuste e intervalos mais largos; o período precisa ter pelo menos 2 anos, e as semanas que cruzam o limite dele não têm esperado.
 - A faixa de 95% do esperado não inclui a incerteza dos coeficientes.
 - Não há termo de dia da semana, como no modelo de referência.
 - O período de COVID entra no ajuste com um termo suave próprio, então o esperado nesse período não serve de comparação. No app, a caixa de retirada remove o período do ajuste e deixa o esperado sem traçado nele.

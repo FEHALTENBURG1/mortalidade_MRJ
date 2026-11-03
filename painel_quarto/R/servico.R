@@ -4,20 +4,54 @@
 # de calor, uma causa de óbito e o que retirar do ajuste, ajusta só aquele modelo de referência (R/modelo_joao.R) e guarda o resultado em disco. O mesmo
 # pedido, feito de novo por qualquer usuário, sai do disco. As mesmas funções rodam no processo principal (testes) e nos trabalhadores do pacote future (app).
 #
-# Pedido = população + causa + retiradas + medida de calor + recorte.
+# Pedido = população + causa + retiradas + período + medida de calor + recorte.
 #   causa:     uma das CAUSAS (R/funcoes.R): naturais, todas_sem_covid, todas, externas.
 #   retiradas: código de 3 caracteres 0/1, na ordem COVID, meses não consolidados, dias sem clima (ver fora_ajuste() em R/modelo_joao.R).
 #              "000" é o modelo padrão (só os dias sem registro no SIM saem do ajuste).
-# Cache de ajustes: <cache>/ajustes/<chave>/<pop>_<medida>_<hash de causa, retiradas e recorte>.rds. A chave é a versão dos dados; versão nova,
+#   período:   "todos" (série inteira) ou "AAAA-AAAA" (anos civis inclusive; os dias de fora saem do ajuste e o modelo é reajustado; ver periodo_valido()).
+# Cache de ajustes: <cache>/ajustes/<chave>/<pop>_<medida>_<hash de causa, retiradas, período e recorte>.rds. A chave é a versão dos dados; versão nova,
 # pasta nova (atualizar_cache() apaga as pastas das versões antigas). Um ajuste é gravado em arquivo temporário e renomeado, como o contexto.
 
 .servico <- new.env()                       # estado do processo: modelo preparado de cada população
 
-VERSAO_AJUSTE <- 2L                         # muda quando o conteúdo do payload muda (ajustes gravados com outra versão são refeitos)
+VERSAO_AJUSTE <- 3L                         # muda quando o conteúdo do payload muda (ajustes gravados com outra versão são refeitos)
 
 CODIGOS_OPC <- c("000", "001", "010", "011", "100", "101", "110", "111")
 opc_de_codigo <- function(cod) { v <- strsplit(cod, "")[[1]] == "1"; list(covid = v[1], nc = v[2], clima = v[3]) }
 codigo_valido <- function(cod) is.character(cod) && length(cod) == 1 && !is.na(cod) && cod %in% CODIGOS_OPC
+
+# ---------------------------------------------------------------- período de análise
+# O período é escolhido em anos civis inteiros ("AAAA-AAAA", inclusive) ou "todos" (a série inteira). Os dias fora do período saem do ajuste, como as demais
+# retiradas, e o modelo é reajustado só com os dias de dentro: o RR, o IC e o esperado passam a valer para o período. O spline de tempo acompanha o
+# tamanho do período (k_tempo() sobre os dias dele), pela mesma regra de proporcionalidade do modelo de referência.
+PERIODO_TODOS <- "todos"
+PERIODO_MIN_ANOS <- 2L                      # o ciclo anual e o efeito do calor não se separam com menos de dois anos
+
+# Texto bem formado e dentro dos limites; com `cx`, confere também que os anos existem na série.
+periodo_valido <- function(per, cx = NULL) {
+  if (!is.character(per) || length(per) != 1 || is.na(per)) return(FALSE)
+  if (identical(per, PERIODO_TODOS)) return(TRUE)
+  if (!grepl("^[0-9]{4}-[0-9]{4}$", per)) return(FALSE)
+  a <- as.integer(strsplit(per, "-", fixed = TRUE)[[1]])
+  if (a[2] - a[1] + 1L < PERIODO_MIN_ANOS) return(FALSE)
+  if (is.null(cx)) return(TRUE)
+  anos <- as.integer(format(range(cx$dias), "%Y"))
+  a[1] >= anos[1] && a[2] <= anos[2]
+}
+
+# Dias fora do período (TRUE), no calendário inteiro do contexto.
+fora_periodo <- function(cx, per = PERIODO_TODOS) {
+  if (identical(per, PERIODO_TODOS)) return(rep(FALSE, length(cx$dias)))
+  a <- as.integer(strsplit(per, "-", fixed = TRUE)[[1]])
+  ano <- as.integer(format(cx$dias, "%Y"))
+  ano < a[1] | ano > a[2]
+}
+
+# Dias fora do ajuste de um pedido: as retiradas (código) mais os dias fora do período.
+fora_pedido <- function(cx, cod, per = PERIODO_TODOS) fora_ajuste(cx, opc_de_codigo(cod)) | fora_periodo(cx, per)
+
+# Base do spline de tempo do pedido: a da série inteira ou a proporcional aos dias do período.
+kt_pedido <- function(P, per = PERIODO_TODOS) if (identical(per, PERIODO_TODOS)) P$kt else k_tempo(sum(!fora_periodo(P$cx, per)))
 
 # ---------------------------------------------------------------- preparo do modelo a partir do contexto
 preparar_modelo <- function(cx) {
@@ -69,17 +103,17 @@ expo_valida <- function(expo) is.character(expo) && length(expo) == 1 && !is.na(
 
 # Ajusta um recorte (chave "local|faixa" ou "local|Todas as idades|raça") para uma medida de calor, uma causa e um conjunto de retiradas;
 # devolve o payload da figura (ou, para "mapa<K>", o payload da coluna K do mapa).
-ajustar_recorte <- function(P, key, expo, causa = "naturais", cod = "000") {
-  stopifnot(expo_valida(expo), codigo_valido(cod))
+ajustar_recorte <- function(P, key, expo, causa = "naturais", cod = "000", per = PERIODO_TODOS) {
+  stopifnot(expo_valida(expo), codigo_valido(cod), periodo_valido(per, P$cx))
   y <- y_do_pedido(P, causa, key, expo)
   stopifnot(!is.null(y))
-  fora <- fora_ajuste(P$cx, opc_de_codigo(cod))
-  K <- limiar_do_id(expo)
-  if (!is.na(K)) return(ajustar_mapa_limiar(y, P$b, P$cx$clima[[paste0("num_hr_", K)]], fora, P$kt, K))
-  pc <- cid_do_id(expo)
-  if (!is.null(pc)) return(ajustar_pedido_cid(P, pc, key, causa, cod, y, fora))
-  r <- ajustar_segmento(y, P$b, cbi_de(P, expo), fora, P$kt)
-  payload_segmento(r, y, P$sem, P$cov_w, curvas = TRUE)
+  fora <- fora_pedido(P$cx, cod, per); kt <- kt_pedido(P, per)
+  K <- limiar_do_id(expo); pc <- cid_do_id(expo)
+  x <- if (!is.na(K)) ajustar_mapa_limiar(y, P$b, P$cx$clima[[paste0("num_hr_", K)]], fora, kt, K)
+       else if (!is.null(pc)) ajustar_pedido_cid(P, pc, key, causa, cod, y, fora, kt)
+       else payload_segmento(ajustar_segmento(y, P$b, cbi_de(P, expo), fora, kt), y, P$sem, P$cov_w, curvas = TRUE)
+  x$kt <- kt; x$per <- per                                                       # o navegador mostra o período e a base do spline de tempo usados no ajuste
+  x
 }
 
 # Dados-base da figura (calendário, clima, sinalizações) mais o que o navegador precisa saber no modo sob demanda: causas, recortes elegíveis
@@ -171,9 +205,8 @@ y_do_pedido <- function(P, causa, key, expo) {
 }
 
 # Causas avaliadas no recorte: as com pelo menos CID_MIN óbitos nos dias do ajuste, da maior para a menor.
-lista_cid <- function(P, causa, cod, key) {
+lista_cid <- function(P, causa, fora, key) {
   r <- obitos_recorte_cid(P, causa, key)
-  fora <- fora_ajuste(P$cx, opc_de_codigo(cod))
   ok <- !is.na(r$dia); ok[ok] <- !fora[r$dia[ok]]
   tb <- table(r$cid[ok]); tb <- sort(tb[tb >= CID_MIN], decreasing = TRUE)
   list(tipo = "cidlista", n_dias_ajuste = sum(!fora), cid = I(names(tb)), n = I(as.integer(tb)))
@@ -181,9 +214,9 @@ lista_cid <- function(P, causa, cod, key) {
 
 # Ajuste de uma causa. Payload leve (cid_*): RR nos dois níveis de referência, IC 95% e valor de p (aproximação normal do log do RR).
 # Com série semanal (cidsem_*): o payload completo de um recorte da Figura 1, para a causa.
-ajustar_pedido_cid <- function(P, pc, key, causa, cod, y, fora) {
-  if (pc$tipo == "cidlista") return(lista_cid(P, causa, cod, key))
-  r <- ajustar_segmento(y, P$b, cbi_de(P, pc$medida), fora, P$kt)
+ajustar_pedido_cid <- function(P, pc, key, causa, cod, y, fora, kt = P$kt) {
+  if (pc$tipo == "cidlista") return(lista_cid(P, causa, fora, key))
+  r <- ajustar_segmento(y, P$b, cbi_de(P, pc$medida), fora, kt)
   if (pc$tipo == "cidsem") return(c(list(tipo = "cidsem", cid = pc$cid, medida = pc$medida), payload_segmento(r, y, P$sem, P$cov_w, curvas = FALSE)))
   list(tipo = "cid", cid = pc$cid, medida = pc$medida, n = sum(y[!fora]), ref = I(EXPOSICOES[[pc$medida]]$ref),
        rr = arred(r$rr["rr", ], 4), lo = arred(r$rr["lo", ], 4), hi = arred(r$rr["hi", ], 4),
@@ -191,22 +224,22 @@ ajustar_pedido_cid <- function(P, pc, key, causa, cod, y, fora) {
 }
 
 # ---------------------------------------------------------------- cache de ajustes em disco
-arquivo_ajuste <- function(pasta, chave, pop, expo, key, causa = "naturais", cod = "000")
-  file.path(pasta, "ajustes", chave, sprintf("%s_%s_%s.rds", pop, expo, substr(md5_texto(enc2utf8(paste(causa, cod, key, sep = "\r"))), 1, 12)))
+arquivo_ajuste <- function(pasta, chave, pop, expo, key, causa = "naturais", cod = "000", per = PERIODO_TODOS)
+  file.path(pasta, "ajustes", chave, sprintf("%s_%s_%s.rds", pop, expo, substr(md5_texto(enc2utf8(paste(causa, cod, per, key, sep = "\r"))), 1, 12)))
 
-ler_ajuste <- function(pasta, chave, pop, expo, key, causa = "naturais", cod = "000") {
-  f <- arquivo_ajuste(pasta, chave, pop, expo, key, causa, cod)
+ler_ajuste <- function(pasta, chave, pop, expo, key, causa = "naturais", cod = "000", per = PERIODO_TODOS) {
+  f <- arquivo_ajuste(pasta, chave, pop, expo, key, causa, cod, per)
   if (!file.exists(f)) return(NULL)
   x <- tryCatch(readRDS(f), error = function(e) NULL)
-  if (is.null(x) || !identical(x$versao, VERSAO_AJUSTE) || !identical(x$key, key) || !identical(x$expo, expo) || !identical(x$causa, causa) || !identical(x$cod, cod)) return(NULL)   # corrompido, de versão antiga ou colisão de hash
+  if (is.null(x) || !identical(x$versao, VERSAO_AJUSTE) || !identical(x$key, key) || !identical(x$expo, expo) || !identical(x$causa, causa) || !identical(x$cod, cod) || !identical(x$per, per)) return(NULL)   # corrompido, de versão antiga ou colisão de hash
   x$payload
 }
 
-gravar_ajuste <- function(payload, pasta, chave, pop, expo, key, causa = "naturais", cod = "000") {
-  f <- arquivo_ajuste(pasta, chave, pop, expo, key, causa, cod)
+gravar_ajuste <- function(payload, pasta, chave, pop, expo, key, causa = "naturais", cod = "000", per = PERIODO_TODOS) {
+  f <- arquivo_ajuste(pasta, chave, pop, expo, key, causa, cod, per)
   dir.create(dirname(f), showWarnings = FALSE, recursive = TRUE)
   tmp <- paste0(f, ".", Sys.getpid(), ".parte")
-  saveRDS(list(versao = VERSAO_AJUSTE, key = key, expo = expo, causa = causa, cod = cod, pop = pop, chave = chave, payload = payload), tmp)
+  saveRDS(list(versao = VERSAO_AJUSTE, key = key, expo = expo, causa = causa, cod = cod, per = per, pop = pop, chave = chave, payload = payload), tmp)
   file.rename(tmp, f)
   invisible(f)
 }
@@ -223,19 +256,21 @@ limpar_ajustes_antigos <- function(pasta, chave_atual) {
 
 # ---------------------------------------------------------------- execução de um pedido (processo principal ou trabalhador)
 # Devolve list(payload, do_cache, segundos). Erros começam com um código: "dados_mudaram:" (o cache saiu da versão do pedido) ou "recorte_invalido:".
-executar_ajuste <- function(pasta, pop, chave, key, expo, causa = "naturais", cod = "000") {
+executar_ajuste <- function(pasta, pop, chave, key, expo, causa = "naturais", cod = "000", per = PERIODO_TODOS) {
   if (!causa %in% names(CAUSAS) || !codigo_valido(cod)) stop("recorte_invalido: causa do óbito ou retiradas do ajuste não reconhecidas", call. = FALSE)
-  x <- ler_ajuste(pasta, chave, pop, expo, key, causa, cod)
+  if (!periodo_valido(per)) stop(sprintf("recorte_invalido: período não reconhecido (use \"todos\" ou anos inteiros, com pelo menos %d anos)", PERIODO_MIN_ANOS), call. = FALSE)
+  x <- ler_ajuste(pasta, chave, pop, expo, key, causa, cod, per)
   if (!is.null(x)) return(list(payload = x, do_cache = TRUE, segundos = 0))
   P <- obter_P(pasta, pop, chave)
   if (is.null(P)) stop("dados_mudaram: o cache de dados mudou de versão; recarregue a página", call. = FALSE)
+  if (!periodo_valido(per, P$cx)) stop("recorte_invalido: o período está fora dos anos da série", call. = FALSE)
   y <- if (expo_valida(expo)) y_do_pedido(P, causa, key, expo) else NULL
   if (is.null(y)) stop("recorte_invalido: recorte ou medida de calor não reconhecidos", call. = FALSE)
   minimo <- if (!is.null(cid_do_id(expo)) && cid_do_id(expo)$tipo != "cidlista") CID_MIN else MIN_OBITOS
-  if (sum(y[!fora_ajuste(P$cx, opc_de_codigo(cod))]) < minimo) stop("recorte_invalido: óbitos insuficientes no ajuste", call. = FALSE)
+  if (sum(y[!fora_pedido(P$cx, cod, per)]) < minimo) stop(sprintf("recorte_invalido: menos de %d óbitos no ajuste%s", minimo, if (identical(per, PERIODO_TODOS)) "" else " do período escolhido"), call. = FALSE)
   t0 <- Sys.time()
-  x <- ajustar_recorte(P, key, expo, causa, cod)
-  gravar_ajuste(x, pasta, chave, pop, expo, key, causa, cod)
+  x <- ajustar_recorte(P, key, expo, causa, cod, per)
+  gravar_ajuste(x, pasta, chave, pop, expo, key, causa, cod, per)
   list(payload = x, do_cache = FALSE, segundos = as.numeric(difftime(Sys.time(), t0, units = "secs")))
 }
 
@@ -244,18 +279,18 @@ executar_ajuste <- function(pasta, pop, chave, key, expo, causa = "naturais", co
 
 # Devolve uma promessa com o resultado de executar_ajuste(). Pedidos iguais em andamento compartilham a mesma promessa.
 # Pede ao future um trabalhador que carrega o código de `raiz` na primeira vez e depois reaproveita o modelo preparado em memória.
-pedir_ajuste <- function(raiz, pasta, pop, chave, key, expo, causa = "naturais", cod = "000") {
-  x <- if (causa %in% names(CAUSAS) && codigo_valido(cod)) ler_ajuste(pasta, chave, pop, expo, key, causa, cod) else NULL
+pedir_ajuste <- function(raiz, pasta, pop, chave, key, expo, causa = "naturais", cod = "000", per = PERIODO_TODOS) {
+  x <- if (causa %in% names(CAUSAS) && codigo_valido(cod) && periodo_valido(per)) ler_ajuste(pasta, chave, pop, expo, key, causa, cod, per) else NULL
   if (!is.null(x)) return(promises::promise_resolve(list(payload = x, do_cache = TRUE, segundos = 0)))
-  id <- paste(chave, pop, causa, cod, expo, key, sep = "\r")
+  id <- paste(chave, pop, causa, cod, per, expo, key, sep = "\r")
   if (!is.null(.pendentes[[id]])) return(.pendentes[[id]])
   p <- promises::future_promise({
     if (!exists("executar_ajuste", mode = "function")) {
       source(file.path(raiz, "R", "utf8.R"))
       for (f in c("funcoes.R", "modelo_joao.R", "exportar.R", "fontes_remotas.R", "servico.R")) fonte_utf8(file.path(raiz, "R", f))
     }
-    executar_ajuste(pasta, pop, chave, key, expo, causa, cod)
-  }, globals = list(raiz = raiz, pasta = pasta, pop = pop, chave = chave, key = key, expo = expo, causa = causa, cod = cod), seed = NULL)
+    executar_ajuste(pasta, pop, chave, key, expo, causa, cod, per)
+  }, globals = list(raiz = raiz, pasta = pasta, pop = pop, chave = chave, key = key, expo = expo, causa = causa, cod = cod, per = per), seed = NULL)
   assign(id, p, envir = .pendentes)
   # limpa a lista de pendentes ao terminar; o erro, se houver, segue para quem chamou (aqui só se evita o aviso de rejeição sem tratamento)
   promises::catch(promises::finally(p, function() if (exists(id, envir = .pendentes, inherits = FALSE)) rm(list = id, envir = .pendentes)), function(e) NULL)

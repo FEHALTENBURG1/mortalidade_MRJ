@@ -9,7 +9,11 @@ Confere: a página abre sem erro, a causa do óbito e as três retiradas do ajus
 resultados diferentes, o recorte já visto não volta ao servidor, a troca de população recarrega os dados e o texto de métodos, recortes com menos de
 300 óbitos não geram pedido, pedidos inválidos e de versão antiga de dados mostram mensagem, o CSV baixa e a aba de métodos mostra a versão dos dados.
 Os filtros ficam numa barra lateral única e valem para todas as abas; os textos longos começam recolhidos (o teste os abre pelo botão "Mostrar os textos",
-porque inner_text não devolve o texto de um <details> fechado)."""
+porque inner_text não devolve o texto de um <details> fechado).
+Por padrão o painel esconde o que não tem poder estatístico (IC 95% que inclui 1) e nunca escreve o intervalo de confiança na página: ele aparece como dica ao
+passar o cursor. O teste marca a caixa "Mostrar também o que não tem poder estatístico" na abertura, para que as contagens valham com tudo visível, e desmarca onde
+confere o comportamento padrão. Também confere o período de análise (o modelo é reajustado no período) e o comparativo lado a lado por local, raça/cor e período
+nas três abas."""
 import os, re, subprocess, sys, time, socket, signal, urllib.request
 from playwright.sync_api import sync_playwright
 
@@ -19,6 +23,7 @@ raiz = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 capturas = opcao("capturas")
 if capturas: os.makedirs(capturas, exist_ok=True)
 falhas = []
+IC_ESCRITO = r"IC 95%:? ?-?[\d.,]+ a |\(IC 95%:? ?\d"          # intervalo de confiança escrito na página (só pode aparecer em dica ao passar o cursor)
 def checar(nome, cond, detalhe=""):
     print(("ok     " if cond else "FALHOU ") + nome + ((" | " + str(detalhe)) if (detalhe and not cond) else ""), flush=True)
     if not cond: falhas.append(nome)
@@ -69,6 +74,9 @@ try:
         pg.click("#tg-textos")
         checar("o botão 'Mostrar os textos' abre todos", pg.evaluate("()=>[...document.querySelectorAll('details.txt')].every(d=>d.open)") and "Ocultar" in pg.inner_text("#tg-textos"))
         if capturas: pg.screenshot(path=os.path.join(capturas, "app_01_inicial.png"))
+        checar("a caixa 'mostrar também o que não tem poder estatístico' (barra lateral) começa desmarcada", pg.query_selector("#s-nsig") is not None and not pg.is_checked("#s-nsig"))
+        # As contagens e comparações abaixo valem com tudo visível: a caixa é marcada aqui e só desmarcada onde o comportamento padrão (ocultar) é testado.
+        pg.check("#s-nsig"); pronto()
         k_ini = kpis()
 
         # 2. mudar o recorte pede um modelo novo e muda o resultado
@@ -96,6 +104,7 @@ try:
 
         # 5b. causa do óbito e retiradas do ajuste (cada combinação é um modelo próprio, pedido ao servidor)
         texto = lambda i: pg.inner_text("#" + i)
+        pg.evaluate("()=>{document.querySelector('details.adv').open=true}")                    # "Retirar do ajuste do modelo" começa recolhido na barra lateral
         checar("controles novos: causa com 4 opções e três caixas de retirada",
                opcoes("s-causa") == ["naturais", "todas_sem_covid", "todas", "externas"] and all(pg.query_selector(f"#s-r-{c}") for c in ("covid", "nc", "clima")))
         checar("a caixa de COVID mostra as datas do período", re.search(r"\d\d/\d\d/\d{4} a \d\d/\d\d/\d{4}", texto("s-r-covid-t")) is not None, texto("s-r-covid-t"))
@@ -187,11 +196,12 @@ try:
         checar("Figura 4: o texto da célula traz limiar, horas, RR com IC 95% e dias expostos", all(("Índice de calor ≥" in c["title"] and "IC 95%" in c["title"] and "dias expostos" in c["title"]) for c in rrs))
         checar("Figura 4: o RR de 36 °C com 1 h bate com o da interpretação", re.search(r"36 °C e pelo menos 1 hora no dia, RR = (\d,\d{2})", pg.inner_text("#x-hm-interp")) and re.search(r"36 °C e pelo menos 1 hora no dia, RR = (\d,\d{2})", pg.inner_text("#x-hm-interp")).group(1) == pg.inner_text("#x-hm tr:nth-child(2) td:nth-child(6)"), pg.inner_text("#x-hm-interp")[:300])
         checar("Figura 4: a interpretação e a nota não usam travessão", "—" not in pg.inner_text("#x-hm-interp") + pg.inner_text("#x-hm-note") and "–" not in pg.inner_text("#x-hm-interp"))
-        sem_ic = pg.evaluate("()=>[...document.querySelectorAll('#x-hm td:not(.rl)')].filter(t=>/^[0-9],/.test(t.innerText) && t.style.fontWeight!=='700').length")
-        pg.check("#x-hm-sig")
-        transp = pg.evaluate("()=>[...document.querySelectorAll('#x-hm td:not(.rl)')].filter(t=>/^[0-9],/.test(t.innerText) && t.style.fontWeight!=='700' && (t.style.backgroundColor==='transparent'||t.style.backgroundColor==='rgba(0, 0, 0, 0)')).length")
-        checar("Figura 4: 'destacar só IC que não inclui 1' apaga a cor das células não significativas", transp == sem_ic, (transp, sem_ic))
-        pg.uncheck("#x-hm-sig")
+        n_sig = pg.evaluate("()=>[...document.querySelectorAll('#x-hm td:not(.rl)')].filter(t=>/^[0-9],/.test(t.innerText) && t.style.fontWeight==='700').length")
+        pg.uncheck("#s-nsig")
+        n_vis = pg.evaluate("()=>[...document.querySelectorAll('#x-hm td:not(.rl)')].filter(t=>/^[0-9],/.test(t.innerText)).length")
+        n_vazias = pg.evaluate("()=>[...document.querySelectorAll('#x-hm td:not(.rl)')].filter(t=>t.innerText==='' && /oculto/.test(t.title)).length")
+        checar("Figura 4: sem a caixa de poder estatístico, só ficam as células com IC 95% fora de 1 (as demais ficam vazias, com dica)", n_vis == n_sig and n_vazias == len(rrs) - n_sig, (n_vis, n_sig, n_vazias, len(rrs)))
+        pg.check("#s-nsig")
         if capturas: pg.screenshot(path=os.path.join(capturas, "app_02d_mapa.png"), full_page=True)
         # trocar o recorte pede novas colunas; voltar usa o que já chegou
         sel("s-causa", "externas"); hm_pronto()
@@ -204,36 +214,40 @@ try:
         checar("Figura 4: recorte com poucos óbitos informa o limite e esvazia a tabela", pg.evaluate("()=>document.getElementById('x-hm').innerHTML==='' ") )
         sel("s-local", "Todos os locais"); sel("s-faixa", "Todas as idades"); xpronto()
 
-        # 5e. comparação de dois locais do óbito, lado a lado
+        # 5e. comparativo lado a lado (botão da barra lateral): dois locais do óbito; A = filtros da barra lateral, B = grupo escolhido
         yk = lambda: pg.eval_on_selector_all("#y-kpis .kpi", "els=>els.map(e=>e.innerText.replace(/\\n/g,' | '))")
         eixo_y = lambda c: pg.evaluate("(id)=>{const s=Chart.getChart(id).scales.y;return [s.min,s.max]}", c)
         visivel = lambda i: pg.evaluate("(i)=>document.getElementById(i).offsetWidth>0", i)
-        checar("sem comparação: só o recorte x aparece", not visivel("y-kpis") and not visivel("y-forest") and not visivel("x-comp-txt") and not pg.evaluate("()=>document.getElementById('x-cmp').classList.contains('dois')"))
-        sel("x-local2", "Hospital")
+        dois = lambda: pg.evaluate("()=>document.getElementById('x-cmp').classList.contains('dois')")
+        checar("sem comparativo: só o lado A aparece", not visivel("y-kpis") and not visivel("y-forest") and not visivel("x-comp-txt") and not dois())
+        checar("o comparativo fica na barra lateral e começa desligado", noaside("c-bt") and pg.get_attribute("#c-bt", "aria-pressed") == "false" and not visivel("c-dim"))
+        pg.click("#c-bt")
+        checar("ligar o comparativo mostra as dimensões: local, faixa, raça/cor, medida, causa, período e as três retiradas do ajuste", opcoes("c-dim") == ["local", "faixa", "raca", "ex", "causa", "per", "covid", "nc", "clima"], opcoes("c-dim"))
+        sel("c-dim", "local"); sel("c-val", "Hospital")
         pg.wait_for_function("document.querySelectorAll('#y-kpis .kpi').length>0 && !document.getElementById('y-kpis').classList.contains('calc') && document.querySelectorAll('#y-forest svg circle').length>0", timeout=120000)
         xpronto()
-        checar("comparação: o segundo recorte aparece ao lado, com quadros, curva e floresta próprios", visivel("y-kpis") and visivel("y-forest") and len(yk()) == 6 and xpix("y-chart") > 1500 and n_circ("y") == 60 and yk() != xk(), (yk(), xk()))
-        checar("comparação: os títulos nomeiam o local do óbito de cada coluna", "Todos os locais" in pg.inner_text("#x-h2") and "Hospital" in pg.inner_text("#y-h2"), (pg.inner_text("#x-h2"), pg.inner_text("#y-h2")))
-        checar("comparação: a Figura 2 tem a mesma escala vertical nos dois recortes", eixo_y("x-chart") == eixo_y("y-chart"), (eixo_y("x-chart"), eixo_y("y-chart")))
+        checar("comparativo: o lado B aparece ao lado, com quadros, curva e floresta próprios", visivel("y-kpis") and visivel("y-forest") and len(yk()) == 6 and xpix("y-chart") > 1500 and n_circ("y") == 60 and yk() != xk(), (yk(), xk()))
+        checar("comparativo: os títulos nomeiam A e B com o local do óbito de cada lado", "Todos os locais" in pg.inner_text("#x-st") and "Hospital" in pg.inner_text("#y-st") and pg.inner_text("#x-st").startswith("A") and pg.inner_text("#y-st").startswith("B"), (pg.inner_text("#x-st"), pg.inner_text("#y-st")))
+        checar("comparativo: a Figura 2 tem a mesma escala vertical nos dois lados", eixo_y("x-chart") == eixo_y("y-chart"), (eixo_y("x-chart"), eixo_y("y-chart")))
         caixas = pg.evaluate("()=>['x-chart','y-chart'].map(i=>{const r=document.getElementById(i).getBoundingClientRect();return [Math.round(r.left),Math.round(r.top),Math.round(r.width)]})")
-        checar("comparação: as duas figuras ficam lado a lado, na mesma altura e com a mesma largura", caixas[0][1] == caixas[1][1] and caixas[0][0] < caixas[1][0] and abs(caixas[0][2] - caixas[1][2]) <= 2, caixas)
+        checar("comparativo: as duas figuras ficam lado a lado, na mesma altura e com a mesma largura", caixas[0][1] == caixas[1][1] and caixas[0][0] < caixas[1][0] and abs(caixas[0][2] - caixas[1][2]) <= 2, caixas)
         t_comp = pg.inner_text("#x-comp-txt")
-        checar("comparação: o texto traz o RR acumulado dos dois locais e a ressalva sobre o teste", "COMPARAÇÃO ENTRE OS LOCAIS DO ÓBITO" in t_comp and "“Todos os locais”" in t_comp and "“Hospital”" in t_comp and "não substitui um teste" in t_comp and "não são independentes" in t_comp and not re.search("[—–]", t_comp), t_comp)
-        checar("comparação: a Figura 4 do segundo recorte começa a ser pedida", pg.evaluate("()=>document.getElementById('y-hm').innerHTML.length")>0 and len(pg.query_selector_all("#y-hm-card #y-hm-sig")) == 0 and len(pg.query_selector_all("#x-hm-sig")) == 1)
+        checar("comparativo: o texto traz o RR acumulado dos dois grupos e a ressalva sobre o teste", "comparação entre os grupos" in t_comp.lower() and "A (Todos os locais)" in t_comp and "B (Hospital)" in t_comp and "não substitui um teste" in t_comp and "não são independentes" in t_comp and not re.search("[—–]", t_comp), t_comp)
+        checar("comparativo: a Figura 4 do lado B começa a ser pedida", pg.evaluate("()=>document.getElementById('y-hm').innerHTML.length") > 0 and len(pg.query_selector_all("#x-hm-sig, #y-hm-sig")) == 0)
         if capturas: pg.screenshot(path=os.path.join(capturas, "app_02e_comparacao.png"), full_page=True)
         sel("s-causa", "externas"); xpronto()
         pg.wait_for_function("document.querySelectorAll('#y-kpis .kpi').length>0 && !document.getElementById('y-kpis').classList.contains('calc')", timeout=120000)
-        checar("comparação: a causa do óbito vale para os dois recortes", "externas" in pg.inner_text("#x-sub") and "externas" in pg.inner_text("#y-sub"))
+        checar("comparativo: a causa do óbito escolhida na barra lateral vale para os dois lados", "externas" in pg.inner_text("#x-sub") and "externas" in pg.inner_text("#y-sub"))
         sel("s-causa", "naturais"); xpronto()
         sel("s-local", "Hospital")
-        pg.wait_for_function("document.getElementById('x-local2').value==='__sem__'", timeout=5000)
-        checar("comparar um local com ele mesmo desfaz a comparação", not pg.evaluate("()=>document.getElementById('x-cmp').classList.contains('dois')") and not visivel("y-kpis"))
+        pg.wait_for_function("!document.getElementById('x-cmp').classList.contains('dois')", timeout=5000)
+        checar("o filtro lateral igual ao grupo B desfaz o comparativo e avisa", not dois() and not visivel("y-kpis") and "igual ao filtro lateral" in pg.inner_text("#c-msg"), pg.inner_text("#c-msg"))
         sel("s-local", "Todos os locais"); xpronto()
-        sel("x-local2", "Ignorado")
+        sel("s-faixa", "30-39"); xpronto(); sel("c-val", "Ignorado")
         pg.wait_for_function("document.getElementById('y-note').innerText.includes('Menos de 300 óbitos')", timeout=5000)
-        checar("comparação: um recorte com poucos óbitos informa o limite só na sua coluna", "modelo não estimado" in pg.inner_text("#y-note") and len(xk()) == 6 and xpix("x-chart") > 1500)
-        sel("x-local2", "__sem__"); xpronto()
-        checar("sem comparação de novo: a aba volta ao recorte único", not visivel("y-kpis") and xk() == xk_ini)
+        checar("comparativo: um grupo com poucos óbitos informa o limite só no seu lado", "modelo não estimado" in pg.inner_text("#y-note") and len(xk()) == 6 and xpix("x-chart") > 1500)
+        sel("s-faixa", "Todas as idades"); pg.click("#c-bt"); xpronto()
+        checar("comparativo desligado: a aba volta ao recorte único", not visivel("y-kpis") and not dois() and xk() == xk_ini)
 
         # 5f. aba de causas específicas (CID-10): um modelo por causa, valor q de Benjamini e Hochberg na família escolhida
         # (precisa de um cache com a causa básica de cada óbito; com cache antigo o servidor avisa e esta parte é pulada)
@@ -251,18 +265,19 @@ try:
         if "não traz a causa básica" in pg.inner_text("#k-prog") or "Não foi possível obter" in pg.inner_text("#k-prog"):
             print("PULADO: o cache deste teste não traz a causa básica de cada óbito (refaça com atualizar_cache.R --forcar ou montar_cache_local.R): ", pg.inner_text("#k-prog")[:160], flush=True)
         else:
-            sel("k-conj", "apriori"); sel("k-cap", "I"); kpronto()
+            sel("k-conj", "apriori"); sel("k-cap", "I"); pg.uncheck("#s-nsig"); kpronto()          # padrão do painel: só o que tem poder estatístico
             cods = kcod()
-            checar("aba CID: causas selecionadas do referencial no capítulo IX (aparelho circulatório): só causas I, com figura e interpretação", len(cods) > 0 and all(c.startswith("I") for c in cods) and "causas avaliadas" in pg.inner_text("#k-interp"), (cods, pg.inner_text("#k-interp")[:200]))
+            checar("aba CID: causas selecionadas do referencial no capítulo IX (aparelho circulatório): só causas I, com figura e interpretação", all(c.startswith("I") for c in cods) and "causas avaliadas" in pg.inner_text("#k-interp"), (cods, pg.inner_text("#k-interp")[:200]))
+            if not cods: print("AVISO: nenhuma causa do capítulo IX passa de q < 0,05 neste cache (esperado em dados sintéticos); a lista abaixo é conferida com todas as causas visíveis.", flush=True)
             qs = [num_br(re.search(r"q = (<?[0-9,]+)", t).group(1)) for t in ktit()]
             checar("aba CID: com o filtro padrão só aparecem causas com q < 0,05", all(q < 0.05 for q in qs), qs)
-            pg.check("#k-todos"); n_todas = len(kcod())
+            pg.check("#s-nsig"); n_todas = len(kcod())
             tit = ktit(); ps = [num_br(re.search(r"p = (<?[0-9,]+)", t).group(1)) for t in tit]; qs2 = [num_br(re.search(r"q = (<?[0-9,]+)", t).group(1)) for t in tit]
-            checar("aba CID: incluir as causas sem diferença traz todas as causas da família", n_todas >= len(cods) and sum(1 for q in qs2 if q < 0.05) == len(cods), (n_todas, len(cods)))
+            checar("aba CID: incluir as causas sem diferença traz todas as causas da família", n_todas > 0 and n_todas >= len(cods) and sum(1 for q in qs2 if q < 0.05) == len(cods), (n_todas, len(cods)))
             ordem = sorted(range(len(ps)), key=lambda i: (ps[i], qs2[i]))             # p e q vêm arredondados em 3 casas: empates em p ordenam por q
             checar("aba CID: o valor q nunca fica abaixo do p e não decresce com o p (Benjamini e Hochberg)", all(q2 >= p - 0.0006 for p, q2 in zip(ps, qs2)) and all(qs2[ordem[i]] <= qs2[ordem[i + 1]] + 0.0011 for i in range(len(ordem) - 1)), list(zip(ps, qs2))[:8])
             checar("aba CID: nota e interpretação sem travessão", not re.search("[—–]", pg.inner_text("#k-detalhe") + pg.inner_text("#k-interp")))
-            pg.uncheck("#k-todos")
+            # a caixa da barra lateral fica marcada daqui em diante: as comparações seguintes usam a lista completa de causas
             pg.wait_for_function("document.getElementById('k-h2b').innerText.length>20 && document.getElementById('k-chart')", timeout=120000)
             pg.wait_for_function("document.getElementById('k-selnote').innerText.startsWith('Causa escolhida')", timeout=120000)
             checar("aba CID: a Figura 5b abre com uma causa já escolhida e desenha a série semanal", xpix("k-chart") > 1500 and "Óbitos semanais por causa: " in pg.inner_text("#k-h2b"), pg.inner_text("#k-h2b"))
@@ -289,6 +304,65 @@ try:
             sel("s-local", "Todos os locais"); sel("s-faixa", "Todas as idades")
             checar("aba CID: os filtros da barra lateral voltaram ao padrão", pg.input_value("#s-causa") == "naturais" and pg.input_value("#s-local") == "Todos os locais")
 
+        # 5g. período de análise (o modelo é reajustado só com os dias do período) e comparativo por raça/cor e por período, nas três abas
+        pg.click("nav button[data-tab=serie]"); pronto()
+        anos = opcoes("s-p-ini"); meio = anos[len(anos) // 2]
+        checar("período: os anos da série estão na barra lateral e, com a série inteira, o botão fica desabilitado", len(anos) >= 4 and anos == opcoes("s-p-fim") and pg.is_disabled("#s-p-ap") and "série inteira" in texto("s-p-msg"), (anos, texto("s-p-msg")))
+        sel("s-p-ini", meio)
+        checar("período: mudar o ano habilita o botão e avisa que o período ainda não foi aplicado", not pg.is_disabled("#s-p-ap") and "ainda não aplicado" in texto("s-p-msg"), texto("s-p-msg"))
+        sel("s-p-ini", anos[-1])
+        checar("período de um ano só: botão desabilitado e aviso de que precisa de pelo menos 2 anos", pg.is_disabled("#s-p-ap") and "pelo menos 2 anos" in texto("s-p-msg"), texto("s-p-msg"))
+        sel("s-p-ini", meio); pg.click("#s-p-ap"); pronto(); k_per = kpis()
+        checar("período aplicado: o modelo é reajustado, muda o resultado e a nota informa o período", k_per != k_ini and "reajustado apenas com os dias" in nota() and meio in nota(), nota()[-300:])
+        checar("período aplicado: a barra lateral confirma e o zoom da figura começa no ano escolhido", "Modelo ajustado para: " + meio in texto("s-p-msg") and opcoes("s-ini")[0] == meio and pixels() > 2000, (texto("s-p-msg"), opcoes("s-ini")[:2]))
+        # o intervalo de confiança não vem escrito na página: só em dica ao passar o cursor; o que não tem poder estatístico fica oculto por padrão
+        sem_dicas = lambda: pg.evaluate("()=>{const c=document.body.cloneNode(true); c.querySelectorAll('title,script,style').forEach(n=>n.remove()); return c.textContent}")
+        checar("o IC 95% não vem escrito na página (Figura 1)", not re.search(IC_ESCRITO, sem_dicas()), re.findall(r".{30}" + IC_ESCRITO, sem_dicas())[:3])
+        pg.uncheck("#s-nsig"); pronto()
+        ics = pg.eval_on_selector_all("#s-kpis .kpi[data-ic]", "els=>els.map(e=>e.dataset.ic)")
+        def exclui1(t):
+            m = re.match(r"IC 95%: (-?[\d.]*,\d+) a (-?[\d.]*,\d+)", t); lo, hi = (float(x.replace(".", "").replace(",", ".")) for x in m.groups()); return lo >= 1.0 or hi <= 1.0
+        checar("padrão: todo indicador de RR visível tem IC 95% que não inclui 1", all(exclui1(t) for t in ics), ics)
+        if ics:
+            pg.hover("#s-kpis .kpi[data-ic]")
+            dica = pg.evaluate("()=>getComputedStyle(document.querySelector('#s-kpis .kpi[data-ic]'),'::after').content")
+            checar("o IC 95% aparece como dica ao passar o cursor sobre o indicador", "IC 95%" in dica, dica)
+        else:
+            print("PULADO: nenhum indicador de RR com IC fora de 1 neste período; a dica do IC não pôde ser conferida.", flush=True)
+        pg.check("#s-nsig"); pronto()
+        # comparativo por raça/cor (A = filtros da barra lateral, B = grupo escolhido), com o período aplicado
+        pg.click("#c-bt"); sel("c-dim", "raca"); sel("c-val", "Parda")
+        pg.wait_for_function("document.querySelectorAll('#s2-kpis .kpi').length>0 && !document.getElementById('s2-kpis').classList.contains('calc')", timeout=240000)
+        lado_a_lado = lambda a, b: pg.evaluate("(ids)=>ids.map(i=>{const r=document.getElementById(i).getBoundingClientRect();return [Math.round(r.left),Math.round(r.top),Math.round(r.width)]})", [a, b])
+        cx = lado_a_lado("s-chart", "s2-chart")
+        checar("comparativo por raça/cor na Figura 1: duas colunas, lado a lado, na mesma altura", pg.evaluate("()=>document.getElementById('s-cmp').classList.contains('dois')") and cx[0][1] == cx[1][1] and cx[0][0] < cx[1][0] and abs(cx[0][2] - cx[1][2]) <= 2, cx)
+        checar("comparativo por raça/cor: os títulos nomeiam A e B e o resultado de B é próprio", "todas" in texto("s-st").lower() and "parda" in texto("s2-st").lower() and pg.eval_on_selector_all("#s2-kpis .kpi", "els=>els.map(e=>e.innerText.replace(/\\n/g,' | '))") != kpis(), (texto("s-st"), texto("s2-st")))
+        checar("comparativo por raça/cor: a faixa etária fica travada em todas as idades (as séries por raça/cor são só para todas as idades)", pg.is_disabled("#s-faixa") and pg.input_value("#s-faixa") == "Todas as idades")
+        checar("comparativo na Figura 1: o IC 95% não vem escrito em nenhum dos lados", not re.search(IC_ESCRITO, sem_dicas()))
+        if capturas: pg.screenshot(path=os.path.join(capturas, "app_02g_serie_comparativo_raca.png"), full_page=True)
+        pg.click("nav button[data-tab=exp]")
+        pg.wait_for_function("document.querySelectorAll('#x-kpis .kpi').length>0 && !document.getElementById('x-kpis').classList.contains('calc') && document.querySelectorAll('#y-kpis .kpi').length>0 && !document.getElementById('y-kpis').classList.contains('calc')", timeout=240000)
+        cx = lado_a_lado("x-chart", "y-chart")
+        checar("comparativo por raça/cor na aba de exposição: curvas lado a lado e floresta nos dois lados", pg.evaluate("()=>document.getElementById('x-cmp').classList.contains('dois')") and cx[0][1] == cx[1][1] and cx[0][0] < cx[1][0] and n_circ("x") > 0 and n_circ("y") > 0, (cx, n_circ("x"), n_circ("y")))
+        checar("comparativo na aba de exposição: títulos A e B e o IC 95% fora do texto", "todas" in texto("x-st").lower() and "parda" in texto("y-st").lower() and not re.search(IC_ESCRITO, sem_dicas()))
+        pg.click("nav button[data-tab=cid]")
+        pg.wait_for_function("!document.getElementById('tab-cid').classList.contains('hide')", timeout=5000)
+        sel("k-conj", "apriori"); sel("k-cap", "I")
+        pg.wait_for_function("['k','k2'].every(q=>document.getElementById(q+'-prog').innerText==='' && /causas avaliadas|Nenhuma causa|Menos de|Nenhuma causa/.test(document.getElementById(q+'-interp').innerText + document.getElementById(q+'-note').innerText))", timeout=900000)
+        cx = lado_a_lado("k-fig", "k2-fig")
+        checar("comparativo por raça/cor na aba de causas: as duas figuras ficam lado a lado e o IC 95% fica fora do texto", pg.evaluate("()=>document.getElementById('k-cmp').classList.contains('dois')") and cx[0][0] < cx[1][0] and not re.search(IC_ESCRITO, sem_dicas()), cx)
+        if capturas: pg.screenshot(path=os.path.join(capturas, "app_02g_cid_comparativo_raca.png"), full_page=True)
+        sel("k-conj", "todas"); sel("k-cap", "all")
+        # comparativo por período (B = últimos 3 anos da série) e volta à série inteira
+        pg.click("nav button[data-tab=serie]"); sel("c-dim", "per"); sel("c-p-ini", anos[-3]); sel("c-p-fim", anos[-1])
+        pg.wait_for_function("(a)=>document.querySelectorAll('#s2-kpis .kpi').length>0 && !document.getElementById('s2-kpis').classList.contains('calc') && document.getElementById('s2-st').innerText.includes(a)", arg=anos[-3], timeout=240000)
+        checar("comparativo por período: o lado B traz o período no título e o seu próprio modelo", anos[-3] in texto("s2-st") and "reajustado apenas com os dias" in (pg.text_content("#s2-detalhe") or ""), (texto("s2-st"), (pg.text_content("#s2-detalhe") or "")[-200:]))
+        pg.click("#c-bt")
+        checar("desligar o comparativo volta à coluna única", not pg.evaluate("()=>document.getElementById('s-cmp').classList.contains('dois')") and not pg.is_visible("#s2-kpis"))
+        sel("s-p-ini", anos[0]); pg.click("#s-p-ap")
+        t_todos = medir(pronto)
+        checar("voltar à série inteira reproduz o resultado inicial, na hora", t_todos < 1.5 and kpis() == k_ini and "série inteira" in texto("s-p-msg"), f"{t_todos:.2f} s")
+
         pg.click("nav button[data-tab=serie]"); pronto()
         checar("voltar para a Figura 1 mantém a figura", kpis() == k_ini and pixels() > 2000)
 
@@ -314,6 +388,8 @@ try:
         pg.evaluate("""()=>Shiny.setInputValue('pedido','lixo',{priority:'event'})""")
         for causa, opc in (("xx", "000"), ("naturais", "2"), ("naturais", "1000"), ("todas", "abc")):
             pg.evaluate("""([c,o])=>Shiny.setInputValue('pedido',{key:'Todos os locais|Todas as idades',ex:'horas',pop:'res',chave:'x',causa:c,opc:o,n:200},{priority:'event'})""", [causa, opc])
+        for per in ("2012", "2015-2012", "abc", "todos ", 5, "2012-2013-2014"):
+            pg.evaluate("""(q)=>Shiny.setInputValue('pedido',{key:'Todos os locais|Todas as idades',ex:'horas',pop:'res',chave:'x',causa:'naturais',opc:'000',per:q,n:300},{priority:'event'})""", per)
         time.sleep(1.5)
         sel("s-local", "UPA / pronto atendimento"); pronto()
         checar("app segue respondendo depois de pedidos malformados", len(kpis()) > 0 and not erros, erros)
@@ -339,6 +415,7 @@ try:
         k2 = lambda: pg2.eval_on_selector_all("#s-kpis .kpi", "els=>els.map(e=>e.innerText.replace(/\\n/g,' | '))")
         pronto2 = lambda t=60000: pg2.wait_for_function("document.querySelectorAll('#s-kpis .kpi').length>0 && !document.getElementById('s-kpis').classList.contains('calc')", timeout=t)
         t_2 = medir(pronto2)
+        pg2.check("#s-nsig"); pronto2()                                   # a sessão nova começa com a caixa desmarcada; k_ini e k_dom foram lidos com tudo visível
         checar("outra sessão abre o recorte inicial a partir do disco", t_2 < 8 and k2() == k_ini, f"{t_2:.1f} s")
         pg2.select_option("#s-local", "Domicílio"); pg2.select_option("#s-faixa", "60-69")
         t_3 = medir(pronto2)

@@ -152,20 +152,24 @@ server <- function(input, output, session) {
     req(b)
     HTML(commonmark::markdown_html(b$metodos, extensions = TRUE))
   })
+  outputOptions(output, "metodos", suspendWhenHidden = FALSE)      # a aba só troca uma classe CSS; sem isto o Shiny não renderiza o texto escondido
 
   observeEvent(input$pedido, {
     q <- input$pedido
     campos <- c("key", "ex", "pop", "chave", "causa", "opc")
     if (!is.list(q) || !all(campos %in% names(q)) || !all(vapply(q[campos], texto1, TRUE))) return()
-    eco <- list(pop = q$pop, key = q$key, ex = q$ex, chave = q$chave, causa = q$causa, opc = q$opc)
+    per <- if (is.null(q$per)) PERIODO_TODOS else q$per                                # período de análise ("todos" ou "AAAA-AAAA"); pedidos antigos não o trazem
+    if (!texto1(per)) return()
+    eco <- list(pop = q$pop, key = q$key, ex = q$ex, chave = q$chave, causa = q$causa, opc = q$opc, per = per)
     erro <- function(codigo, mensagem) session$sendCustomMessage("erro_segmento", c(eco, list(codigo = codigo, mensagem = mensagem)))
     b <- if (q$pop %in% names(ROTULO_POP)) base_info(q$pop) else NULL
     if (is.null(b)) return(erro("recorte_invalido", "população não reconhecida"))
     if (!identical(b$chave, q$chave)) return(erro("dados_mudaram", "os dados foram atualizados no servidor"))
     if (!q$causa %in% names(CAUSAS) || !codigo_valido(q$opc) || !expo_valida(q$ex)) return(erro("recorte_invalido", "causa do óbito, retiradas do ajuste ou medida de calor não reconhecidas"))
+    if (!periodo_valido(per)) return(erro("recorte_invalido", sprintf("período não reconhecido (use anos inteiros, com pelo menos %d anos)", PERIODO_MIN_ANOS)))
     if (!q$key %in% b$elegiveis[[q$causa]][[q$opc]]) return(erro("recorte_invalido", "recorte inexistente ou com óbitos insuficientes no ajuste"))
 
-    pedir_ajuste(raiz, pasta, q$pop, q$chave, q$key, q$ex, q$causa, q$opc) |>
+    pedir_ajuste(raiz, pasta, q$pop, q$chave, q$key, q$ex, q$causa, q$opc, per) |>
       promises::then(
         onFulfilled = function(r) if (!session$isClosed()) session$sendCustomMessage("segmento", c(eco, list(json = json_utf8(r$payload)))),
         onRejected = function(e) if (!session$isClosed()) { x <- erro_para_cliente(e); erro(x$codigo, x$mensagem) })

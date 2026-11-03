@@ -1,29 +1,26 @@
 <section id="tab-exp" class="hide">
-  <div class="ctl">
-    <label>Comparar com (local do óbito)<select id="x-local2"></select></label>
-  </div>
-  <!-- Os elementos com a classe "x" são copiados pelo aba_exposicao.js para o segundo recorte (classe "y", ids com prefixo y-). -->
+  <!-- Os elementos com a classe "la" são copiados pelo aba_exposicao.js para o lado B do comparativo (classe "lb" e "y", ids com prefixo y-). -->
   <div class="cmp" id="x-cmp">
-    <details class="txt full x" data-sec="sub"><summary>Sobre este recorte</summary><p class="note sub" id="x-sub"></p></details>
-    <div class="kpis full x" data-sec="k" id="x-kpis"></div>
-    <div class="card x" data-sec="f2">
+    <div class="slot-t full la x" id="x-st"></div>
+    <details class="txt full la x" data-sec="sub"><summary>Sobre este recorte</summary><p class="note sub" id="x-sub"></p></details>
+    <div class="kpis full la x" data-sec="k" id="x-kpis"></div>
+    <div class="card la x" data-sec="f2">
       <div class="fn">Figura 2</div><h2 id="x-h2">Resposta à exposição ao calor</h2>
       <div class="legend" id="x-leg"></div>
       <div class="chartbox"><canvas id="x-chart"></canvas></div>
       <p class="status" id="x-note"></p>
       <details class="txt"><summary>Notas da figura</summary><p class="note" id="x-detalhe"></p></details>
     </div>
-    <div class="card x" data-sec="f3">
+    <div class="card la x" data-sec="f3">
       <div class="fn">Figura 3</div><h2 id="x-h3">RR por defasagem e RR acumulado</h2>
       <div class="legend" id="x-leg2"></div>
       <div class="forestbox" id="x-forest"></div>
       <details class="txt"><summary>Notas da figura</summary><p class="note" id="x-note2"></p></details>
     </div>
-    <details class="txt full x" data-sec="i"><summary>Interpretação</summary><div class="interp" id="x-interp"></div></details>
-    <details class="txt full cmpb"><summary>Comparação entre os locais</summary><div class="interp" id="x-comp-txt"></div></details>
-    <div class="card full x" data-sec="hm" id="x-hm-card">
+    <details class="txt full la x" data-sec="i"><summary>Interpretação</summary><div class="interp" id="x-interp"></div></details>
+    <details class="txt full cmpb"><summary>Comparação entre os grupos</summary><div class="interp" id="x-comp-txt"></div></details>
+    <div class="card full la x" data-sec="hm" id="x-hm-card">
       <div class="fn">Figura 4</div><h2 id="x-hm-h2">RR de óbito segundo as horas do dia com índice de calor ≥ K °C</h2>
-      <label class="chk" data-nao-clonar style="display:flex;align-items:center;gap:6px;font-size:13px;margin:8px 0 6px"><input type="checkbox" id="x-hm-sig"> Destacar só RR com IC 95% que não inclui 1</label>
       <p class="status" id="x-hm-prog"></p>
       <div style="overflow-x:auto"><table class="hm" id="x-hm"></table></div>
       <details class="txt"><summary>Notas e interpretação</summary><p class="note" id="x-hm-note"></p><div class="interp" id="x-hm-interp"></div></details>

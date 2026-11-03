@@ -15,6 +15,23 @@
 <label>Raça/cor<select id="s-raca"></select></label>
 <label>Medida de calor do modelo<select id="s-exp"></select></label>
 <!--FILTROS-->
+<!-- Período de análise e comparativo: só no app (o servidor reajusta o modelo); o figura1.js tira a classe hide quando há servidor. -->
+<div id="lat-per" class="lat-bloco hide">
+<h4 class="lat-s">Período de análise <span>reajusta o modelo</span></h4>
+<div class="par"><label>Ano inicial<select id="s-p-ini"></select></label><label>Ano final<select id="s-p-fim"></select></label></div>
+<button type="button" class="btn" id="s-p-ap" disabled>Aplicar período</button>
+<p class="lat-n" id="s-p-msg"></p>
+</div>
+<label class="chk" id="s-nsigw"><input type="checkbox" id="s-nsig"> <span>Mostrar também o que não tem poder estatístico (IC 95% que inclui 1)</span></label>
+<div id="lat-cmp" class="lat-bloco hide">
+<button type="button" class="btn tg" id="c-bt" aria-pressed="false" aria-controls="c-corpo">Comparar lado a lado</button>
+<div id="c-corpo" class="hide">
+<label>Comparar por<select id="c-dim"></select></label>
+<label id="c-valw">Grupo B<select id="c-val"></select></label>
+<div id="c-perw" class="par hide"><label>Ano inicial (B)<select id="c-p-ini"></select></label><label>Ano final (B)<select id="c-p-fim"></select></label></div>
+<p class="lat-n" id="c-msg"></p>
+</div>
+</div>
 </div>
 </aside>
 <div class="wrap">
@@ -32,8 +49,8 @@
       <option value="ic">Calor intenso: ≥ 3 dias com índice de calor máximo ≥ 36 °C</option>
       <option value="nc">Protocolo: ≥ 1 dia em NC2 a NC5 (≥ 4 h com índice de calor ≥ 36 °C)</option>
       <option value="no">Sem sombreamento</option></select></label>
-    <label>Ano inicial<select id="s-ini"></select></label>
-    <label>Ano final<select id="s-fim"></select></label>
+    <label>Exibir de (ano)<select id="s-ini"></select></label>
+    <label>até (ano)<select id="s-fim"></select></label>
     <label>Colunas ao fundo (valores diários)<select id="s-bar">
       <option value="hi_med">Índice de calor médio do dia</option>
       <option value="hi_max">Índice de calor máximo do dia</option>
@@ -43,16 +60,20 @@
       <option value="nc">Nível de calor do protocolo (NC1 a NC5)</option>
       <option value="lim">Laranja acima de um limiar (°C)</option></select></label>
     <label id="s-limw" class="hide">Limiar (°C)<input id="s-lim" type="number" value="32" step="0.5" min="10" max="55" style="width:84px"></label>
-    <button class="btn" id="s-csv">Baixar CSV da série</button>
+    <button class="btn" id="s-csv" title="Baixa a série do lado A (o recorte da barra lateral)">Baixar CSV da série</button>
   </div>
   <details class="txt"><summary>Sobre a raça/cor nos dados</summary><p class="note" id="s-raca-nota"></p></details>
-  <div class="kpis" id="s-kpis"></div>
-  <div class="card">
-    <div class="fn">Figura 1</div><h2 id="s-h2">Óbitos semanais por causas naturais: observados, esperados sem calor e semanas de calor</h2>
-    <div class="legend" id="s-leg"></div>
-    <div class="chartbox"><canvas id="s-chart"></canvas></div>
-    <p class="status" id="s-note">Carregando a série…</p>
-    <details class="txt"><summary>Notas e interpretação</summary><p class="note" id="s-detalhe"></p><div class="interp" id="i-serie"></div></details>
+  <!-- Os elementos com a classe "la" são copiados pelo figura1.js para o lado B do comparativo (classe "lb", ids com prefixo s2-). -->
+  <div class="cmp" id="s-cmp">
+    <div class="slot-t la full" id="s-st"></div>
+    <div class="kpis la full" id="s-kpis"></div>
+    <div class="card la full">
+      <div class="fn">Figura 1</div><h2 id="s-h2">Óbitos semanais por causas naturais: observados, esperados sem calor e semanas de calor</h2>
+      <div class="legend" id="s-leg"></div>
+      <div class="chartbox"><canvas id="s-chart"></canvas></div>
+      <p class="status" id="s-note">Carregando a série…</p>
+      <details class="txt"><summary>Notas e interpretação</summary><p class="note" id="s-detalhe"></p><div class="interp" id="s-interp"></div></details>
+    </div>
   </div>
 </section>
 <!--ABAS_SECOES-->

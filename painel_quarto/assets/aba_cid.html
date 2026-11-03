@@ -3,21 +3,24 @@
     <label>Nível de exposição<select id="k-nivel"></select></label>
     <label>Conjunto de causas<select id="k-conj"><option value="todas">Todas as causas avaliadas</option><option value="apriori">Causas selecionadas do referencial (Morais et al.)</option></select></label>
     <label>Capítulo do CID-10<select id="k-cap"></select></label>
-    <label class="chk"><input type="checkbox" id="k-todos"> Incluir causas sem diferença do esperado</label>
   </div>
-  <details class="txt"><summary>Sobre este recorte</summary><p class="note" id="k-sub"></p></details>
-  <div class="card">
+  <!-- Os elementos com a classe "la" são copiados pelo aba_cid.js para o lado B do comparativo (classe "lb", ids com prefixo k2-). -->
+  <div class="cmp" id="k-cmp">
+  <div class="slot-t la full" id="k-st"></div>
+  <details class="txt la full"><summary>Sobre este recorte</summary><p class="note" id="k-sub"></p></details>
+  <div class="card la full">
     <div class="fn">Figura 5</div><h2 id="k-h2">Causas básicas (CID-10, 3 caracteres) com RR diferente de 1 em dias de calor</h2>
     <p class="status" id="k-prog"></p>
     <div id="k-fig"></div>
     <p class="status" id="k-note"></p>
     <details class="txt"><summary>Notas e interpretação</summary><p class="note" id="k-detalhe"></p><div class="interp" id="k-interp"></div></details>
   </div>
-  <div class="card" style="margin-top:16px">
+  <div class="card la full">
     <div class="fn">Figura 5b</div><h2 id="k-h2b">Óbitos semanais por causa: observados e esperados sem calor</h2>
     <p class="status" id="k-selnote">Clique em uma causa da Figura 5 para ver a série semanal dela.</p>
     <div class="legend" id="k-leg"></div>
     <div class="chartbox" style="height:340px"><canvas id="k-chart"></canvas></div>
     <details class="txt"><summary>Notas e interpretação</summary><p class="note" id="k-note2"></p><div class="interp" id="k-interp2"></div></details>
+  </div>
   </div>
 </section>
