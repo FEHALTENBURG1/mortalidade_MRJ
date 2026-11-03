@@ -1,18 +1,13 @@
 /* Aba "Exposição-resposta e defasagem" (app Shiny): curvas do modelo de cada recorte.
-   Usa o objeto P que figura1.js entrega às abas (window.PainelAbas): filtros de causa e de retirada, pedidos ao servidor e textos comuns.
+   Usa o objeto P que figura1.js entrega às abas (window.PainelAbas): pedidos ao servidor e textos comuns. Os filtros (local do óbito, faixa etária, raça/cor,
+   medida de calor, causa e retiradas do ajuste) são os da barra lateral (ids s-...) e valem para todas as abas; só "Comparar com" é desta aba.
    Um recorte (slot "x") ou dois (slots "x" e "y", que diferem só no local do óbito): cada elemento da aba tem uma cópia com prefixo y- (ver clonar()). */
 (window.PainelAbas = window.PainelAbas || []).push(function(P){
 "use strict";
 const {$, css, fn, fr, fillSel, nm, mkCor, M, EXP, KEXP} = P;
 if(!$("tab-exp")) return;
-const RACAS = [{v:"Todas",t:"Todas"},{v:"Branca",t:"Branca (referência)"},{v:"Preta",t:"Preta"},{v:"Parda",t:"Parda"},{v:"PPI",t:"Pretos, pardos e indígenas (PPI)"}];
 const SEM = "__sem__";
-fillSel($("x-local"), M.locais.map(l=>({v:l,t:nm(l)})), "Todos os locais");
 fillSel($("x-local2"), [{v:SEM,t:"Sem comparação"}, ...M.locais.map(l=>({v:l,t:nm(l)}))], SEM);
-fillSel($("x-faixa"), M.faixas, "Todas as idades");
-fillSel($("x-raca"), RACAS, "Todas");
-fillSel($("x-exp"), KEXP.map(k=>({v:k,t:EXP[k].nome})), KEXP[0]);
-if($("x-r-covid-t") && M.covid) $("x-r-covid-t").textContent = `Período COVID (${P.dBR(M.covid[0])} a ${P.dBR(M.covid[1])})`;
 
 // Segundo recorte: cópia de cada elemento da aba marcado com a classe x, com ids y-... (o checkbox do mapa é um só e fica no recorte x)
 [...$("x-cmp").children].filter(el=>el.classList.contains("x")).forEach(el=>{
@@ -24,18 +19,18 @@ if($("x-r-covid-t") && M.covid) $("x-r-covid-t").textContent = `Período COVID (
 
 const c1 = {x:null, y:null};
 const SLOTS = ["x","y"];
-const local = p => p==="y" ? $("x-local2").value : $("x-local").value;
-const chave = p => local(p)+"|"+$("x-faixa").value+($("x-raca").value!=="Todas"?"|"+$("x-raca").value:"");
-function estado(p){ const m=P.modo("x"), cod=P.cod("x"), k=chave(p), ex=$("x-exp").value; return {p, m, cod, k, ex, causa:m.causa, kd:P.kd(m.causa,cod,k)} }
-const dois = () => $("x-local2").value !== SEM && $("x-local2").value !== $("x-local").value;
+const local = p => p==="y" ? $("x-local2").value : $("s-local").value;
+const chave = p => local(p)+"|"+$("s-faixa").value+($("s-raca").value!=="Todas"?"|"+$("s-raca").value:"");
+function estado(p){ const m=P.modo("s"), cod=P.cod("s"), k=chave(p), ex=$("s-exp").value; return {p, m, cod, k, ex, causa:m.causa, kd:P.kd(m.causa,cod,k)} }
+const dois = () => $("x-local2").value !== SEM && $("x-local2").value !== $("s-local").value;
 const ativos = () => dois() ? SLOTS : ["x"];
 const calc = (p,on) => { $(p+"-kpis").classList.toggle("calc",on); document.querySelectorAll(`#tab-exp .card.${p} .chartbox, #tab-exp .card.${p} .forestbox`).forEach(e=>e.classList.toggle("calc",on)) };
 function limpar(p){
   [p+"-kpis",p+"-leg",p+"-leg2",p+"-forest",p+"-interp"].forEach(i=>$(i).innerHTML="");
   if(c1[p]){ c1[p].destroy(); c1[p]=null }
-  $(p+"-note").textContent = ""; $(p+"-note2").textContent = "";
+  $(p+"-note").textContent = ""; $(p+"-detalhe").textContent = ""; $(p+"-note2").textContent = "";
 }
-const kpiHtml = lista => lista.map(([v,l])=>`<div class="kpi"><div class="v">${v}</div><div class="l">${l}</div></div>`).join("");
+const kpiHtml = lista => lista.map(([v,l])=>`<div class="kpi" title="Clique para ver o texto completo"><div class="v">${v}</div><div class="l">${l}</div></div>`).join("");
 const ic = (rr,lo,hi,d=2) => `${fn(rr,d)} (IC 95%: ${fn(lo,d)} a ${fn(hi,d)})`;
 
 // ---------------------------------------------------------------- eixos e gráfico de floresta (Figura 3)
@@ -89,9 +84,7 @@ function floresta(s, dom, C){
 // ---------------------------------------------------------------- Figuras 2 e 3 e quadros
 function desenharCurvas(){
   if($("tab-exp").classList.contains("hide")) return;
-  const r = $("x-raca").value !== "Todas"; if(r) $("x-faixa").value = "Todas as idades"; $("x-faixa").disabled = r;
-  $("x-faixa").title = r ? "As séries por raça/cor são calculadas para todas as idades; volte a Todas em raça/cor para escolher uma faixa etária." : "";
-  if($("x-local2").value===$("x-local").value) $("x-local2").value = SEM;      // comparar um local com ele mesmo não faz sentido
+  if($("x-local2").value===$("s-local").value) $("x-local2").value = SEM;      // comparar um local com ele mesmo não faz sentido
   const comp = dois();
   $("x-cmp").classList.toggle("dois", comp);
   const S = ativos().map(p=>{ const e = estado(p); return {p, e, E:EXP[e.ex]} });
@@ -121,12 +114,13 @@ function desenharCurvas(){
 
 function desenharSlot(s, dom, comp, C){
   const p = s.p, e = s.e, E = s.E, u = E.unidade, cv = s.cv, L = cv.lag, cor = [C.az, C.la], xmax = dom.xmax;
-  const rotulo = `local do óbito: ${nm(local(p)).toLowerCase()}; faixa etária: ${$("x-faixa").value==="Todas as idades"?"todas as idades":$("x-faixa").value+" anos"}${$("x-raca").value!=="Todas"?"; raça/cor: "+(({PPI:"pretos, pardos e indígenas"})[$("x-raca").value]||$("x-raca").value.toLowerCase()):""}`;
+  const rotulo = `local do óbito: ${nm(local(p)).toLowerCase()}; faixa etária: ${$("s-faixa").value==="Todas as idades"?"todas as idades":$("s-faixa").value+" anos"}${$("s-raca").value!=="Todas"?"; raça/cor: "+(({PPI:"pretos, pardos e indígenas"})[$("s-raca").value]||$("s-raca").value.toLowerCase()):""}`;
   const suf = comp ? ` (local do óbito: ${nm(local(p))})` : "";
   $(p+"-sub").textContent = `Óbitos ${P.texto.causaPor(e.causa)}; ${rotulo}. As curvas vêm do mesmo modelo que gera o esperado sem calor da Figura 1 para este recorte.`;
   $(p+"-h2").textContent = "Resposta à exposição ao calor"+suf;
   $(p+"-h3").textContent = "RR por defasagem e RR acumulado"+suf;
   $(p+"-hm-h2").textContent = "RR de óbito segundo as horas do dia com índice de calor ≥ K °C"+suf;
+  $(p+"-note").textContent = "";                                   // tira o aviso de cálculo ou de erro de uma tentativa anterior
   const pts = a => cv.x.map((x,i)=>({x, y:a[i]}));
   const eixoY = comp ? {min:dom.ymin, max:dom.ymax} : {};
 
@@ -162,7 +156,7 @@ function desenharSlot(s, dom, comp, C){
   const curvaTxt = e.ex==="horas"
     ? "Com 1 grau de liberdade na exposição (spline natural), o logaritmo do RR cresce em linha reta com a exposição por construção, de modo que a curva não detecta limiar."
     : "O HAAT usa spline penalizado com 15 graus de liberdade, o que permite curvatura, mas as extremidades têm poucos dias e intervalos largos.";
-  $(p+"-note").textContent = `RR acumulado em 0 a ${M.lag} dias para uma exposição constante, mantida em todos os ${M.lag+1} dias, em relação a nenhuma exposição. A faixa é o intervalo de confiança de 95% a partir dos coeficientes da cross-basis e da sua matriz de covariância. A grade vai até ${fn(xmax)} ${u} por dia, o percentil 99 dos dias com exposição; acima disso há poucos dias. ${curvaTxt}`;
+  $(p+"-detalhe").textContent = `RR acumulado em 0 a ${M.lag} dias para uma exposição constante, mantida em todos os ${M.lag+1} dias, em relação a nenhuma exposição. A faixa é o intervalo de confiança de 95% a partir dos coeficientes da cross-basis e da sua matriz de covariância. A grade vai até ${fn(xmax)} ${u} por dia, o percentil 99 dos dias com exposição; acima disso há poucos dias. ${curvaTxt}`;
   $(p+"-note2").textContent = `Parte superior: RR da exposição ocorrida l dias antes do óbito, para cada defasagem l de 0 a ${M.lag}. Parte inferior: RR acumulado das defasagens de 0 até l, que é o produto dos RR por defasagem de 0 a l e corresponde a manter a exposição em todos esses dias. `+
     `Os dois níveis de exposição de referência são mantidos nos ${M.lag+1} dias. As duas partes têm escalas horizontais diferentes, e as barras são intervalos de confiança de 95% a partir da matriz de covariância dos coeficientes. Marcador cheio: intervalo que não inclui 1 (valores em negrito). A resposta à defasagem é um spline natural com 3 graus de liberdade. `+
     P.notaModelo(e.kd,e.ex,e.m)+P.texto.notaClima(e.m)+P.texto.notaCausa(e.m);
@@ -215,8 +209,8 @@ const pctRR = r => (r-1)*100;
 function mapaSlot(p){
   const e = estado(p), tab = $(p+"-hm"), prog = $(p+"-hm-prog"), nota = $(p+"-hm-note"), it = $(p+"-hm-interp");
   if(!P.eleg(e.causa,e.cod).has(e.k)){
-    tab.innerHTML = ""; prog.textContent = ""; it.innerHTML = "";
-    nota.textContent = `Menos de ${M.min_obitos} óbitos ${e.cod!=="000"?"no ajuste ":""}nesta combinação de filtros: modelo não estimado.`;
+    tab.innerHTML = ""; nota.textContent = ""; it.innerHTML = "";
+    prog.textContent = `Menos de ${M.min_obitos} óbitos ${e.cod!=="000"?"no ajuste ":""}nesta combinação de filtros: modelo não estimado.`;
     return;
   }
   const curvasProntas = !!P.cv(e.kd,e.ex);
@@ -293,6 +287,6 @@ P.ouvir.erro.push(msg=>{
   });
 });
 P.ouvir.base.push(()=>{ voo.clear(); falhou.clear(); desenhar() });
-["x-local","x-local2","x-faixa","x-raca","x-exp","x-causa","x-r-covid","x-r-nc","x-r-clima","x-hm-sig"].forEach(i=>{ const el=$(i); if(el) el.onchange=desenhar });
+["x-local2","x-hm-sig"].forEach(i=>{ const el=$(i); if(el) el.onchange=desenhar });                // os demais filtros são os da barra lateral (figura1.js redesenha a aba aberta)
 P.abas.exp = desenhar;
 });

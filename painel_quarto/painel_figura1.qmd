@@ -49,6 +49,8 @@ cat(bloco_dados_html(file.path("saida", sprintf("figura1_%s.json", pop))))
 
 ```{=html}
 </div>
+</div>
+<footer class="rodape">Centro de Inteligência Epidemiológica · EpiRio</footer>
 <script src="assets/chart.umd.js"></script>
 <script src="assets/figura1.js"></script>
 ```

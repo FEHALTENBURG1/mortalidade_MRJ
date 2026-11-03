@@ -6,7 +6,6 @@
 "use strict";
 const {$, css, fn, fr, fp, dBR, fillSel, nm, mkCor, M, D, EXP, KEXP} = P;
 if(!$("tab-cid")) return;
-const RACAS = [{v:"Todas",t:"Todas"},{v:"Branca",t:"Branca (referência)"},{v:"Preta",t:"Preta"},{v:"Parda",t:"Parda"},{v:"PPI",t:"Pretos, pardos e indígenas (PPI)"}];
 const CAPS = [["A","A-B Algumas doenças infecciosas e parasitárias"],["C","C-D48 Neoplasias"],["D","D50-D89 Sangue e imunitárias"],["E","E Endócrinas, nutricionais e metabólicas"],
   ["F","F Transtornos mentais e comportamentais"],["G","G Sistema nervoso"],["H","H Olho, ouvido"],["I","I Aparelho circulatório"],["J","J Aparelho respiratório"],
   ["K","K Aparelho digestivo"],["L","L Pele"],["M","M Osteomuscular"],["N","N Geniturinário"],["O","O Gravidez, parto e puerpério"],["P","P Afecções perinatais"],
@@ -37,14 +36,14 @@ const minus1 = t => t[0].toLowerCase()+t.slice(1);                // só a prime
 const NOME = c => ((M.cid_nomes||{})[c]) || "";
 const MAX_VOO = 2, ESPERA_MAX = 240000;
 
-fillSel($("k-local"), M.locais.map(l=>({v:l,t:nm(l)})), "Todos os locais");
-fillSel($("k-faixa"), M.faixas, "Todas as idades");
-fillSel($("k-raca"), RACAS, "Todas");
-fillSel($("k-exp"), KEXP.map(k=>({v:k,t:EXP[k].nome})), KEXP[0]);
 fillSel($("k-cap"), [{v:"all",t:"Todos os capítulos"}, ...CAPS.map(([v,t])=>({v,t}))], "all");
-if($("k-r-covid-t") && M.covid) $("k-r-covid-t").textContent = `Período COVID (${dBR(M.covid[0])} a ${dBR(M.covid[1])})`;
+/* Os filtros (local do óbito, faixa etária, raça/cor, medida de calor, causa e retiradas do ajuste) são os da barra lateral (ids s-...) e valem para todas as abas.
+   Os níveis de exposição dependem da medida de calor; a lista é refeita só quando a medida muda. */
+let medidaNiveis = null;
 function niveis(){
-  const E = EXP[$("k-exp").value], atual = $("k-nivel").value;
+  const m = $("s-exp").value; if(m === medidaNiveis) return;
+  medidaNiveis = m;
+  const E = EXP[m], atual = $("k-nivel").value;
   fillSel($("k-nivel"), E.ref.map((r,i)=>({v:String(i),t:`${fn(r)} ${E.unidade} por dia`})), atual && +atual < E.ref.length ? atual : "0");
 }
 niveis();
@@ -53,8 +52,8 @@ let grafico = null, sel = null, timer = null;
 const voo = new Map(), falhou = new Map();                       // id (kd|pedido) -> instante do pedido | id -> mensagem de erro
 const idK = (kd,ex) => kd+"|"+ex, eCid = ex => /^cid/.test(ex);
 const exCid = (c,medida) => `cid_${c}_${medida}`, exSem = (c,medida) => `cidsem_${c}_${medida}`;
-const chave = () => $("k-local").value+"|"+$("k-faixa").value+($("k-raca").value!=="Todas"?"|"+$("k-raca").value:"");
-function estado(){ const m=P.modo("k"), cod=P.cod("k"), k=chave(); return {m, cod, k, causa:m.causa, kd:P.kd(m.causa,cod,k), medida:$("k-exp").value, nivel:+$("k-nivel").value} }
+const chave = () => $("s-local").value+"|"+$("s-faixa").value+($("s-raca").value!=="Todas"?"|"+$("s-raca").value:"");
+function estado(){ const m=P.modo("s"), cod=P.cod("s"), k=chave(); return {m, cod, k, causa:m.causa, kd:P.kd(m.causa,cod,k), medida:$("s-exp").value, nivel:+$("k-nivel").value} }
 const agendar = () => { clearTimeout(timer); timer = setTimeout(desenhar, 120) };
 const fmtP = q => q==null ? "…" : q<0.001 ? "<0,001" : q.toFixed(3).replace(".",",");
 const bh = p => { const n=p.length, o=p.map((v,i)=>[v,i]).sort((a,b)=>a[0]-b[0]), q=Array(n); let m=1; for(let r=n-1;r>=0;r--){ m=Math.min(m,o[r][0]*n/(r+1)); q[o[r][1]]=Math.min(m,1) } return q };
@@ -73,16 +72,16 @@ function bombear(e, exs){
 
 function limpar(){
   ["k-fig","k-interp","k-sub","k-interp2","k-leg"].forEach(i=>$(i).innerHTML="");
-  $("k-prog").textContent = ""; $("k-note").textContent = ""; $("k-note2").textContent = "";
+  $("k-prog").textContent = ""; $("k-note").textContent = ""; $("k-detalhe").textContent = ""; $("k-note2").textContent = "";
   if(grafico){ grafico.destroy(); grafico = null }
 }
 
 function desenhar(){
   if($("tab-cid").classList.contains("hide")) return;
-  const r = $("k-raca").value !== "Todas"; if(r) $("k-faixa").value = "Todas as idades"; $("k-faixa").disabled = r;
-  $("k-faixa").title = r ? "As séries por raça/cor são calculadas para todas as idades; volte a Todas em raça/cor para escolher uma faixa etária." : "";
+  niveis();
+  const r = $("s-raca").value !== "Todas";
   const e = estado(), E = EXP[e.medida], got = P.cid(e.kd);
-  const rotulo = `local do óbito: ${nm($("k-local").value).toLowerCase()}; faixa etária: ${$("k-faixa").value==="Todas as idades"?"todas as idades":$("k-faixa").value+" anos"}${r?"; raça/cor: "+(({PPI:"pretos, pardos e indígenas"})[$("k-raca").value]||$("k-raca").value.toLowerCase()):""}`;
+  const rotulo = `local do óbito: ${nm($("s-local").value).toLowerCase()}; faixa etária: ${$("s-faixa").value==="Todas as idades"?"todas as idades":$("s-faixa").value+" anos"}${r?"; raça/cor: "+(({PPI:"pretos, pardos e indígenas"})[$("s-raca").value]||$("s-raca").value.toLowerCase()):""}`;
   if(!P.eleg(e.causa,e.cod).has(e.k)){
     limpar(); $("k-note").textContent = `Menos de ${M.min_obitos} óbitos ${e.cod!=="000"?"no ajuste ":""}nesta combinação de filtros: modelo não estimado.`;
     return;
@@ -91,7 +90,7 @@ function desenhar(){
   const lista = got.cidlista;
   if(!lista){
     const f = falhou.get(idK(e.kd,"cidlista"));
-    $("k-fig").innerHTML = ""; $("k-interp").innerHTML = ""; $("k-note").textContent = "";
+    $("k-fig").innerHTML = ""; $("k-interp").innerHTML = ""; $("k-note").textContent = ""; $("k-detalhe").textContent = "";
     $("k-prog").textContent = f ? "Não foi possível obter as causas deste recorte: "+String(f).replace(/[<>&]/g,"") : "Obtendo a lista de causas deste recorte…";
     if(!f) enviarUm(e,"cidlista",true);
     return;
@@ -100,7 +99,7 @@ function desenhar(){
   const fam = lista.cid.filter(c=>(conj==="todas"||aPriori(c)) && (cap==="all"||capOf(c)===cap));
   $("k-prog").textContent = "";
   if(!fam.length){
-    $("k-fig").innerHTML = ""; $("k-interp").innerHTML = "";
+    $("k-fig").innerHTML = ""; $("k-interp").innerHTML = ""; $("k-detalhe").textContent = "";
     $("k-note").textContent = `Nenhuma causa tem pelo menos ${fn(M.cid_min)} óbitos nos dias do ajuste com esta combinação de recorte, conjunto e capítulo.`;
     return;
   }
@@ -121,7 +120,7 @@ function desenhar(){
 
   // nota e interpretação
   const nomeMedida = minus1(E.nome);
-  $("k-note").textContent = `RR acumulado em 0 a ${M.lag} dias com a exposição (${nomeMedida}) mantida em ${nivelTxt} em todos os ${M.lag+1} dias, em relação a nenhuma exposição, estimado em um modelo próprio de cada causa `+
+  $("k-note").textContent = ""; $("k-detalhe").textContent = `RR acumulado em 0 a ${M.lag} dias com a exposição (${nomeMedida}) mantida em ${nivelTxt} em todos os ${M.lag+1} dias, em relação a nenhuma exposição, estimado em um modelo próprio de cada causa `+
     `(binomial negativa, spline do tempo, ciclo anual e termo do período COVID, defasagem pela cross-basis do dlnm). O IC 95% e o valor de p vêm da matriz de covariância dos coeficientes. `+
     `O valor q é o de Benjamini e Hochberg para a taxa de falsas descobertas, calculado entre as ${fam.length} causas do conjunto e do capítulo escolhidos; q < 0,05 define as causas destacadas. `+
     `Causas com menos de ${fn(M.cid_min)} óbitos nos dias do ajuste não são avaliadas. Ordenação por RR.`+P.texto.notaClima(e.m)+P.texto.notaCausa(e.m);
@@ -230,7 +229,6 @@ P.ouvir.erro.push(msg=>{
   agendar();
 });
 P.ouvir.base.push(()=>{ voo.clear(); falhou.clear(); sel = null; desenhar() });
-["k-local","k-faixa","k-raca","k-nivel","k-conj","k-cap","k-todos","k-causa","k-r-covid","k-r-nc","k-r-clima"].forEach(i=>{ const el=$(i); if(el) el.onchange = desenhar });
-$("k-exp").onchange = () => { niveis(); desenhar() };
+["k-nivel","k-conj","k-cap","k-todos"].forEach(i=>{ const el=$(i); if(el) el.onchange = desenhar });          // os filtros da barra lateral redesenham a aba aberta (figura1.js)
 P.abas.cid = desenhar;
 });

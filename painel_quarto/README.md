@@ -47,7 +47,7 @@ São cerca de 90 recortes por medida de calor; o ajuste leva alguns minutos por 
 
 ## Shiny
 
-O app Shiny (`shiny/app.R`) lê os dados direto das Releases do GitHub e ajusta o modelo de referência quando o recorte é escolhido, com as mesmas funções de R da página em Quarto. Por enquanto só tem a Figura 1. A página traz os mesmos filtros, mais a escolha da população (residentes ou todos os óbitos ocorridos no Rio).
+O app Shiny (`shiny/app.R`) lê os dados direto das Releases do GitHub e ajusta o modelo de referência quando o recorte é escolhido, com as mesmas funções de R da página em Quarto. A página traz os mesmos filtros, mais a escolha da população (residentes ou todos os óbitos ocorridos no Rio), e as abas descritas abaixo.
 
 Como funciona:
 
@@ -70,7 +70,11 @@ Sem nenhuma caixa marcada, o ajuste é o do modelo de referência. Os dias sem r
 
 ### Abas do app
 
-O app tem uma aba por assunto, todas ajustadas pelo mesmo modelo (GAM com DLNM) e com filtros próprios de causa do óbito e de retirada do ajuste. A população vale para todas e fica acima das abas. Cada aba é um par `assets/aba_<nome>.html` e `assets/aba_<nome>.js`, registrado em `ABAS` no `shiny/app.R`; o script recebe de `figura1.js` um objeto com os pedidos ao servidor, os filtros e os textos comuns.
+O app tem uma aba por assunto, todas ajustadas pelo mesmo modelo (GAM com DLNM). Os filtros ficam numa barra lateral à esquerda e valem para todas as abas: população, local do óbito, faixa etária, raça/cor, medida de calor, causa do óbito e, recolhido, "Retirar do ajuste do modelo". Os ids deles são `s-pop`, `s-local`, `s-faixa`, `s-raca`, `s-exp`, `s-causa` e `s-r-covid`, `s-r-nc`, `s-r-clima`. Ao mudar um filtro, `figura1.js` redesenha só a aba aberta; as outras redesenham ao serem abertas. O que é só de uma aba (escala e período da Figura 1, "Comparar com", nível de exposição, conjunto de causas e capítulo CID-10) fica numa barra de opções dentro da própria aba. Cada aba é um par `assets/aba_<nome>.html` e `assets/aba_<nome>.js`, registrado em `ABAS` no `shiny/app.R`; o script recebe de `figura1.js` um objeto com os pedidos ao servidor, os filtros e os textos comuns.
+
+Os textos longos (notas das figuras, interpretações, descrição do recorte, "Sobre este painel") ficam em blocos recolhidos (`<details class="txt">`) e abrem com um clique; o botão "Mostrar os textos", ao lado das abas, abre todos. Em cada figura, o aviso curto de status ("Calculando o modelo…", "Menos de 300 óbitos…") fica fora do bloco recolhido (`s-note`, `x-note`, `k-note`), e a nota longa vai para `s-detalhe`, `x-detalhe` e `k-detalhe`. Clicar num indicador mostra o texto completo dele.
+
+A identidade visual (paleta, Montserrat, cabeçalho em gradiente com o logo do CIE) vem do deck de SRAG e está nas variáveis de `:root` de `assets/figura1.css`; para trocar cores ou fonte, basta editar essas variáveis. O logo está embutido em `assets/figura1_corpo.html`. A fonte é carregada do Google Fonts: sem internet, o navegador usa a fonte do sistema.
 
 | Aba | Conteúdo |
 |:--|:--|
@@ -115,7 +119,7 @@ PAINEL_CACHE=pasta_do_cache python3 testes/teste_app.py
 
 O teste do download e do cache sobe um servidor local que imita a API e os arquivos das Releases e confere: primeira carga, versão igual (não baixa de novo), versão nova (troca e apaga a antiga), tamanho errado, GitHub fora do ar e bloqueio de atualização simultânea. Sem as variáveis de ambiente roda só os testes que não precisam de dados.
 
-O teste do serviço compara o resultado de cada recorte ajustado sob demanda com o do `calcular_figura1.R` (referência gerada com os mesmos dados), confere o cache em disco, os códigos de erro e os pedidos assíncronos. O teste do app sobe o Shiny e percorre a página no navegador: figura inicial, troca de filtros, causa do óbito e retiradas do ajuste, população, recorte sem óbitos suficientes, outra sessão lendo do disco e aviso de dados novos.
+O teste do serviço compara o resultado de cada recorte ajustado sob demanda com o do `calcular_figura1.R` (referência gerada com os mesmos dados), confere o cache em disco, os códigos de erro e os pedidos assíncronos. O teste do app sobe o Shiny e percorre a página no navegador: barra lateral e textos recolhidos, figura inicial, troca de filtros (valem para todas as abas), causa do óbito e retiradas do ajuste, população, recorte sem óbitos suficientes, outra sessão lendo do disco e aviso de dados novos.
 
 O teste do modelo simula uma série com efeito do calor conhecido e confere que o RR e o excesso de óbitos são recuperados. O teste da página percorre todos os recortes nas duas escalas e confere que o recorte muda o resultado.
 
