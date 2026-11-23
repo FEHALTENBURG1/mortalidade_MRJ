@@ -28,7 +28,7 @@ function limpar(p){
 }
 const vis = (lo,hi) => P.mostrarIC(lo,hi);                 // estimativa visível: IC 95% fora de 1, ou caixa da barra lateral marcada
 const SEM_PODER = "sem poder estatístico (o IC 95% inclui 1)";
-const AVISO_OCULTO = "Marque “Mostrar também o que não tem poder estatístico” na barra lateral para ver também as estimativas cujo IC 95% inclui 1.";
+const AVISO_OCULTO = "Para ver as estimativas, marque “Mostrar também o que não tem poder estatístico” na barra lateral.";
 // RR com o IC 95% na dica do cursor; sem poder estatístico (e sem a caixa marcada), só o aviso
 const rrTexto = (rr,lo,hi) => vis(lo,hi) ? P.icSpan(rr,lo,hi) : SEM_PODER;
 
@@ -103,7 +103,7 @@ function desenharCurvas(){
   S.forEach(s=>{
     const p = s.p;
     if(s.fase==="pouco"){ limpar(p); calc(p,false); $(p+"-sub").textContent = ""; $(p+"-note").textContent = `Menos de ${M.min_obitos} óbitos ${s.e.cod!=="000"?"no ajuste ":""}${comp?"neste lado do comparativo":"nesta combinação de filtros"}: modelo não estimado.` }
-    else if(s.fase==="calc"){ calc(p,true); $(p+"-note").textContent = "Calculando o modelo deste recorte"+(s.e.per!=="todos"?" para o período escolhido":"")+" (de 3 a 15 segundos na primeira vez; depois o resultado fica guardado no servidor)…" }
+    else if(s.fase==="calc"){ calc(p,true); $(p+"-note").textContent = "Calculando o modelo deste recorte (até 15 s na primeira vez)…" }
     else calc(p,false);
   });
   const prontos = S.filter(s=>s.fase==="ok");
@@ -123,7 +123,7 @@ function desenharCurvas(){
 function desenharSlot(s, dom, comp, C){
   const p = s.p, e = s.e, r = e.r, E = s.E, u = E.unidade, cv = s.cv, L = cv.lag, cor = [C.az, C.la], xmax = dom.xmax;
   const rotulo = `local do óbito: ${nm(r.local).toLowerCase()}; faixa etária: ${r.faixa==="Todas as idades"?"todas as idades":r.faixa+" anos"}${r.raca!=="Todas"?"; raça/cor: "+P.RACA_ROT[r.raca]:""}; período do modelo: ${P.perRot(r.per)}`;
-  $(p+"-sub").textContent = `Óbitos ${P.texto.causaPor(e.causa)}; ${rotulo}. As curvas vêm do mesmo modelo que gera o esperado sem calor da Figura 1 para este recorte.`;
+  $(p+"-sub").textContent = `Óbitos ${P.texto.causaPor(e.causa)}; ${rotulo}.`;
   $(p+"-h2").textContent = "Resposta à exposição ao calor";
   $(p+"-h3").textContent = "RR por defasagem e RR acumulado";
   $(p+"-hm-h2").textContent = "RR de óbito segundo as horas do dia com índice de calor ≥ K °C";
@@ -165,26 +165,21 @@ function desenharSlot(s, dom, comp, C){
             rrM[j]];
   });
   $(p+"-kpis").innerHTML = P.kpiHtml(kp) || `<p class="status" style="grid-column:1/-1;margin:0">Nenhum indicador de RR com IC 95% fora de 1 neste recorte.</p>`;
-  const curvaTxt = `A resposta à exposição é um ${P.spTxt(EXP[e.ex])}: a curvatura é estimada junto com o modelo, de modo que a curva é suave e só se afasta de uma reta onde os dados sustentam, e as extremidades têm poucos dias e intervalos largos.`;
-  $(p+"-detalhe").textContent = `RR acumulado em 0 a ${M.lag} dias para uma exposição constante, mantida em todos os ${M.lag+1} dias, em relação a nenhuma exposição. A faixa é o intervalo de confiança de 95% a partir dos coeficientes da cross-basis e da sua matriz de covariância; o IC 95% aparece ao passar o cursor, e os trechos em que ele inclui 1 ficam ocultos (a caixa da barra lateral os mostra). A grade vai até ${fn(xmax)} ${u} por dia, o percentil 99 dos dias com exposição; acima disso há poucos dias. ${curvaTxt}`;
-  $(p+"-note2").textContent = `Parte superior: RR da exposição ocorrida l dias antes do óbito, para cada defasagem l de 0 a ${M.lag}. Parte inferior: RR acumulado das defasagens de 0 até l, que é o produto dos RR por defasagem de 0 a l e corresponde a manter a exposição em todos esses dias. `+
-    `Os dois níveis de exposição de referência são mantidos nos ${M.lag+1} dias. As duas partes têm escalas horizontais diferentes, e as barras são intervalos de confiança de 95% a partir da matriz de covariância dos coeficientes (valores na dica do cursor). Estimativas com IC que inclui 1 ficam ocultas, e a linha sem nenhuma estimativa visível sai da figura. A resposta à defasagem é um spline natural com 3 graus de liberdade. `+
-    P.notaModelo(e.kd,e.ex,e.m)+P.texto.notaClima(e.m)+P.texto.notaCausa(e.m);
+  $(p+"-detalhe").textContent = `RR acumulado em 0 a ${M.lag} dias para uma exposição constante nos ${M.lag+1} dias, em relação a nenhuma exposição; faixa: IC 95%, oculto onde inclui 1. A grade vai até ${fn(xmax)} ${u} por dia (percentil 99 dos dias com exposição). A curva é um ${P.spTxt(EXP[e.ex])}, e só se afasta de uma reta onde os dados sustentam.`;
+  $(p+"-note2").textContent = `Acima: RR da exposição ocorrida l dias antes do óbito. Abaixo: RR acumulado de 0 até l dias, com a exposição mantida em todos eles. Barras: IC 95% (na dica do cursor); estimativas com IC que inclui 1 ficam ocultas. As escalas horizontais das duas partes diferem. `+
+    P.notaModelo(e.kd,e.ex,e.m)+" "+P.texto.notaCovid(e.m)+P.texto.notaClima(e.m)+P.texto.notaCausa(e.m);
 
   // interpretação (o IC 95% de cada RR fica na dica do cursor; RR sem poder estatístico não é citado)
-  const ate = l => { let k=-1; while(k+1<l.lo.length && l.lo[k+1]>1) k++; return k };            // último lag da sequência inicial com IC acima de 1
   const partes = L.map(l=>{
-    const k = ate(l), a = M.lag, vA = vis(l.aclo[a],l.achi[a]);
-    const sig = l.aclo[a]>1 ? "o intervalo fica acima de 1" : l.achi[a]<1 ? "o intervalo fica abaixo de 1" : "o intervalo inclui 1";
-    const seq = k<0 ? "sem defasagem inicial com intervalo acima de 1" : k>=a ? "com intervalo acima de 1 em todas as defasagens" : `com intervalo acima de 1 até o lag ${k}`;
-    const v0 = vis(l.lo[0],l.hi[0]) ? `é ${P.icSpan(l.rr[0],l.lo[0],l.hi[0])}, ${seq}` : `não tem poder estatístico (o IC 95% inclui 1 ou fica abaixo de 1)`;
+    const a = M.lag;
+    const v0 = vis(l.lo[0],l.hi[0]) ? `é ${P.icSpan(l.rr[0],l.lo[0],l.hi[0])}` : `não tem poder estatístico`;
     const v3 = vis(l.aclo[i3],l.achi[i3]) ? `é ${P.icSpan(l.ac[i3],l.aclo[i3],l.achi[i3])}` : `não tem poder estatístico`;
-    const va = vA ? `é ${P.icSpan(l.ac[a],l.aclo[a],l.achi[a])}, isto é, ${P.fp((l.ac[a]-1)*100)} no risco diário de óbito (${sig})` : `não tem poder estatístico (${sig})`;
+    const va = vis(l.aclo[a],l.achi[a]) ? `é ${P.icSpan(l.ac[a],l.aclo[a],l.achi[a])} (${P.fp((l.ac[a]-1)*100)} no risco diário de óbito)` : `não tem poder estatístico`;
     return `com ${fn(l.ref)} ${u} por dia, o RR no mesmo dia (lag 0) ${v0}; o RR acumulado em 0 a ${i3} dias ${v3} e em 0 a ${a} dias ${va}` });
   const tardio = L.some(l=>l.hi.some(v=>v<1));
   $(p+"-interp").innerHTML = `<span class="t">Interpretação</span>Neste recorte, ${partes.join(". Já ")}. `+
-    (tardio&&P.nsig()?`Há defasagens em que o intervalo de confiança fica inteiro abaixo de 1. Isso pode refletir antecipação de óbitos de pessoas frágeis ou variação aleatória, e o modelo não separa as duas explicações. `:"")+
-    `As estimativas descrevem associação em dados agregados, sem controle de fatores individuais.`;
+    (tardio&&P.nsig()?`Em algumas defasagens o IC fica inteiro abaixo de 1, o que pode refletir antecipação de óbitos de pessoas frágeis ou variação aleatória. `:"")+
+    `Associação em dados agregados, sem controle de fatores individuais.`;
 }
 
 // Texto que põe lado a lado o RR acumulado dos dois lados (só com dois recortes prontos)
@@ -201,10 +196,9 @@ function comparacao(S){
   const aninhado = (c.dim==="local" && [ra.local,rb.local].includes("Todos os locais")) || (c.dim==="faixa" && [ra.faixa,rb.faixa].includes("Todas as idades")) || (c.dim==="raca" && [ra.raca,rb.raca].includes("Todas"));
   const mesmos = ["ex","causa","per","covid","nc","clima"].includes(c.dim);
   el.innerHTML = `<span class="t">Comparação entre os grupos</span>${frases.join(". ")}. `+
-    `A sobreposição dos intervalos é uma comparação informal e não substitui um teste da diferença entre os recortes. `+
-    (aninhado?`Como um dos lados inclui os óbitos do outro (“Todos”), as duas estimativas não são independentes. `:"")+
-    (mesmos?`Os dois lados usam os mesmos óbitos ou dias com especificações diferentes, de modo que as estimativas não são independentes. `:"")+
-    `Os dois recortes usam a mesma escala vertical na Figura 2 e a mesma escala horizontal na Figura 3.`;
+    `A sobreposição dos intervalos é informal e não substitui um teste da diferença. `+
+    (aninhado?`Um dos lados inclui os óbitos do outro, então as estimativas não são independentes. `:"")+
+    (mesmos?`Os dois lados usam os mesmos óbitos ou dias, então as estimativas não são independentes. `:"");
 }
 
 // ---------------------------------------------------------------- Figura 4: horas por dia x limiar do índice de calor
@@ -239,7 +233,7 @@ function mapaSlot(p){
     : !curvasProntas && feitas<LIM.length
       ? "O mapa começa a ser calculado depois das Figuras 2 e 3 deste recorte."
     : feitas<LIM.length
-      ? `Calculando as colunas do mapa: ${feitas} de ${LIM.length}${erros.length?" ("+erros.length+" sem estimativa por erro do servidor)":""}. Na primeira vez cada coluna leva cerca de 15 segundos; depois o resultado fica guardado no servidor.`
+      ? `Calculando as colunas do mapa: ${feitas} de ${LIM.length}${erros.length?" ("+erros.length+" sem estimativa por erro do servidor)":""}. Na primeira vez, cerca de 15 s por coluna.`
       : "";
   const H = (LIM_ORD.map(K=>col[K]).find(Boolean)||{h:[1,2,3,4,6,8,10,12]}).h;
   let s = "<tr><th>H \\ K (°C)</th>"+LIM_ORD.map(K=>`<th>${K}</th>`).join("")+"</tr>";
@@ -258,10 +252,9 @@ function mapaSlot(p){
     s += "</tr>";
   });
   tab.innerHTML = s;
-  nota.textContent = `Linhas: número mínimo de horas no dia com índice de calor ≥ K (H). Colunas: limiar K (°C). Cada célula é um modelo próprio, com o mesmo GAM do modelo de referência `+
-    `(binomial negativa, spline do tempo, ciclo anual e termo do período COVID, defasagem de 0 a ${M.lag} dias pela cross-basis do dlnm), em que a exposição é o dia ter pelo menos H horas com índice de calor ≥ K. `+
-    `O RR é o acumulado em 0 a ${M.lag} dias para a condição mantida em todos os ${M.lag+1} dias, em relação a nenhum dia com a condição; o IC 95% vem da matriz de covariância dos coeficientes e aparece ao passar o cursor sobre a célula. `+
-    `Células com menos de 15 dias expostos, ou com menos de 30 dias sem exposição, no ajuste não são estimadas (–). Células vazias: RR com IC 95% que inclui 1, ocultas por não terem poder estatístico (a caixa da barra lateral as mostra). `+
+  nota.textContent = `Linhas: mínimo de horas por dia com índice de calor ≥ K (H). Colunas: limiar K (°C). Cada célula é um modelo próprio, igual ao de referência, em que a exposição é o dia ter pelo menos H horas com índice de calor ≥ K. `+
+    `RR acumulado em 0 a ${M.lag} dias com a condição mantida em todos eles, em relação a nenhum dia com a condição; IC 95% na dica do cursor. `+
+    `Células com menos de 15 dias expostos ou menos de 30 dias sem exposição não são estimadas (–); células vazias têm IC que inclui 1 e ficam ocultas.`+
     P.texto.notaClima(e.m)+P.texto.notaCausa(e.m);
   if(feitas<LIM.length){ it.innerHTML = `<span class="t">Interpretação</span>O texto fica disponível quando as ${LIM.length} colunas estiverem calculadas.`; return }
   const cel = [];
@@ -272,12 +265,11 @@ function mapaSlot(p){
   const base = cel.find(c=>c.K===36&&c.h===1), a = cel.find(c=>c.K===32&&c.h===1), b = cel.find(c=>c.K===40&&c.h===1);
   const cit = c => `RR = <b>${P.icSpan(c.rr,c.lo,c.hi)}</b> (${fn(c.nd)} dias expostos)`;
   const mx = vc.length ? vc.reduce((x,y)=>y.rr>x.rr?y:x) : null;
-  it.innerHTML = `<span class="t">Interpretação</span>Das <b>${cel.length}</b> combinações estimadas, <b>${sg.length}</b> têm RR acima de 1 com IC 95% que não inclui 1 e <b>${dn.length}</b> têm RR abaixo de 1 com IC 95% que não inclui 1. `+
+  it.innerHTML = `<span class="t">Interpretação</span>Das <b>${cel.length}</b> combinações estimadas, <b>${sg.length}</b> têm RR acima de 1 e <b>${dn.length}</b> abaixo de 1, com IC 95% que não inclui 1. `+
     (base?(vis(base.lo,base.hi)?`Com o limiar usual de 36 °C e pelo menos 1 hora no dia, ${cit(base)}. `:`Com o limiar usual de 36 °C e pelo menos 1 hora no dia, a célula não tem poder estatístico (${fn(base.nd)} dias expostos). `):"")+
-    (mx?`O maior valor visível da tabela é ${cit(mx)}, com índice de calor ≥ ${mx.K} °C por ≥ ${mx.h} h. O máximo de muitas células tende a superestimar o efeito, e as células com poucos dias expostos têm intervalos largos. `:`Nenhuma célula tem RR com IC 95% fora de 1. `)+
-    (a&&b&&vis(a.lo,a.hi)&&vis(b.lo,b.hi)?`Ao subir o limiar de 32 para 40 °C (≥ 1 h), o RR passa de ${fr(a.rr)} para ${fr(b.rr)}${b.rr>a.rr?", no sentido de risco maior com calor mais intenso; esse gradiente favorece a associação, e os dados agregados não permitem inferir causalidade. ":", sem gradiente crescente. "}`:"")+
-    `As células são aninhadas, pois um dia com mais horas também entra nas definições com menos horas, e não passaram por correção para comparações múltiplas. O padrão geral da tabela é mais informativo do que uma célula isolada. `+
-    `O RR de cada célula descreve a associação em dados agregados, sem controle de fatores individuais.`;
+    (mx?`O maior valor visível é ${cit(mx)}, com índice de calor ≥ ${mx.K} °C por ≥ ${mx.h} h; o máximo de muitas células tende a superestimar o efeito. `:`Nenhuma célula tem RR com IC 95% fora de 1. `)+
+    (a&&b&&vis(a.lo,a.hi)&&vis(b.lo,b.hi)?`De 32 para 40 °C (≥ 1 h), o RR passa de ${fr(a.rr)} para ${fr(b.rr)}${b.rr>a.rr?", com risco maior em calor mais intenso":", sem gradiente crescente"}. `:"")+
+    `As células são aninhadas e não têm correção para comparações múltiplas; o padrão da tabela vale mais que uma célula isolada. Associação em dados agregados, sem controle de fatores individuais.`;
 }
 function mapa(){
   if($("tab-exp").classList.contains("hide")) return;
