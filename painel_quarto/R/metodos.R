@@ -11,80 +11,74 @@ rr_txt <- function(v) sprintf("%s (IC 95%%: %s a %s)", fmt(v[1], 2), fmt(v[2], 2
 
 # M: meta da Figura 1 (base_figura1); n_sem_idade: óbitos sem idade informada;
 # resumo: resumo_figura1() (só no Quarto); dados: list(sim_atualizado, clima_atualizado, repo_sim, gerado_em) (só no Shiny)
+
 texto_metodos <- function(M, n_sem_idade, resumo = NULL, dados = NULL) {
   demanda <- is.null(resumo)
   pop_txt <- if (M$pop == "res") "residentes no Rio com óbito ocorrido no próprio município" else "todos os óbitos ocorridos no Rio, residentes ou não"
   nc_txt <- if (length(M$meses_nc)) paste(mm(M$meses_nc), collapse = ", ") else "nenhum"
   h <- M$exposicoes$horas$ref; a <- M$exposicoes$haat$ref
   pg <- function(...) paste0(paste0(..., collapse = ""), "\n\n")
+  sec <- function(titulo, ...) paste0("### ", titulo, "\n\n", paste0(..., collapse = ""))
 
   intro <- if (demanda)
-    "Esta página apresenta a Figura 1 do painel, desenvolvido em R e Shiny. O servidor obtém os dados diretamente das Releases do GitHub e ajusta o modelo de cada recorte (combinação de filtros) no momento em que ele é selecionado (de 3 a 15 segundos na primeira solicitação). O resultado é armazenado no servidor, de modo que as consultas seguintes ao mesmo recorte, feitas por qualquer usuário, são atendidas de imediato até a próxima atualização dos dados. Cada combinação de local do óbito, faixa etária, raça/cor, causa do óbito e retiradas do ajuste tem um modelo próprio."
+    "O servidor ajusta o modelo de cada recorte (combinação de filtros) quando ele é selecionado, em até 15 segundos na primeira vez, e guarda o resultado até a próxima atualização dos dados."
   else
-    "Esta página apresenta a Figura 1 do painel, reescrita em R e Quarto. O processamento dos dados e o ajuste dos modelos são feitos em R (`calcular_figura1.R`), e os resultados ficam incorporados a este arquivo, que abre diretamente no navegador. Como cada recorte (combinação de local do óbito, faixa etária e raça/cor) já tem o seu modelo calculado, a troca de filtros não reestima os modelos."
+    "Esta página foi gerada em R e Quarto (`calcular_figura1.R`): os modelos de todos os recortes são ajustados antes e incorporados ao arquivo."
 
-  causas_p <- if (demanda)
-    pg("O seletor Causa do óbito oferece quatro séries: causas naturais (padrão, definidas acima), todas as causas exceto COVID-19, todas as causas com COVID-19 e causas externas. Neste painel, causas externas são os óbitos fora dos códigos A00 a R99 da CID-10 e sem COVID-19, o que inclui lesões e demais causas externas (códigos S a Y) e registros sem CID válida. Cada causa tem a sua própria série de óbitos, e a lista de recortes com óbitos suficientes varia conforme a causa.")
-  else ""
+  dados_p <- paste0(
+    pg("Óbitos: SIM/DATASUS, camada silver do data lake do projeto, ocorridos no município do Rio de Janeiro desde 2006. ", if (demanda) "A população selecionada" else "A população desta versão", " corresponde a ", pop_txt, ": ", fmt(M$n_obitos), " óbitos por causas naturais (CID-10 A00 a R99, exceto COVID-19: B34 e códigos U) entre ", fd(M$inicio), " e ", fd(M$fim), ".",
+       if (demanda) " O seletor Causa do óbito inclui também todas as causas exceto COVID-19, todas com COVID-19 e causas externas (óbitos fora de A00 a R99 e sem COVID-19, o que inclui os códigos S a Y e registros sem CID válida)." else " Os óbitos por COVID-19 ficam fora de todas as séries."),
+    pg("Local do óbito: campo LOCOCOR do SIM, refinado pelo tipo de estabelecimento no CNES (Hospital: tipos 5, 7, 15 e 62; UPA / pronto atendimento: 20, 21 e 73; demais: Outros estabelecimentos). Faixas etárias: 0-4, 5-9, 10-19 e, de dez em dez anos, até 80 ou mais; os ", fmt(n_sem_idade), " óbitos sem idade entram só em Todas as idades. Raça/cor (RACACOR): branca, preta e parda têm série própria, e o agregado PPI reúne preta, parda e indígena; amarela e ignorada entram só em Todas. As séries por raça/cor valem para todas as idades."),
+    pg("Clima: série diária municipal `haat_diario_municipal.csv`, do repositório de dados climáticos do projeto (INMET e Alerta Rio): índice de calor pela equação do National Weather Service dos Estados Unidos (Rothfusz, 1990) e horas acima de cada limiar (HAAT), com a metodologia de Morais et al. (repositório *heat_mortality_MRJ_article*, usado com autorização). Antes de 17/04/2007 não há clima, e o calor entra como ausente."),
+    pg("A série termina na menor das datas entre o último óbito no SIM e o último dia com clima. Os ", fmt(M$dias_sem_registro), " dias sem óbito registrado (arquivo não carregado) saem do ajuste e aparecem em cinza claro. Meses com taxa diária de óbitos abaixo de 80% da mediana dos 12 meses de referência anteriores (sem os meses da COVID-19 e os não consolidados) são de registro não consolidado (", nc_txt, "; ", fmt(M$dias_nc), " dias) e aparecem hachurados",
+       if (demanda) "; por padrão ficam no ajuste." else "; ficam no ajuste."))
+
+  modelo_p <- paste0(
+    pg("Cada recorte e cada medida de calor têm um modelo próprio, adaptado de Morais et al. (`02_model_fitting.R` do repositório citado): GAM com defasagens distribuídas (DLNM), `mgcv::gam` com REML, família binomial negativa",
+       if (demanda) " (quase-Poisson nas séries esparsas em que ela não converge; a nota da figura informa a família):"
+       else paste0(" (quase-Poisson nas séries esparsas em que ela não converge: ", if (sum(unlist(resumo$n_qp)) == 0) "nenhum" else sum(unlist(resumo$n_qp)), " dos ", fmt(2 * resumo$n_segmentos), " ajustes desta execução):")),
+    "```\nlog(mu_t) = a + cb(calor, defasagem 0 a 10) + s(tempo) + s(dia do ano) + s(COVID)\n```\n\n",
+    "- `cb`: cross-basis do `dlnm`, com spline penalizado na exposição (tabela abaixo) e spline natural de 3 gl na defasagem de 0 a ", M$lag, " dias.\n",
+    "- `s(tempo)`: spline de placa fina, k = ", M$k_tempo, " (k = 12 para 12,5 anos no modelo de referência, proporcional à série).\n",
+    "- `s(dia do ano)`: spline cíclico, k = 6. `s(COVID)`: spline cíclico, k = 8, sobre os dias desde o início do período da COVID-19 (", fd(M$covid[1]), " a ", fd(M$covid[2]), "), zero fora dele. Sem termo de dia da semana, como no modelo de referência.\n\n",
+    "| Medida | Variável | Resposta à exposição | Níveis de referência do RR |\n|:--|:--|:--|:--|\n",
+    "| Horas | horas do dia com índice de calor ≥ 36 °C | spline penalizado, até ", M$exposicoes$horas$df, " gl | ", h[1], " e ", h[2], " h por dia |\n",
+    "| HAAT | graus-hora acima de 36 °C no dia (`auc36`) | spline penalizado, até ", M$exposicoes$haat$df, " gl | ", a[1], " e ", a[2], " °C·h por dia |\n\n",
+    pg("O RR acumulado é o de uma exposição ao nível de referência mantida nos ", M$lag + 1, " dias (o dia e os ", M$lag, " anteriores), em relação a nenhuma exposição.",
+       if (!demanda) paste0(" Para todos os locais e idades, o RR com ", h[1], " h por dia é ", rr_txt(resumo$rr_total$horas[1:3]), " e com ", h[2], " h por dia é ", rr_txt(resumo$rr_total$horas[4:6]), ".")),
+    pg("O esperado sem calor é o preditor do modelo com a exposição zerada em todas as defasagens; o semanal soma os sete diários (semanas de domingo a sábado). A faixa de 95% usa aproximação normal, com a soma das variâncias diárias (μ + μ²/θ) multiplicada pela dispersão semanal φ (mínimo 1), medida nos resíduos fora da COVID-19, porque dias vizinhos têm resíduos correlacionados. ",
+       if (demanda) "O φ de cada recorte está na nota da figura." else paste0("Para todos os locais e idades, φ é ", fmt(resumo$phi_total$horas, 2), "."),
+       " Semanas com algum dia fora do ajuste ficam sem esperado."))
+
+  calor_p <- pg("Semana de calor: pelo menos 3 dias com índice de calor máximo ≥ 36 °C ou, conforme o critério escolhido, pelo menos um dia em NC2 a NC5. Os níveis de calor (NC) são os do protocolo da Prefeitura do Rio (Decreto Rio nº 54.740/2024), reconstruídos só com valores observados e com o corte incluindo o limiar (o decreto diz “acima de”): NC2, pelo menos 4 h ≥ 36 °C em 1 ou 2 dias seguidos; NC3, o mesmo por 3 dias seguidos ou mais; NC4, pelo menos 4 h ≥ 40 °C dentro de uma sequência de NC3; NC5, pelo menos 2 h ≥ 44 °C dentro de uma sequência de NC3. Não substitui o nível divulgado pelo COR-Rio. ",
+                "A razão observado ÷ esperado é a soma dos observados pela soma dos esperados sem calor nas semanas do grupo, sem as semanas da COVID-19, sem registro no SIM ou sem clima. Na escala diária, dia exposto é o dia de calor (pelo menos 4 h ≥ 36 °C) e os três seguintes; como a defasagem vai a ", M$lag, " dias, parte do efeito cai fora desse intervalo.")
+
   retirar_p <- if (demanda) paste0(
-    "### Retirar períodos do ajuste\n\n",
-    pg("Por padrão, o ajuste segue o modelo de referência (Morais et al.): o período da COVID-19 permanece no ajuste, com o termo `s(COVID)` absorvendo o excesso; os meses de registro não consolidado permanecem no ajuste; e os dias sem dados de clima entram como dias sem calor. Três caixas de seleção, no grupo Retirar do ajuste do modelo, alteram esse padrão. Cada caixa marcada exclui os dias correspondentes dos dados usados para estimar o modelo (os dias sem registro no SIM são sempre excluídos):"),
-    "- Período da COVID-19 (", fd(M$covid[1]), " a ", fd(M$covid[2]), "): o modelo é ajustado sem esses dias e deixa de ter o termo `s(COVID)`.\n",
-    "- Meses com registro não consolidado (", nc_txt, "): os dias desses meses são excluídos do ajuste.\n",
-    "- Dias sem dados de clima e os ", M$lag, " seguintes: sem a caixa marcada, esses dias contam como dias sem calor. Com ela, são excluídos do ajuste, junto com os ", M$lag, " dias posteriores a cada um, porque a defasagem de 0 a ", M$lag, " dias usa o clima dos dias anteriores.\n\n",
-    pg("Semanas com algum dia fora do ajuste ficam sem esperado. Cada combinação de causa e de retiradas corresponde a um modelo distinto, ajustado e armazenado no servidor na primeira solicitação. O mínimo de ", M$min_obitos, " óbitos considera apenas os dias mantidos no ajuste."),
-    "### Período de análise\n\n",
-    pg("Os filtros Ano inicial e Ano final, na barra lateral, definem o período de análise, em anos civis inteiros (padrão: a série inteira). Ao aplicar um período, cada modelo é reajustado apenas com os dias dele: os demais dias saem do ajuste, como nas retiradas acima, e o RR, o IC 95% e o esperado sem calor passam a valer para o período. O spline de tempo acompanha o tamanho do período, com base de dimensão proporcional ao número de dias (12 para 12,5 anos, no mínimo 6), e o termo `s(COVID)` só entra se o período tiver pelo menos 30 dias dentro da COVID-19. O período tem de ter pelo menos ", PERIODO_MIN_ANOS, " anos, porque o ciclo anual e o efeito do calor não se separam em menos tempo. A cross-basis usa o clima real dos dias anteriores ao início do período, e as semanas que cruzam o limite do período ficam sem esperado. Cada período é um modelo distinto, ajustado e armazenado no servidor na primeira solicitação."))
+    sec("Retirar períodos do ajuste",
+        pg("Por padrão, a COVID-19 (termo `s(COVID)`) e os meses de registro não consolidado ficam no ajuste, e os dias sem clima contam como dias sem calor. As caixas do grupo Retirar do ajuste do modelo excluem: o período da COVID-19 (", fd(M$covid[1]), " a ", fd(M$covid[2]), "), sem o termo `s(COVID)`; os meses não consolidados; e os dias sem clima e os ", M$lag, " seguintes, que dependem desse clima pela defasagem. Dias sem registro no SIM saem sempre. O mínimo de ", M$min_obitos, " óbitos conta só os dias mantidos.")),
+    sec("Período de análise",
+        pg("Ano inicial e Ano final (anos civis inteiros, mínimo de ", PERIODO_MIN_ANOS, ") reajustam o modelo só com os dias do período: RR, IC 95% e esperado valem para ele. O k do spline de tempo é proporcional ao número de dias (mínimo 6), `s(COVID)` só entra com pelo menos 30 dias da COVID-19, a cross-basis usa o clima real dos dias anteriores ao início, e semanas que cruzam o limite ficam sem esperado.")),
+    sec("Poder estatístico, curvas e comparativo",
+        pg("Por padrão, só aparecem estimativas com poder estatístico: IC 95% do RR que não inclui 1 (na aba de causas, q < 0,05); a caixa Mostrar também o que não tem poder estatístico exibe as demais, em cinza, e o IC fica na dica do cursor. Ocultar é um recurso de exibição, não uma conclusão: um IC que inclui 1 não demonstra ausência de efeito, e o conjunto do que passa no critério tende a superestimar o efeito."),
+        pg("Curvas de exposição-resposta e de defasagem (Figuras 2 e 3): vêm do mesmo modelo do esperado, com IC 95% pela matriz de covariância da cross-basis (`crosspred`, do `dlnm`); a grade de exposição vai até o percentil 99 dos dias com exposição, e o RR acumulado de 0 até l é o da exposição mantida nesses dias. A resposta à exposição é suave e só se afasta de uma reta onde os dados sustentam a curvatura."),
+        pg("Comparar lado a lado acrescenta um lado B que difere do A em uma dimensão (local, faixa etária, raça/cor, medida de calor, causa, período ou retirada do ajuste); a comparação por raça/cor fixa a faixa etária em Todas as idades. A sobreposição dos IC é uma comparação informal, não um teste da diferença, e as estimativas não são independentes quando um recorte contém o outro.")),
+    sec("Mapa de horas por limiar e causas específicas",
+        pg("Figura 4: para cada limiar K (32 a 44 °C) e número mínimo de horas H (1, 2, 3, 4, 6, 8, 10 e 12), a exposição é binária (1 nos dias com pelo menos H horas de índice de calor ≥ K). Cada uma das 104 células é um modelo próprio, como o da Figura 1, com cross-basis linear na exposição; células com menos de 15 dias expostos ou 30 sem exposição não são estimadas. As células são aninhadas e sem correção para comparações múltiplas, e o mapa é descritivo."),
+        pg("Figura 5: cada causa básica de 3 caracteres com pelo menos ", fmt(M$cid_min), " óbitos nos dias do ajuste tem um modelo próprio, como o da Figura 1, com o RR acumulado em 0 a ", M$lag, " dias e o p pela aproximação normal do log do RR. A correção de Benjamini e Hochberg controla a taxa de falsas descobertas na família formada pelas causas do conjunto e do capítulo escolhidos (q só é calculado com todas estimadas), e q < 0,05 define o que é mostrado por padrão. Nomes: `dados_auxiliares/cid_nomes.json`. O conjunto Causas selecionadas do referencial reúne os 15 grupos de Morais et al.: influenza e pneumonia (J09, J12 a J18); respiratórias crônicas inferiores (J40 a J47); outras respiratórias (J00 a J06, J20 a J39, J60 a J70, J80 a J99, R09, U04); hipertensivas (I10 a I15); isquêmicas do coração (I20 a I25); insuficiência cardíaca (I50); cerebrovasculares (I60 a I69); outras do aparelho circulatório (I00 a I09, I26 a I49, I51, I52, I70 a I99); neoplasias malignas (C00 a C97); Alzheimer e demência (G30, G31, F01, F03); diabetes (E10 a E14); insuficiência renal (N17 a N19); sepse (A40, A41); infecção urinária (N39); causas mal definidas (R).")))
   else ""
 
-  poder_p <- if (demanda) paste0(
-    "### Poder estatístico e intervalo de confiança\n\n",
-    pg("Por padrão, o painel mostra apenas as estimativas com poder estatístico, isto é, aquelas cujo intervalo de confiança de 95% do RR não inclui 1 (limite inferior acima de 1 ou limite superior abaixo de 1). Indicadores, trechos das curvas, linhas dos gráficos de floresta e células da Figura 4 que não atendem a esse critério ficam ocultos; na aba de causas específicas aparecem apenas as causas com q < 0,05. A caixa Mostrar também o que não tem poder estatístico, na barra lateral, exibe todas as estimativas, em cinza. O intervalo de confiança não é escrito na página: aparece ao passar o cursor sobre o valor, a barra, o ponto ou a célula."),
-    pg("Ocultar estimativas pelo intervalo de confiança é um recurso de exibição, não uma conclusão. Um intervalo que inclui 1 não demonstra ausência de efeito, e o conjunto das estimativas que passam no critério tende a superestimar o efeito, sobretudo quando se examinam muitos recortes, causas ou limiares. Só a aba de causas específicas aplica correção para comparações múltiplas."))
-  else ""
-
-  curvas_p <- if (demanda) paste0(
-    "### Curvas de exposição-resposta e de defasagem\n\n",
-    pg("A aba Exposição-resposta e defasagem mostra, para o recorte escolhido, duas figuras obtidas do mesmo modelo que gera o esperado sem calor. A Figura 2 traz o RR acumulado em 0 a ", M$lag, " dias em função da exposição, mantida constante em todos os dias da janela, em relação a nenhuma exposição. O intervalo de confiança de 95% usa a matriz de covariância dos coeficientes da cross-basis (função `crosspred` do pacote `dlnm`). A grade de exposição vai de zero ao percentil 99 dos dias com exposição, porque acima disso há poucos dias. A Figura 3 é um gráfico de floresta, nos dois níveis de referência: a parte superior traz o RR de cada defasagem de 0 a ", M$lag, " (efeito da exposição ocorrida l dias antes do óbito) e a parte inferior traz o RR acumulado de 0 até l, para l igual a 1, 3, 7 e ", M$lag, ". O RR acumulado até l é o produto dos RR por defasagem de 0 a l, com intervalo de confiança de 95% a partir da matriz de covariância dos coeficientes, e as duas partes usam escalas horizontais diferentes. Os quadros do topo trazem o RR no mesmo dia (lag 0) e os RR acumulados em 0 a 3 e em 0 a ", M$lag, " dias."),
-    pg("A resposta à exposição é um spline penalizado nas duas medidas, com até ", M$exposicoes$horas$df, " graus de liberdade para as horas e até ", M$exposicoes$haat$df, " para o HAAT. A penalidade (segunda diferença dos coeficientes) é estimada junto com os demais termos do modelo, por REML: a curva é suave e só se afasta de uma reta onde os dados sustentam a curvatura. Nas extremidades, onde há poucos dias, o intervalo de confiança é largo. Os filtros de recorte, de causa do óbito e de retirada do ajuste ficam na barra lateral e valem para todas as abas, e a aba reaproveita os modelos já ajustados nas demais."),
-    pg("O botão Comparar lado a lado, na barra lateral, acrescenta um segundo recorte (lado B) ao recorte da barra lateral (lado A). O lado B difere do A em uma dimensão escolhida (local do óbito, faixa etária, raça/cor, medida de calor, causa do óbito, período de análise ou uma das retiradas do ajuste), e as demais dimensões valem para os dois. Os lados aparecem em colunas, A à esquerda e B à direita, cada um com quadros, figuras e interpretação próprios, e as Figuras 2 e 3 usam a mesma escala nos dois lados. Como as séries por raça/cor existem só para todas as idades, a comparação por raça/cor fixa a faixa etária em Todas as idades nos dois lados. O texto de comparação traz o RR acumulado dos dois lados e informa se os intervalos de confiança se sobrepõem, o que é uma comparação informal e não um teste da diferença. Quando um dos recortes contém o outro (por exemplo, Todos os locais e um local), os óbitos se repetem e as duas estimativas não são independentes."))
-  else ""
-
-  mapa_p <- if (demanda) paste0(
-    "### Mapa de horas por dia e limiar do índice de calor\n\n",
-    pg("A Figura 4 refaz, com o modelo de referência, o mapa de horas por dia e limiar da versão anterior do painel. Para cada limiar K (32 a 44 °C) e cada número mínimo de horas H (1, 2, 3, 4, 6, 8, 10 e 12), a exposição é binária: vale 1 nos dias com pelo menos H horas de índice de calor igual ou superior a K, e 0 nos demais, inclusive nos dias sem dado de clima. Cada célula é um modelo próprio, com o mesmo GAM da Figura 1 (binomial negativa, spline do tempo, ciclo anual e termo do período COVID) e a mesma defasagem de 0 a ", M$lag, " dias, com cross-basis linear na exposição e spline natural de 3 graus de liberdade na defasagem. O RR de cada célula é o acumulado em 0 a ", M$lag, " dias para a exposição mantida em todos os ", M$lag + 1, " dias, em relação a nenhum dia exposto, com intervalo de confiança de 95% a partir da matriz de covariância dos coeficientes."),
-    pg("A versão anterior definia a exposição como um dia com a condição em t, t−1, t−2 ou t−3 e estimava cada célula por quase-Poisson com termo de dia da semana. O modelo atual usa a defasagem distribuída do DLNM e não tem termo de dia da semana, de modo que os RR das duas versões não são comparáveis em valor. Células com menos de 15 dias expostos no ajuste, ou com menos de 30 dias sem exposição, não são estimadas. As 104 células são ajustadas de forma independente, são aninhadas por construção (um dia com mais horas também entra nas definições com menos horas) e não passam por correção para comparações múltiplas; o mapa é descritivo. As colunas são calculadas sob demanda, uma por limiar, e ficam guardadas no servidor para os pedidos seguintes."))
-  else ""
-
-  cid_p <- if (demanda) paste0(
-    "### Causas específicas (CID-10)\n\n",
-    pg("A aba Causas específicas (CID-10) estima, para o recorte escolhido, o RR em dias de calor de cada causa básica de óbito com 3 caracteres da CID-10. Cada causa com pelo menos ", fmt(M$cid_min), " óbitos nos dias do ajuste é avaliada em um modelo próprio, com a estrutura do modelo de referência (binomial negativa, spline do tempo, ciclo anual, termo do período da COVID-19 quando restam dias dele no ajuste e cross-basis de defasagem de 0 a ", M$lag, " dias), aplicado à série diária de óbitos daquela causa e com as mesmas retiradas do ajuste do recorte. A medida de calor e o nível de exposição (um dos dois níveis de referência) são escolhidos na aba. O RR é o acumulado em 0 a ", M$lag, " dias para a exposição mantida em todos os ", M$lag + 1, " dias, em relação a nenhuma exposição. O IC 95% usa a matriz de covariância dos coeficientes, e o valor de p vem da aproximação normal do logaritmo do RR."),
-    pg("Como a aba avalia dezenas de causas de uma só vez, parte dos RR diferentes de 1 apareceria por acaso. A correção de Benjamini e Hochberg controla a taxa de falsas descobertas dentro da família formada pelas causas do conjunto e do capítulo escolhidos, e o valor q resultante só é calculado quando todas as causas da família estão estimadas. As causas com q < 0,05 ficam destacadas, e uma caixa permite incluir as demais, em cinza. Mudar o conjunto ou o capítulo muda a família e, portanto, o q. O conjunto Causas selecionadas do referencial reúne as causas dos 15 grupos do estudo de referência (Morais et al.), escritos em códigos de 3 caracteres: influenza e pneumonia (J09, J12 a J18); doenças respiratórias crônicas inferiores (J40 a J47); outras doenças respiratórias (J00 a J06, J20 a J39, J60 a J70, J80 a J99, R09 e U04); doenças hipertensivas (I10 a I15); doenças isquêmicas do coração (I20 a I25); insuficiência cardíaca (I50); doenças cerebrovasculares (I60 a I69); outras doenças do aparelho circulatório (I00 a I09, I26 a I49, I51, I52 e I70 a I99); neoplasias malignas (C00 a C97); Alzheimer e demência (G30, G31, F01 e F03); diabetes (E10 a E14); insuficiência renal (N17 a N19); sepse (A40 e A41); infecção do trato urinário (N39); e causas mal definidas (capítulo R). A lista é fixa e não depende dos resultados do painel. O estudo de referência modela esses grupos, e esta aba estima cada causa de 3 caracteres dentro deles."),
-    pg("Cada causa é pedida ao servidor separadamente, no máximo duas ao mesmo tempo, e o resultado fica guardado em disco. Por isso a figura se completa causa a causa, e a primeira abertura de um recorte leva de 3 a 10 segundos por causa. Ao clicar em uma causa, a Figura 5b mostra seus óbitos semanais observados e o esperado sem calor do modelo daquela causa, com a faixa de 95% calculada como na Figura 1. Os nomes das causas vêm do arquivo `dados_auxiliares/cid_nomes.json`, que cobre as causas de 3 caracteres avaliadas."))
-  else ""
-
-  pop_frase <- if (demanda) "A população selecionada corresponde a" else "A população desta versão corresponde a"
-
-  trocas <- if (demanda)
-    "A família binomial negativa é a padrão. Em séries muito esparsas, nas quais ela não converge, o ajuste usa a família quase-Poisson, e a nota abaixo da figura informa a família utilizada em cada recorte."
-  else
-    paste0("Séries muito esparsas, nas quais a binomial negativa não converge, usam a família quase-Poisson. ",
-           if (sum(unlist(resumo$n_qp)) == 0) "Nesta execução, nenhum dos " else paste0("Nesta execução, ", sum(unlist(resumo$n_qp)), " dos "),
-           fmt(2 * resumo$n_segmentos), if (sum(unlist(resumo$n_qp)) <= 1) " ajustes precisou dessa troca." else " ajustes precisaram dessa troca.")
-
-  rr_frase <- paste0("O risco relativo (RR) acumulado apresentado nos indicadores corresponde à exposição ao nível de referência de calor em todos os ", M$lag + 1, " dias (o dia e os 10 anteriores), em relação à ausência de calor.",
-                     if (!demanda) paste0(" Para todos os locais e idades, o RR com ", h[1], " h por dia é ", rr_txt(resumo$rr_total$horas[1:3]),
-                                          " e com ", h[2], " h por dia é ", rr_txt(resumo$rr_total$horas[4:6]), "."))
-
-  phi_frase <- if (demanda) "O valor de φ de cada recorte aparece na nota abaixo da figura."
-               else paste0("Para todos os locais e idades, φ é ", fmt(resumo$phi_total$horas, 2), ".")
+  limitacoes <- paste0(
+    "- Estudo ecológico de séries temporais, descritivo e exploratório; um modelo por recorte, sem correção para comparações múltiplas", if (demanda) " (exceto na aba de causas)", ". Com poucos óbitos (mínimo de ", M$min_obitos, " no ajuste), os RR são instáveis e os IC, largos.\n",
+    "- A faixa de 95% não inclui a incerteza dos coeficientes.\n",
+    "- O período da COVID-19 é absorvido por um termo suave: o esperado nele não serve de comparação, e suas semanas e dias ficam fora dos indicadores.\n",
+    if (demanda) "- Os modelos analisam contagens, sem taxas por população (sem offset; o spline de tempo absorve a variação lenta dela). O RR independe disso, mas comparar níveis entre populações ou anos exigiria taxas.\n",
+    if (!demanda) "- As demais abas do painel em Python (RR por faixa e defasagem, horas por limiar, CIDs, unidades e clima) ainda utilizam o modelo anterior e serão migradas gradualmente.\n",
+    "\n")
 
   repro <- if (demanda)
-    paste0("```\nRscript shiny/atualizar_cache.R\n```\n\nO aplicativo Shiny e a página em Quarto utilizam as mesmas funções de R (pasta `R/`); assim, o mesmo recorte produz o mesmo resultado nos dois. ",
-           "Pacotes de R: `shiny`, `mgcv`, `dlnm`, `nanoparquet`, `jsonlite`, `future` e `promises`.")
+    paste0("```\nRscript shiny/atualizar_cache.R\n```\n\nMesmas funções de R (pasta `R/`) no app e na página em Quarto. Pacotes: `shiny`, `mgcv`, `dlnm`, `nanoparquet`, `jsonlite`, `future` e `promises`.")
   else
-    paste0("```\nRscript calcular_figura1.R --silver entrada/sim/silver --haat entrada/haat_diario_municipal.csv\nquarto render painel_figura1.qmd\n```\n\n",
-           "Pacotes de R: `mgcv`, `dlnm`, `nanoparquet`, `jsonlite`, `knitr`.")
+    paste0("```\nRscript calcular_figura1.R --silver entrada/sim/silver --haat entrada/haat_diario_municipal.csv\nquarto render painel_figura1.qmd\n```\n\nPacotes: `mgcv`, `dlnm`, `nanoparquet`, `jsonlite`, `knitr`.")
   versao <- if (demanda)
     paste0(" Versão dos dados: SIM atualizado em ", dados$sim_atualizado, " (", dados$repo_sim, ") e clima atualizado em ", dados$clima_atualizado, " (horários em UTC); cache gerado em ", dados$gerado_em, ".")
   else paste0(" Versão dos dados desta página: gerada em ", M$gerado_em, ".")
@@ -92,57 +86,11 @@ texto_metodos <- function(M, n_sem_idade, resumo = NULL, dados = NULL) {
   paste0(
     "## Métodos e fontes\n\n",
     pg(intro),
-    "### Dados\n\n",
-    pg("Os óbitos provêm do Sistema de Informações sobre Mortalidade (SIM/DATASUS), por meio do repositório de dados (data lake) do projeto, em sua camada silver, com os óbitos ocorridos no município do Rio de Janeiro desde 2006. ",
-        pop_frase, " ", pop_txt, ": ", fmt(M$n_obitos), " óbitos por causas naturais entre ", fd(M$inicio), " e ", fd(M$fim),
-        ". Causa natural é aquela registrada nos capítulos I a XVIII da CID-10 (códigos A00 a R99), exceto a COVID-19 (B34 e códigos U)", if (demanda) "." else ". Os óbitos por COVID-19 ficam fora de todas as séries."),
-    causas_p,
-    pg("O local do óbito parte do campo LOCOCOR do SIM e é refinado pelo tipo de estabelecimento registrado no Cadastro Nacional de Estabelecimentos de Saúde (CNES): os tipos 5, 7, 15 e 62 correspondem a Hospital; os tipos 20, 21 e 73, a UPA / pronto atendimento (UPA: Unidade de Pronto Atendimento); e os demais estabelecimentos de saúde, a Outros estabelecimentos. Domicílio, via pública, outros locais e ignorado são os registrados diretamente no LOCOCOR."),
-    pg("As faixas etárias, definidas para este estudo, são 0-4, 5-9, 10-19, 20-29, 30-39, 40-49, 50-59, 60-69, 70-79 e 80 anos ou mais. Os ", fmt(n_sem_idade), " óbitos sem idade informada entram apenas em Todas as idades."),
-    pg("A raça/cor provém do campo RACACOR. Branca, preta e parda têm série própria, e o agregado PPI reúne preta, parda e indígena. As categorias indígena e amarela não têm óbitos suficientes para série própria, e os óbitos com raça/cor ignorada ou não informada entram apenas em Todas. As séries por raça/cor são calculadas para todas as idades."),
-    pg("O clima é a série diária municipal `haat_diario_municipal.csv`, calculada a partir do repositório de dados climáticos do projeto (Instituto Nacional de Meteorologia, INMET, e Alerta Rio): média horária das estações, índice de calor pela equação do National Weather Service dos Estados Unidos (Rothfusz, 1990) e horas acima de cada limiar (HAAT). A metodologia segue Morais et al. (repositório *heat_mortality_MRJ_article*, usado com autorização). Há dados de clima a partir de abril de 2007; antes disso, o calor entra nos modelos como ausente."),
-    "### Período e registro do SIM\n\n",
-    pg("A série termina na menor das duas datas: o último dia com óbito registrado no SIM e o último dia com dados de clima. Os dias sem nenhum óbito registrado (", fmt(M$dias_sem_registro),
-        " dias) correspondem a arquivo ainda não carregado: são excluídos do ajuste e aparecem em cinza claro."),
-    pg("Meses com taxa diária de óbitos inferior a 80% da mediana dos 12 meses de referência anteriores são classificados como registro não consolidado (", nc_txt, "; ", fmt(M$dias_nc),
-        " dias). Esses meses permanecem no ajuste", if (demanda) " por padrão", " e aparecem hachurados, porque o número observado pode estar abaixo do real",
-        if (demanda) "; a caixa Meses com registro não consolidado, no grupo Retirar do ajuste do modelo, exclui esses meses do ajuste, e o esperado deixa de ser traçado neles", ". A taxa do mês é o número de óbitos dividido pelo número de dias com algum óbito registrado; os meses do período da COVID-19 e os já classificados como não consolidados não compõem a referência."),
-    "### O modelo\n\n",
-    pg("Cada recorte (local do óbito por faixa etária, ou local do óbito por raça/cor) e cada medida de calor têm um modelo próprio, adaptado do modelo de Morais et al. (script `02_model_fitting.R` do repositório citado acima): um modelo aditivo generalizado (GAM) com defasagens distribuídas (DLNM), ajustado com `mgcv::gam` por máxima verossimilhança restrita (REML). Os óbitos de cada dia seguem uma distribuição binomial negativa:"),
-    "```\nlog(mu_t) = a + cb(calor, defasagem 0 a 10) + s(tempo) + s(dia do ano) + s(COVID)\n```\n\n",
-    "- `cb` é a base cruzada (cross-basis) do pacote `dlnm`: uma função da exposição ao calor (spline penalizado, ver a tabela abaixo) combinada com uma função da defasagem (spline natural com 3 graus de liberdade, gl), de 0 a ", M$lag, " dias.\n",
-    "- `s(tempo)` é um spline de placa fina com base de dimensão k = ", M$k_tempo, ", que acompanha a tendência de longo prazo. O modelo de referência usa k = 12 para 12,5 anos; aqui, k cresce na mesma proporção para a série mais longa.\n",
-    "- `s(dia do ano)` é um spline cíclico com base de dimensão k = 6 (sazonalidade anual).\n",
-    "- `s(COVID)` é um spline cíclico com base de dimensão k = 8 sobre o número de dias desde o início do período da COVID-19 (", fd(M$covid[1]), " a ", fd(M$covid[2]), "), com valor zero fora dele.", if (demanda) " Se a caixa do período da COVID-19 estiver marcada, esse termo é retirado do modelo.", "\n",
-    "- O modelo não inclui termo de dia da semana, como no modelo de referência.\n\n",
-    pg(trocas),
-    pg("O seletor oferece duas medidas de calor:"),
-    "| Medida | Variável | Resposta à exposição | Níveis de referência do RR |\n|:--|:--|:--|:--|\n",
-    "| Horas | horas do dia com índice de calor ≥ 36 °C | spline penalizado, até ", M$exposicoes$horas$df, " gl | ", h[1], " e ", h[2], " h por dia |\n",
-    "| HAAT | graus-hora acima de 36 °C no dia (`auc36`) | spline penalizado, até ", M$exposicoes$haat$df, " gl | ", a[1], " e ", a[2], " °C·h por dia |\n\n",
-    pg(rr_frase),
+    sec("Dados", dados_p),
+    sec("O modelo", modelo_p),
+    sec("Semanas de calor e níveis de calor", calor_p),
     retirar_p,
-    poder_p,
-    curvas_p,
-    mapa_p,
-    cid_p,
-    "### Esperado sem calor\n\n",
-    pg("O esperado de cada dia é o preditor linear do modelo com a cross-basis substituída pela cross-basis de exposição zero em todas as defasagens, isto é, o número de óbitos que o modelo prevê na ausência de calor (contrafactual). O esperado semanal é a soma dos sete esperados diários da semana (semanas epidemiológicas completas, de domingo a sábado). A faixa de 95% usa uma aproximação normal, com variância igual à soma das variâncias diárias (μ + μ²/θ) multiplicada por uma dispersão semanal φ (no mínimo 1). Dias vizinhos têm resíduos correlacionados, por epidemias e outros eventos que o modelo não descreve, e a soma de variâncias independentes subestima a variância da semana. O fator φ é a razão entre o erro quadrático semanal e essa soma, medida nos resíduos do modelo ajustado e fora do período da COVID-19. ",
-        phi_frase, " Semanas com algum dia fora do ajuste ficam sem esperado."),
-    pg("Como cada recorte tem modelo próprio, o esperado e a razão observado ÷ esperado variam conforme os filtros selecionados."),
-    "### Comparação entre semanas de calor e as demais\n\n",
-    pg("Semana de calor é aquela com pelo menos 3 dias de índice de calor máximo ≥ 36 °C (ou com pelo menos um dia em NC2 a NC5, os níveis de calor 2 a 5 do protocolo de calor da Prefeitura do Rio de Janeiro, Decreto Rio nº 54.740/2024, conforme o critério selecionado). A razão é a soma dos óbitos observados dividida pela soma dos esperados sem calor nas semanas do grupo, excluídas as semanas do período da COVID-19, as sem registro no SIM e as sem dados de clima. Na escala diária, dia exposto é o dia de calor (pelo menos 4 h com índice de calor ≥ 36 °C) e os três dias seguintes. Como o modelo usa defasagens de até 10 dias, parte do efeito ocorre também em dias fora desse intervalo de quatro dias."),
-    "### O que mudou em relação ao painel anterior\n\n",
-    pg("Na Figura 1 semanal do painel em Python, o esperado era obtido por um modelo apenas de tendência e sazonalidade, sem a variável de calor, ajustado a todas as semanas. Como esse modelo se ajusta à média dos dados, inclusive nas semanas de calor, a razão observado ÷ esperado ficava próxima de 1,00 em qualquer recorte. Nesta versão, o esperado é o contrafactual de um modelo que estima o efeito do calor em cada recorte, e a razão nas semanas de calor reflete esse efeito."),
-    "### Limitações\n\n",
-    "- É um estudo ecológico de séries temporais, descritivo e exploratório.\n",
-    "- Cada recorte tem um modelo próprio, sem correção para comparações múltiplas. Recortes com poucos óbitos (mínimo de ", M$min_obitos, " no ajuste) produzem RR instáveis, com intervalos de confiança largos.\n",
-    "- A faixa de 95% não inclui a incerteza dos coeficientes do modelo.\n",
-    "- O período da COVID-19 é absorvido por um termo suave; por isso, o esperado nesse período não serve de comparação, e as semanas e os dias desse período ficam fora dos indicadores.", if (demanda) " Se a caixa de retirada estiver marcada, o período fica sem esperado.", "\n",
-    if (demanda) "- Os modelos analisam contagens de óbitos, sem taxas por população: a população não entra como offset, e o spline de tempo absorve a variação lenta dela ao longo dos anos. A comparação de níveis entre populações ou entre anos exigiria taxas; o RR independe dessa limitação.\n",
-    "- Não há dados de clima antes de 17/04/2007; nesse período, o calor entra no modelo como ausente.\n",
-    "- As demais abas do painel em Python (RR por faixa e defasagem, horas por limiar, CIDs, unidades e clima) ainda utilizam o modelo anterior e serão migradas gradualmente.\n\n",
-    "### Reprodução\n\n",
-    repro, versao, "\n\n",
-    "A paleta de cores foi adaptada do site EpiRio (Centro de Inteligência Epidemiológica, Prefeitura do Rio). Os gráficos são gerados com a biblioteca Chart.js 4.4.1, incorporada ", if (demanda) "a este painel" else "a este arquivo", ".\n")
+    sec("Limitações", limitacoes),
+    sec("Reprodução", repro, versao, "\n\n"),
+    "Paleta adaptada do EpiRio (Centro de Inteligência Epidemiológica, Prefeitura do Rio); gráficos com a biblioteca Chart.js 4.4.1, incorporada ", if (demanda) "a este painel" else "a este arquivo", ".\n")
 }
